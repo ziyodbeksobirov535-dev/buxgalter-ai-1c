@@ -5,6 +5,9 @@ schyotlarni **buxgalterning oldingi 1C yozuvlaridan o'rganadigan** va yangi hujj
 **qoralama** (`Posted: false`) sifatida kirituvchi tizim.
 
 - 🖥️ Split-screen Web App (70% jadval / 30% AI Copilot), yorug'/to'q rejim, 100% o'zbek tilida
+- 🔐 Login va parol bilan kirish, rollar: **Egasi / Buxgalter / Kuzatuvchi**
+- 🏢 **Bir akkauntdan bir nechta firma** — har birining o'z 1C bazasi (yoki bitta bazadagi alohida tashkiloti)
+- 📜 Audit jurnali: kim, qachon, qaysi firmada nima qilgani
 - 📱 Telegram bot + Telegram Mini App (WebApp)
 - 🤖 Bepul **Google Gemini** (`gemini-3.8-flash`) + Function Calling; kalitsiz ham Demo AI ishlaydi
 - 🛡️ Dublikat himoyasi: Raqam + Sana + Summa + Kontragent_Key
@@ -21,7 +24,10 @@ cp .env.example .env          # ixtiyoriy — standart holatda Demo rejim
 .venv/bin/python main.py      # → http://127.0.0.1:8000
 ```
 
-Brauzerda **🧪 Test Vipiska Namunasini Yuklash** tugmasini bosing. Namuna fayl
+Yoki shunchaki **`start.command`** ni ikki marta bosing (macOS).
+
+Birinchi ochilishda **"Egasi" akkauntini yarating** (login + parol, kamida 8 belgi). Bu faqat dastur o'rnatilgan
+kompyuterning o'zidan mumkin. Keyin brauzerda **🧪 Test Vipiska Namunasini Yuklash** tugmasini bosing. Namuna fayl
 (`sample_bank_vipiska.xlsx`) server ishga tushganda avtomatik yaratiladi va **📥 Test Vipiska faylini yuklab olish**
 tugmasi orqali ham olish mumkin.
 
@@ -55,6 +61,30 @@ Gemini quyidagi vositalarni (tools) chaqiradi: `analyze_and_deduplicate_vipiska(
 
 ---
 
+## 🔐 Foydalanuvchilar va rollar
+
+| Rol | Nima qila oladi |
+|---|---|
+| **Egasi** | Hamma narsa: barcha firmalar, firmalarning 1C/Didox sozlamalari, foydalanuvchilar, AI sozlamalari, jurnal |
+| **Buxgalter** | Biriktirilgan firmalarda: vipiska yuklash, tekshirish, schyot tanlash, 1C ga qoralama yozish |
+| **Kuzatuvchi** | Biriktirilgan firmalarda: faqat ko'rish va tahlil — 1C ga yoza olmaydi |
+
+- Foydalanuvchi qo'shish: 👤 menyu → **👥 Foydalanuvchilar** (faqat Egasi). Har biriga qaysi firmalar ko'rinishini belgilang.
+- Parollar faqat **scrypt xeshi** ko'rinishida saqlanadi. 5 ta xato urinishdan keyin login 15 daqiqaga to'xtatiladi.
+- Sessiya 8 soat harakatsizlikdan keyin tugaydi; parol o'zgarganda boshqa barcha qurilmalardan chiqariladi.
+- Oxirgi faol "Egasi"ni o'chirib yoki rolini tushirib bo'lmaydi.
+
+## 🏢 Bir nechta firma
+
+- 👤 menyu → **🗂 Firmalar** → yangi firma (nomi + STIR). Yuqori paneldagi tanlagich orqali firmalar orasida o'tiladi.
+- Har firmaning **o'z 1C ulanishi** (manzil, login, parol — shifrlangan), Didox kalitlari va jadvali bor.
+- Firmalar alohida 1C bazalarda bo'lishi ham, **bitta bazadagi bir nechta tashkilot** bo'lishi ham mumkin —
+  ikkinchi holatda manzil bir xil, STIR har xil bo'ladi (STIR bo'yicha 1C dagi tashkilot tanlanadi).
+- 🛡️ **Vipiska boshqa firmaga tushmasligi:** fayl sarlavhasidagi STIR va hisob raqami tanlangan firmaning 1C dagi
+  tashkiloti va bank hisoblari bilan solishtiriladi. Mos kelmasa — barcha qatorlar bloklanadi va (ruxsatingiz bo'lsa)
+  to'g'ri firmaga o'tish taklif qilinadi.
+- Web App va Telegram bir foydalanuvchi + firma uchun bitta umumiy jadvalni ko'radi.
+
 ## 🗄️ Real 1C ga ulanish (OData)
 
 1. 1C Konfigurator: **Администрирование → Публикация на веб-сервере** (OData yoqilgan holda).
@@ -63,8 +93,8 @@ Gemini quyidagi vositalarni (tools) chaqiradi: `analyze_and_deduplicate_vipiska(
    `Catalog_Контрагенты`, `Catalog_ДоговорыКонтрагентов`, `Catalog_БанковскиеСчета`, `Catalog_Номенклатура`,
    `Catalog_Организации`, `Catalog_СтатьиДвиженияДенежныхСредств`, `ChartOfAccounts_Хозрасчетный`,
    `Document_ПоступлениеНаРасчетныйСчет`, `Document_СписаниеСРасчетногоСчета`, `Document_ПоступлениеТоваровУслуг`.
-3. ⚙️ Sozlamalar → "Demo 1C bazasi" belgisini olib tashlang → URL (`http://server/baza`), login, parol →
-   **🔌 Saqlash va 1C ulanishini tekshirish**. Tizim `$metadata` ni o'qib, nashr qilinmagan obyektlarni ko'rsatadi.
+3. ⚙️ Sozlamalar → **🏢 Joriy firma** → "Demo 1C bazasi" belgisini olib tashlang → URL
+   (masalan `https://1c.uzcloud.uz/a/bpuz/1234`), 1C bazasidagi login, parol → **🔌 Saqlash va 1C ni tekshirish**. Tizim `$metadata` ni o'qib, nashr qilinmagan obyektlarni ko'rsatadi.
 
 **Muhim:** konfiguratsiya relizlariga qarab rekvizit nomlari farq qilishi mumkin (masalan, `Контрагент_Key` o'rniga
 kompozit `Контрагент` + `Контрагент_Type`). Ular `services_1c.py` dagi `FIELDS` lug'atida bir joyda jamlangan.
@@ -83,26 +113,19 @@ Birinchi real ulanishda `$metadata` ni tekshirib, kerak bo'lsa shu lug'atni mosl
 ## 📱 Telegram bot + Mini App
 
 1. [@BotFather](https://t.me/BotFather) → `/newbot` → tokenni `.env` ga: `TELEGRAM_BOT_TOKEN=...`
-2. O'z Telegram ID ingizni `ALLOWED_TELEGRAM_IDS=` ga yozing (bilmasangiz — botga `/start` yuboring, u ID ni aytadi).
-   Ro'yxat bo'sh bo'lsa, **hech kim** foydalana olmaydi.
-3. Mini App HTTPS talab qiladi. Masalan:
-   ```bash
-   cloudflared tunnel --url http://127.0.0.1:8000
-   ```
-   Chiqqan `https://...trycloudflare.com` manzilini `WEBAPP_URL=` ga yozing.
-4. Tashqi manzil orqali brauzerdan kirish uchun `APP_ACCESS_TOKEN=` (uzun tasodifiy satr) qo'ying va uni
-   ⚙️ Sozlamalar → "Masofadan kirish tokeni" ga kiriting. Telegram Mini App esa `initData` imzosi orqali tekshiriladi.
-5. `.venv/bin/python main.py` — bot server bilan birga ishga tushadi (sessiyalar umumiy).
-
-Bot imkoniyatlari: `/start` → **📱 Buxgalter AI Web App'ni ochish**; vipiska faylini chatga yuborish →
-tahlil + **✅ Yangilarini 1C ga kiritish** / **📱 Web App'da ko'rish**; `/namuna` — test fayl; erkin savollar → AI.
-
----
+2. Mini App HTTPS talab qiladi. Masalan: `cloudflared tunnel --url http://127.0.0.1:8000` →
+   chiqqan `https://...trycloudflare.com` manzilini `WEBAPP_URL=` ga yozing.
+3. Serverni qayta ishga tushiring (`start.command`) — bot server bilan birga ishlaydi.
+4. **Akkauntni bog'lash:** Web App → 👤 → **🔑 Parol va Telegram** → **Kod olish** → botga `/link 123456` yuboring.
+   Bog'lanmagan Telegram foydalanuvchilari hech narsa ko'ra olmaydi.
+5. Botda `/firma` — firmani tanlash. Vipiska faylini chatga yuborsangiz, joriy firma bo'yicha tekshiriladi.
 
 ## 📂 Tuzilma
 
 ```
-main.py              FastAPI: API + Web App, kirish nazorati, bot'ni ishga tushirish
+main.py              FastAPI: API + Web App, firmalar/foydalanuvchilar API, bot'ni ishga tushirish
+auth.py              Kirish: login cookie, Telegram imzosi, rollar, firmaga kirish huquqi
+db.py                SQLite (data/app.db): foydalanuvchilar, firmalar (shifrlangan sirlar), sessiyalar, jurnal
 bot.py               aiogram 3 Telegram bot
 core.py              Umumiy ish oqimlari (Web, bot va AI shu yerdan foydalanadi)
 services_1c.py       1C OData: Ref_Key, dublikat, tarixdan o'rganish, qoralama; Http + Demo transport
@@ -110,26 +133,24 @@ services_vipiska.py  Excel / CSV / 1CClientBankExchange parser, tahlil, payload
 services_didox.py    Didox EHF ↔ ПоступлениеТоваровУслуг
 services_ai.py       Gemini Function Calling + Demo AI + OpenAI/Claude zaxira
 demo_data.py         Demo 1C bazasi (OData shaklida) va namuna vipiska generatori
-config.py            .env + UI sozlamalari (data/settings.json, git'ga kirmaydi)
-templates/index.html Tailwind + Alpine.js + Lucide + telegram-web-app.js
+config.py            .env + umumiy AI sozlamalari (data/settings.json, git'ga kirmaydi)
+templates/index.html Asosiy ekran: Tailwind + Alpine.js + Lucide + telegram-web-app.js
+templates/login.html Kirish va birinchi "Egasi" akkauntini yaratish
 ```
 
-### API
+### API (asosiylari)
+Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login talab qiladi.
+
 | Metod | Yo'l | Vazifa |
 |---|---|---|
-| GET | `/api/status` | 1C / AI holati |
-| POST | `/api/vipiska/upload` | Vipiska yuklash (multipart `file`) |
-| POST | `/api/vipiska/sample` | Namuna vipiskani tahlil qilish |
-| POST | `/api/vipiska/recheck` | 1C da qayta tekshirish |
-| POST | `/api/didox/load` | Didox EHF ↔ 1C |
-| POST | `/api/rows/{id}/account` | Schyotni o'zgartirish |
-| GET | `/api/rows/{id}/inspect` | Tafsilot + OData payload ko'rinishi |
-| POST | `/api/post` | Tanlanganlarni 1C ga qoralama sifatida yozish |
+| POST | `/api/auth/login`, `/api/auth/logout`, `/api/auth/setup` | Kirish / chiqish / birinchi Egasi |
+| GET | `/api/auth/me` | Joriy foydalanuvchi va uning firmalari |
+| POST | `/api/vipiska/upload`, `/api/vipiska/sample`, `/api/vipiska/recheck` | Vipiska tahlili |
+| POST | `/api/post` | Qoralama yozish (Buxgalter/Egasi) |
+| GET/POST/PUT/DELETE | `/api/firms…` | Firmalar (Egasi) |
+| GET/POST/PUT | `/api/users…` | Foydalanuvchilar (Egasi) |
+| GET | `/api/audit` | Jurnal (Egasi) |
 | POST | `/api/chat` | AI Copilot |
-| GET/POST | `/api/settings` | Sozlamalar (maxfiy kalitlar maskalanadi) |
-| GET | `/api/1c/metadata` | `$metadata` tekshiruvi |
-
----
 
 ## 🧪 Avtomatik testlar
 
@@ -138,10 +159,12 @@ templates/index.html Tailwind + Alpine.js + Lucide + telegram-web-app.js
 .venv/bin/python -m pytest -q
 ```
 
-47 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+60 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
-bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi.
+bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi va boshqa firmaning vipiskasi.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
+
+**Zaxira nusxa:** `data/` papkasini (ayniqsa `app.db` va `secret.key`) muntazam nusxalang.
 
 ## ⚠️ Cheklovlar
 - Demo 1C bazasi xotirada saqlanadi — server qayta ishga tushganda qoralamalar o'chadi (jadval holati esa

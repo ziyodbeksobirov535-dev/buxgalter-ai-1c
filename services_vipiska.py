@@ -52,6 +52,7 @@ class BankRow:
 class Statement:
     rows: list[BankRow]
     own_account: str = ""
+    own_inn: str = ""  # vipiska egasi (tashkilot) STIR'i — fayl sarlavhasidan yoki hujjatlardan
     source: str = ""
     warnings: list[str] = field(default_factory=list)
     is_sample: bool = False  # namuna (test) vipiska — jonli 1C ga hech qachon yozilmaydi
@@ -182,11 +183,14 @@ def _rows_from_table(table: list[list]) -> Statement:
         raise StatementError("Vipiska sarlavha qatori topilmadi. Kerakli ustunlar: Sana, Hujjat №, "
                              "Debet/Kredit (yoki Summa), Kontragent, STIR, To'lov maqsadi.")
     st = Statement(rows=[])
-    for k in range(header_idx):  # sarlavha ustidagi qatorlardan o'z hisob raqamini topish
+    for k in range(header_idx):  # sarlavha ustidagi qatorlardan o'z hisob raqami va STIR'ini topish
         text = " ".join(str(c) for c in table[k] if c is not None)
         m = re.search(r"(\d{20})", text)
         if m and not st.own_account:
             st.own_account = m.group(1)
+        m = re.search(r"(?:STIR|ИНН|INN)\D{0,6}(\d{9})\b", text, re.IGNORECASE)
+        if m and not st.own_inn:
+            st.own_inn = m.group(1)
 
     def cell(row, kind):
         j = mapping.get(kind)
@@ -299,6 +303,10 @@ def parse_1c_exchange(content: bytes) -> Statement:
         elif line.startswith("СекцияДокумент="):
             doc = {}
         elif line == "КонецДокумента" and doc is not None:
+            if st.own_account and not st.own_inn:
+                for side in ("Плательщик", "Получатель"):
+                    if clean_code(doc.get(f"{side}Счет") or doc.get(f"{side}РасчСчет")) == st.own_account:
+                        st.own_inn = clean_code(doc.get(f"{side}ИНН"))
             row, n = _exchange_doc(doc, st.own_account), doc.get("Номер", "?")
             if row is None:
                 st.warnings.append(f"№{n}: sana o'qilmadi ({doc.get('Дата')!r}) — hujjat o'tkazib yuborildi")
@@ -460,7 +468,8 @@ def finalize_row(row: dict) -> None:
         row["account_badge"] = "🤖 AI taxmini (1C tarixi yo'q)"
 
 
-async def analyze_statement(st: Statement, onec: OneCService, previous: list[dict] | None = None) -> list[dict]:
+async def analyze_statement(st: Statement, onec: OneCService, previous: list[dict] | None = None,
+                            firm_blockers: list[str] | None = None) -> list[dict]:
     prev = {p["id"]: p for p in previous or []}
     seen: set[tuple] = set()
     flags = []
@@ -475,6 +484,16 @@ async def analyze_statement(st: Statement, onec: OneCService, previous: list[dic
         extra.append(f"💱 Valyuta hisobi (kod {st.currency_code}) — hozircha faqat so'm (UZS) hisoblari yoziladi")
     org = await onec.organization()
     org_inn = str((org or {}).get(FIELDS["inn"], "") or "")
+    if not org:
+        extra.append("🏢 1C da tanlangan firmaning tashkiloti (STIR bo'yicha) topilmadi — firma sozlamalarini tekshiring")
+    else:
+        if st.own_inn and org_inn and st.own_inn != org_inn:
+            extra.append(f"🏢 Vipiska STIR {st.own_inn} ga tegishli, tanlangan firma esa STIR {org_inn} — "
+                         "boshqa firmaning vipiskasi bo'lishi mumkin")
+        if st.own_account and not await onec.find_org_bank_account(st.own_account):
+            extra.append(f"🏦 Vipiskadagi hisob raqami {st.own_account} tanlangan firmaning 1C dagi bank hisoblari "
+                         "orasida yo'q — vipiska boshqa firmaniki bo'lishi mumkin")
+    extra.extend(firm_blockers or [])
     return list(await asyncio.gather(*(analyze_bank_row(r, onec, prev.get(r.id), f, extra, org_inn)
                                        for r, f in zip(st.rows, flags))))
 

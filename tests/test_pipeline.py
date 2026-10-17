@@ -7,6 +7,7 @@ import pytest
 import core
 from services_1c import DemoOData, ODataError, OneCService
 from services_vipiska import BankRow, Statement, analyze_statement
+from tests.conftest import DEMO_FIRM
 
 
 def run(coro):
@@ -18,7 +19,7 @@ def by_number(rows):
 
 
 def test_sample_statement_classification():
-    s = core.get_session("t")
+    s = core.get_session("t", DEMO_FIRM)
     snap = run(core.load_sample(s))
     rows = by_number(snap["rows"])
     assert {n for n, r in rows.items() if r["status"] == "duplicate"} == {"112", "45", "118"}
@@ -30,21 +31,21 @@ def test_sample_statement_classification():
 
 
 def test_post_creates_unposted_drafts_and_blocks_reupload():
-    s = core.get_session("t")
+    s = core.get_session("t", DEMO_FIRM)
     snap = run(core.load_sample(s))
     res = run(core.post(s, "vipiska", [r["id"] for r in snap["rows"]]))
     assert res["ok"] == 4 and res["failed"] == 4
-    onec = core.get_onec()
+    onec = core.get_onec(DEMO_FIRM)
     drafts = [d for e in ("Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета")
               for d in onec.t.db[e] if d.get("Комментарий", "").startswith("BUXGALTER AI")]
     assert len(drafts) == 4 and all(d["Posted"] is False for d in drafts)
     assert all(d.get("ВалютаДокумента_Key") and d.get("СчетБанк_Key") for d in drafts)  # tarixdan to'ldirilgan
-    again = run(core.load_sample(core.get_session("t2")))
+    again = run(core.load_sample(core.get_session("t2", DEMO_FIRM)))
     assert sum(r["status"] == "duplicate" for r in again["rows"]) == 7
 
 
 def test_force_requires_overridable_and_never_posts_exact_duplicates():
-    s = core.get_session("t")
+    s = core.get_session("t", DEMO_FIRM)
     rows = by_number(run(core.load_sample(s))["rows"])
     res = run(core.post(s, "vipiska", [], force_ids=[rows["112"]["id"]], force_reason="sinov"))
     assert res["ok"] == 0 and "Majburan yozib bo'lmaydi" in res["results"][0]["message"]
@@ -52,7 +53,7 @@ def test_force_requires_overridable_and_never_posts_exact_duplicates():
     assert res["ok"] == 1
     posted = by_number(res["rows"])["124"]
     assert posted["forced"] and posted["status"] == "posted"
-    comment = next(d["Комментарий"] for d in core.get_onec().t.db["Document_ПоступлениеНаРасчетныйСчет"]
+    comment = next(d["Комментарий"] for d in core.get_onec(DEMO_FIRM).t.db["Document_ПоступлениеНаРасчетныйСчет"]
                    if d.get("Ref_Key") == posted["posted_ref"])
     assert "MAJBURAN" in comment and "alohida to'lov" in comment
 
@@ -75,9 +76,9 @@ class LiveDemo(DemoOData):
 
 def test_sample_never_posts_to_live_1c(monkeypatch):
     live = OneCService(LiveDemo())
-    monkeypatch.setattr(core, "get_onec", lambda: live)
-    monkeypatch.setattr(core, "onec_fingerprint", lambda: "live")
-    s = core.get_session("t")
+    monkeypatch.setattr(core, "get_onec", lambda *a: live)
+    monkeypatch.setattr(core, "onec_fingerprint", lambda *a: "live")
+    s = core.get_session("t", DEMO_FIRM)
     snap = run(core.load_sample(s))
     assert snap["is_sample"] and snap["kpis"]["ready"] == 0
     assert all(any("Test" in b for b in r["blockers"]) for r in snap["rows"])
@@ -86,19 +87,19 @@ def test_sample_never_posts_to_live_1c(monkeypatch):
 
 
 def test_post_refused_when_1c_settings_changed_after_analysis(monkeypatch):
-    s = core.get_session("t")
+    s = core.get_session("t", DEMO_FIRM)
     run(core.load_sample(s))
-    monkeypatch.setattr(core, "onec_fingerprint", lambda: "boshqa-1c")
+    monkeypatch.setattr(core, "onec_fingerprint", lambda *a: "boshqa-1c")
     with pytest.raises(ODataError, match="qayta tekshirish"):
         run(core.post(s, "vipiska", [r["id"] for r in s.vipiska]))
     assert core.snapshot(s)["stale"]
 
 
 def test_session_survives_restart():
-    s = core.get_session("persist")
+    s = core.get_session("persist", DEMO_FIRM)
     run(core.load_sample(s))
     core.SESSIONS.clear()
-    restored = core.get_session("persist")
+    restored = core.get_session("persist", DEMO_FIRM)
     assert restored.statement.is_sample and len(restored.vipiska) == 8
     assert restored.statement.rows[0].date == date(2026, 10, 1)
 
@@ -116,9 +117,9 @@ class SlowDemo(DemoOData):
 
 def test_parallel_posts_of_same_rows_create_each_draft_once(monkeypatch):
     slow = OneCService(SlowDemo())
-    monkeypatch.setattr(core, "get_onec", lambda: slow)
-    monkeypatch.setattr(core, "onec_fingerprint", lambda: "slow")
-    s1, s2 = core.get_session("web"), core.get_session("tg")
+    monkeypatch.setattr(core, "get_onec", lambda *a: slow)
+    monkeypatch.setattr(core, "onec_fingerprint", lambda *a: "slow")
+    s1, s2 = core.get_session("web", DEMO_FIRM), core.get_session("tg", DEMO_FIRM)
 
     async def scenario():  # bitta event loop — server'dagi kabi
         await core.load_sample(s1)

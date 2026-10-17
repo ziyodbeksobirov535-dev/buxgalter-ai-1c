@@ -98,7 +98,7 @@ class ToolContext:
     async def t_analyze_and_deduplicate_vipiska(self) -> dict:
         note = None
         if not self.session.statement:
-            if core.get_onec().mode == "live":
+            if core.onec_for(self.session).mode == "live":
                 return {"xato": "Vipiska yuklanmagan. 📥 Bank vipiskasini yuklang — jonli 1C rejimida test (namuna) "
                                 "fayl avtomatik ishlatilmaydi."}
             snap = await core.load_sample(self.session)
@@ -114,7 +114,7 @@ class ToolContext:
         return {"manba": snap["source"], "kpi": snap["kpis"], "qatorlar": [_brief(r) for r in snap["rows"]]}
 
     async def t_learn_from_1c_history(self, stir: str = "") -> dict:
-        onec = core.get_onec()
+        onec = core.onec_for(self.session)
         kontr = await onec.find_counterparty(str(stir))
         if not kontr:
             return {"xato": f"STIR {stir} bo'yicha kontragent 1C da topilmadi"}
@@ -145,7 +145,7 @@ class ToolContext:
 
     async def t_cash_flow_summary(self) -> dict:
         if not self.session.vipiska:
-            if core.get_onec().mode == "live":
+            if core.onec_for(self.session).mode == "live":
                 return {"xato": "Vipiska yuklanmagan — avval bank vipiskasini yuklang."}
             await core.load_sample(self.session)
             self.refresh.add("vipiska")

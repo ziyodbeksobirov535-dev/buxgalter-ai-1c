@@ -5,10 +5,11 @@ import types as pytypes
 import config
 import core
 import services_ai
+from tests.conftest import DEMO_FIRM
 
 
 def test_demo_ai_post_request_shows_confirmation_card_but_posts_nothing():
-    s = core.get_session("ai")
+    s = core.get_session("ai", DEMO_FIRM)
     res = asyncio.run(services_ai.chat(s, "Yangi vipiskalarni 1C ga kirit", "vipiska"))
     assert res["engine"] == "mock"
     assert [c["type"] for c in res["cards"]] == ["confirm_post"] and res["cards"][0]["count"] == 4
@@ -33,6 +34,6 @@ def test_gemini_retired_model_falls_back(monkeypatch):
     import google.genai
     monkeypatch.setattr(google.genai, "Client", FakeClient)
     config.save_settings({"ai_provider": "gemini", "gemini_api_key": "k", "gemini_model": "gemini-retired"})
-    res = asyncio.run(services_ai.chat(core.get_session("ai"), "salom", "vipiska"))
+    res = asyncio.run(services_ai.chat(core.get_session("ai", DEMO_FIRM), "salom", "vipiska"))
     assert used == ["gemini-retired", services_ai.GEMINI_FALLBACK_MODEL]
     assert res["engine"] == "gemini" and "Salom" in res["reply"] and "yopilgan" in res["reply"]

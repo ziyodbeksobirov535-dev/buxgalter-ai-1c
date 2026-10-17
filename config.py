@@ -20,7 +20,8 @@ SAMPLE_VIPISKA = BASE_DIR / "sample_bank_vipiska.xlsx"
 
 load_dotenv(BASE_DIR / ".env")
 
-# UI orqali o'zgartiriladigan sozlamalar
+# UI orqali o'zgartiriladigan UMUMIY sozlamalar (AI). 1C va Didox ulanishlari har bir firma uchun alohida —
+# ular data/app.db da shifrlangan holda saqlanadi (db.py).
 DEFAULTS: dict[str, object] = {
     "ai_provider": "gemini",  # gemini | openai | claude | mock
     "gemini_api_key": "",
@@ -29,26 +30,14 @@ DEFAULTS: dict[str, object] = {
     "openai_model": "gpt-4.1-mini",
     "anthropic_api_key": "",
     "anthropic_model": "claude-sonnet-5-5",
-    "onec_demo_mode": True,
-    "onec_base_url": "",  # masalan: http://server/buh_uz  (…/odata/standard.odata avtomatik qo'shiladi)
-    "onec_user": "",
-    "onec_password": "",
-    "onec_org_inn": "",  # bir nechta tashkilot bo'lsa — qaysi STIR bo'yicha ishlash
-    "didox_demo_mode": True,
-    "didox_base_url": "https://api-partners.didox.uz",
-    "didox_user_key": "",
-    "didox_partner_token": "",
 }
-SECRET_KEYS = {"gemini_api_key", "openai_api_key", "anthropic_api_key", "onec_password",
-               "didox_user_key", "didox_partner_token"}
-BOOL_KEYS = {"onec_demo_mode", "didox_demo_mode"}
+SECRET_KEYS = {"gemini_api_key", "openai_api_key", "anthropic_api_key"}
+BOOL_KEYS: set[str] = set()
 MASK = "••••••••"
 
 # Faqat .env orqali (UI dan o'zgartirilmaydi — xavfsizlik uchun)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
-APP_ACCESS_TOKEN = os.getenv("APP_ACCESS_TOKEN", "").strip()
-ALLOWED_TELEGRAM_IDS = {int(x) for x in os.getenv("ALLOWED_TELEGRAM_IDS", "").replace(" ", "").split(",") if x.isdigit()}
 HOST = os.getenv("HOST", "127.0.0.1")
 # Qaysi Host nomlari bilan kelgan so'rovlar qabul qilinadi (DNS rebinding hujumidan himoya).
 # WEBAPP_URL domeni avtomatik qo'shiladi; qo'shimchalarini vergul bilan: ALLOWED_HOSTS=192.168.1.10,buh.local
@@ -82,22 +71,8 @@ def get_settings() -> dict:
     return s
 
 
-# Maxfiy qiymat qaysi manzil/loginga tegishli: manzil yoki login o'zgarsa va yangi parol berilmasa, eski parol
-# o'chiriladi. Aks holda saqlangan 1C paroli boshqa (masalan, begona) serverga yuborilib ketishi mumkin.
-SECRET_BOUND_TO = {
-    "onec_password": ("onec_base_url", "onec_user"),
-    "didox_user_key": ("didox_base_url",),
-    "didox_partner_token": ("didox_base_url",),
-}
-
-
-def _norm(v: object) -> str:
-    return str(v or "").strip().rstrip("/").lower()
-
-
 def save_settings(updates: dict) -> dict:
     with _lock:
-        before = get_settings()
         stored = {}
         if SETTINGS_FILE.exists():
             try:
@@ -110,11 +85,7 @@ def save_settings(updates: dict) -> dict:
             if key in SECRET_KEYS and (value is None or value == MASK):
                 continue  # maskalangan qiymat qaytdi — eski kalitni saqlab qolamiz
             stored[key] = _to_bool(value) if key in BOOL_KEYS else (str(value).strip() if value is not None else "")
-        for secret, deps in SECRET_BOUND_TO.items():
-            target_changed = any(k in updates and _norm(updates[k]) != _norm(before[k]) for k in deps)
-            new_secret_given = updates.get(secret) not in (None, MASK)
-            if target_changed and not new_secret_given:
-                stored[secret] = ""
+        stored = {k: v for k, v in stored.items() if k in DEFAULTS}  # eski (firma) kalitlari qayta yozilmasin
         SETTINGS_FILE.write_text(json.dumps(stored, ensure_ascii=False, indent=2), "utf-8")
         try:
             os.chmod(SETTINGS_FILE, 0o600)

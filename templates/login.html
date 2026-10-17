@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="uz" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BUXGALTER AI — Kirish</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script>tailwind.config = { darkMode: 'class', theme: { extend: { fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] } } } };</script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>[x-cloak] { display: none !important; } body { -webkit-font-smoothing: antialiased; }</style>
+  <script>
+    try { if ((localStorage.getItem('bx_theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')) === 'dark') document.documentElement.classList.add('dark'); } catch (e) {}
+  </script>
+</head>
+<body class="h-full bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100 font-sans">
+<main x-data="loginPage()" x-init="init()" x-cloak class="min-h-full flex items-center justify-center p-4">
+  <div class="w-full max-w-sm">
+    <div class="flex items-center gap-3 justify-center mb-6">
+      <div class="h-11 w-11 rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 grid place-items-center text-xl shadow-sm">🏦</div>
+      <div>
+        <div class="text-lg font-bold tracking-tight">BUXGALTER AI</div>
+        <div class="text-xs text-slate-500 dark:text-slate-400">1C:Buxgalteriya (O'zbekiston 3.0)</div>
+      </div>
+    </div>
+
+    <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-6">
+      <template x-if="state === 'loading'"><div class="text-sm text-slate-500 text-center">Yuklanmoqda…</div></template>
+
+      <template x-if="state === 'setup-blocked'">
+        <div class="text-sm space-y-2">
+          <h1 class="font-semibold text-base">Tizim hali sozlanmagan</h1>
+          <p class="text-slate-600 dark:text-slate-300">Birinchi "Egasi" akkauntini faqat dastur o'rnatilgan kompyuterning o'zidan yaratish mumkin: <b>http://127.0.0.1:8000/login</b></p>
+        </div>
+      </template>
+
+      <template x-if="state === 'setup' || state === 'login'">
+        <form @submit.prevent="submit()" class="space-y-4">
+          <div>
+            <h1 class="font-semibold text-base" x-text="state === 'setup' ? 'Egasi akkauntini yarating' : 'Tizimga kirish'"></h1>
+            <p x-show="state === 'setup'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Birinchi ishga tushirish. Bu akkaunt barcha firmalar, foydalanuvchilar va sozlamalarni boshqaradi.</p>
+          </div>
+          <div x-show="state === 'setup'">
+            <label class="block text-xs text-slate-500 mb-1" for="full_name">Ism-familiya</label>
+            <input id="full_name" x-model="full_name" autocomplete="name" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1" for="username">Login</label>
+            <input id="username" x-model="username" required autocomplete="username" autocapitalize="none" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1" for="password">Parol</label>
+            <input id="password" type="password" x-model="password" required :autocomplete="state === 'setup' ? 'new-password' : 'current-password'" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+            <p x-show="state === 'setup'" class="mt-1 text-xs text-slate-500">Kamida 8 belgi.</p>
+          </div>
+          <div x-show="state === 'setup'">
+            <label class="block text-xs text-slate-500 mb-1" for="password2">Parolni takrorlang</label>
+            <input id="password2" type="password" x-model="password2" autocomplete="new-password" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm">
+          </div>
+          <div x-show="error" class="rounded-lg bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-sm px-3 py-2" x-text="error"></div>
+          <button :disabled="busy" class="w-full rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-sm font-semibold py-2.5"
+                  x-text="busy ? '⏳ …' : (state === 'setup' ? 'Akkauntni yaratish' : 'Kirish')"></button>
+        </form>
+      </template>
+    </div>
+    <p class="mt-4 text-center text-xs text-slate-400">5 marta xato kiritilsa, login 15 daqiqaga to'xtatiladi.</p>
+  </div>
+</main>
+<script>
+function loginPage() {
+  return {
+    state: 'loading', username: '', password: '', password2: '', full_name: '', error: '', busy: false,
+    async init() {
+      const me = await fetch('/api/auth/me');
+      if (me.ok) { location.replace('/'); return; }
+      const s = await fetch('/api/auth/state').then(r => r.json());
+      this.state = s.needs_setup ? (s.setup_allowed ? 'setup' : 'setup-blocked') : 'login';
+    },
+    async submit() {
+      this.error = '';
+      if (this.state === 'setup' && this.password !== this.password2) { this.error = 'Parollar mos emas'; return; }
+      this.busy = true;
+      try {
+        const url = this.state === 'setup' ? '/api/auth/setup' : '/api/auth/login';
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: this.username, password: this.password, full_name: this.full_name }) });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) { this.error = body.detail || ('Xato ' + r.status); this.password = ''; return; }
+        location.replace('/');
+      } catch (e) { this.error = "Server bilan aloqa yo'q"; }
+      finally { this.busy = false; }
+    },
+  };
+}
+</script>
+</body>
+</html>

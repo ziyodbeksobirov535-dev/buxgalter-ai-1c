@@ -48,6 +48,12 @@
         </div>
       </div>
 
+      <!-- Firma tanlagich -->
+      <select x-show="firms.length" :value="firmId" @change="switchFirm(+$event.target.value)" title="Firma"
+              class="max-w-[60vw] sm:max-w-[240px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium px-2 py-1.5">
+        <template x-for="f in firms" :key="f.id"><option :value="f.id" :selected="f.id===firmId" x-text="'🏢 ' + f.name"></option></template>
+      </select>
+
       <!-- Rejim tablari -->
       <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-sm order-3 lg:order-none w-full lg:w-auto">
         <button @click="switchMode('vipiska')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
@@ -78,6 +84,17 @@
           <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">🔄 Didox'dan yuklash</button>
         </template>
         <button @click="openSettings()" title="Sozlamalar" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5">⚙️<span class="hidden xl:inline"> Sozlamalar</span></button>
+        <div class="relative" x-data="{ open: false }" @click.outside="open = false">
+          <button @click="open = !open" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5 max-w-[180px] truncate"
+                  :title="me?.user.role_label" x-text="'👤 ' + (me?.user.full_name || me?.user.username || '')"></button>
+          <div x-show="open" x-transition class="absolute right-0 mt-1 w-60 z-30 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg p-1 text-sm">
+            <div class="px-3 py-2 text-xs text-slate-500" x-text="(me?.user.username || '') + ' · ' + (me?.user.role_label || '')"></div>
+            <button @click="open = false; openSettings('account')" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">🔑 Parol va Telegram</button>
+            <button x-show="me?.is_owner" @click="open = false; openSettings('firms')" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">🏢 Firmalar</button>
+            <button x-show="me?.is_owner" @click="open = false; openSettings('users')" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">👥 Foydalanuvchilar</button>
+            <button x-show="!isTg" @click="logout()" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-600">🚪 Chiqish</button>
+          </div>
+        </div>
         <button @click="toggleTheme()" :title="dark ? 'Yorug\' rejim' : 'To\'q rejim'" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5" x-text="dark ? '☀️' : '🌙'"></button>
       </div>
       <input type="file" x-ref="file" class="hidden" accept=".xlsx,.xlsm,.csv,.txt" @change="upload($event.target.files[0]); $event.target.value=''">
@@ -129,7 +146,7 @@
         </div>
 
         <!-- Bo'sh holat -->
-        <template x-if="!rows.length && !loading">
+        <template x-if="!rows.length && !loading && !noFirms">
           <div class="rounded-2xl border-2 border-dashed p-8 text-center bg-white dark:bg-slate-900"
                :class="drag ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-300 dark:border-slate-700'">
             <div class="text-4xl" x-text="mode==='vipiska' ? '🏦' : '📑'"></div>
@@ -162,6 +179,15 @@
         </div>
 
         <!-- Ogohlantirishlar -->
+        <template x-for="f in (snap?.owner_firms || [])" :key="f.id">
+          <div class="rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
+            <span x-text="'🏢 Bu vipiska «' + f.name + '» firmasiga tegishli ko'rinadi — joriy firmaga yozilmaydi.'"></span>
+            <button @click="moveToFirm(f)" class="ml-auto text-xs rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1" x-text="'«' + f.name + '» ga o'tib tekshirish'"></button>
+          </div>
+        </template>
+        <div x-show="noFirms" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm">
+          <div class="text-3xl">🏢</div><p class="mt-2">Sizga hali hech qanday firma biriktirilmagan — "Egasi"ga murojaat qiling.</p>
+        </div>
         <div x-show="snap?.stale" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
           <span>⚠️ 1C sozlamalari tahlildan keyin o'zgargan — yozishdan oldin qayta tekshiring.</span>
           <button @click="recheck()" class="ml-auto text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1">🔄 1C da qayta tekshirish</button>
@@ -204,7 +230,7 @@
                 <template x-for="r in rows" :key="r.id">
                   <tr :class="rowClass(r)">
                     <td class="px-2 py-2.5 align-top">
-                      <input type="checkbox" class="rounded disabled:opacity-30" :disabled="!r.selectable" :checked="isSel(r.id)" @change="toggleSel(r.id)"
+                      <input type="checkbox" class="rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)"
                              :title="r.selectable ? 'Tanlash' : 'Bloklangan: ' + (r.blockers[0] || r.status_label)">
                     </td>
                     <td class="px-2 py-2.5 align-top whitespace-nowrap">
@@ -225,7 +251,7 @@
                     <td class="px-2 py-2.5 align-top max-w-[240px] hidden 2xl:table-cell"><div class="text-xs text-slate-600 dark:text-slate-300 line-clamp-2" :title="r.purpose" x-text="r.purpose"></div></td>
                     <td class="px-2 py-2.5 align-top">
                       <select class="text-sm rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 border px-2 py-1 disabled:opacity-60"
-                              :disabled="r.posted || r.status==='duplicate'" @change="changeAccount(r, $event.target.value)">
+                              :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
                         <template x-for="a in (snap?.account_choices || [])" :key="a">
                           <option :value="a" :selected="a===r.account" x-text="a"></option>
                         </template>
@@ -241,7 +267,7 @@
                     <td class="px-2 py-2.5 align-top">
                       <div class="flex flex-col items-end gap-1 whitespace-nowrap">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">👁 Tekshirish</button>
-                      <button x-show="r.selectable" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      <button x-show="r.selectable && canPost" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
                       </div>
                     </td>
                   </tr>
@@ -255,7 +281,7 @@
             <template x-for="r in rows" :key="r.id">
               <div class="p-3" :class="rowClass(r)">
                 <div class="flex items-start gap-2">
-                  <input type="checkbox" class="mt-1 rounded disabled:opacity-30" :disabled="!r.selectable" :checked="isSel(r.id)" @change="toggleSel(r.id)">
+                  <input type="checkbox" class="mt-1 rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)">
                   <div class="min-w-0 flex-1">
                     <div class="flex items-start justify-between gap-2">
                       <div class="font-medium truncate" x-text="r.counterparty_name"></div>
@@ -265,7 +291,7 @@
                     <div class="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-2" x-text="r.purpose"></div>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                       <span class="text-[11px] font-medium px-2 py-0.5 rounded-lg" :class="statusClass(r.status)" x-text="r.status_label"></span>
-                      <select class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate'" @change="changeAccount(r, $event.target.value)">
+                      <select class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
                         <template x-for="a in (snap?.account_choices || [])" :key="a"><option :value="a" :selected="a===r.account" x-text="a"></option></template>
                       </select>
                     </div>
@@ -275,7 +301,7 @@
                     <div x-show="r.overridable" class="text-[11px] text-amber-600">👁 Tekshirish orqali baribir yozish mumkin</div>
                     <div class="mt-2 flex gap-2">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1">👁 Tekshirish</button>
-                      <button x-show="r.selectable" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      <button x-show="r.selectable && canPost" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
                     </div>
                   </div>
                 </div>
@@ -291,7 +317,8 @@
           <span x-text="'Tanlangan: ' + selCount() + ' ta · ' + fmt(selSum()) + ' so\'m'"></span>
           <span class="hidden sm:inline"> · 🛡️ Dublikat va farqli qatorlarni tanlab bo'lmaydi</span>
         </div>
-        <button @click="askPost(selectedIds())" :disabled="!selCount() || posting"
+        <span x-show="!canPost" class="ml-auto text-xs text-slate-500">👁 Kuzatuvchi rejimi — 1C ga yozish huquqi yo'q</span>
+        <button x-show="canPost" @click="askPost(selectedIds())" :disabled="!selCount() || posting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="posting ? '⏳ 1C ga yozilmoqda…' : '✅ Faqat yangi (dublikat bo\'lmagan) ' + selCount() + ' ta hujjatni 1C ga Qoralama kiritish'"></button>
       </div>
@@ -462,7 +489,7 @@
             <pre class="px-3 pb-3 text-[11px] overflow-x-auto thin-scroll" x-text="JSON.stringify(inspect.payload, null, 2)"></pre>
           </details>
 
-          <div x-show="inspect.row.overridable" class="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 space-y-2">
+          <div x-show="inspect.row.overridable && canPost" class="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 space-y-2">
             <div class="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠️ Bu 1C dagi hujjatdan boshqa, alohida operatsiyami?</div>
             <p class="text-xs text-amber-900/80 dark:text-amber-200/80">Agar aniq bilsangiz, qatorni baribir qoralama sifatida yozish mumkin. Sabab 1C hujjatining izohiga yoziladi. To'liq mos dublikatni (raqam + sana + summa + kontragent) hech qachon yozib bo'lmaydi.</p>
             <textarea x-model="forceReason" rows="2" maxlength="300" placeholder="Sabab: masalan, bir kunda ikkita alohida to'lov (hisob-faktura №…)" class="w-full rounded-lg border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs"></textarea>
@@ -471,8 +498,8 @@
 
           <div class="flex flex-wrap justify-end gap-2 pt-2">
             <button @click="inspect=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Yopish</button>
-            <button x-show="inspect.row.selectable" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
-            <button x-show="inspect.row.overridable" @click="doForce(inspect.row.id)" :disabled="!forceAck || forceReason.trim().length < 5 || posting"
+            <button x-show="inspect.row.selectable && canPost" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
+            <button x-show="inspect.row.overridable && canPost" @click="doForce(inspect.row.id)" :disabled="!forceAck || forceReason.trim().length < 5 || posting"
                     class="rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2">⚠️ Baribir 1C ga yozish</button>
           </div>
         </div>
@@ -482,74 +509,207 @@
 
   <!-- ===================== SOZLAMALAR MODALI ===================== -->
   <div x-show="settingsOpen" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="settingsOpen=false">
-    <div @click.outside="settingsOpen=false" class="w-full sm:max-w-xl max-h-[90dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-5 space-y-5 text-sm">
-      <div class="flex items-center"><h3 class="font-semibold text-base">⚙️ Sozlamalar</h3><button @click="settingsOpen=false" class="ml-auto text-slate-400">✕</button></div>
+    <div @click.outside="settingsOpen=false" class="w-full sm:max-w-3xl h-[90dvh] sm:h-[85dvh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl text-sm">
+      <div class="shrink-0 flex items-center px-5 pt-4 pb-2"><h3 class="font-semibold text-base">⚙️ Sozlamalar</h3><button @click="settingsOpen=false" class="ml-auto text-slate-400" aria-label="Yopish">✕</button></div>
+      <div class="shrink-0 flex gap-1 overflow-x-auto thin-scroll px-5 pb-2 border-b border-slate-200 dark:border-slate-800">
+        <template x-for="t in settingsTabs()" :key="t.id">
+          <button @click="openTab(t.id)" class="shrink-0 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap"
+                  :class="settingsTab===t.id ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'" x-text="t.label"></button>
+        </template>
+      </div>
 
-      <section class="space-y-2">
-        <div class="font-semibold">🤖 AI dvigateli</div>
-        <select x-model="settings.ai_provider" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <option value="gemini">Google Gemini (bepul) — tavsiya etiladi</option>
-          <option value="openai">OpenAI (zaxira)</option>
-          <option value="claude">Anthropic Claude (zaxira)</option>
-          <option value="mock">Demo AI (kalitsiz)</option>
-        </select>
-        <div x-show="settings.ai_provider==='gemini'" class="space-y-2">
-          <div class="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 p-3 text-xs text-emerald-800 dark:text-emerald-300">
-            🎁 Bepul Gemini API kalitini 30 soniyada oling:
-            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" @click="openExternal($event)" class="font-semibold underline">aistudio.google.com/app/apikey</a>
-            → "Create API key" → nusxa oling va shu yerga qo'ying.
+      <div class="flex-1 overflow-y-auto thin-scroll p-5 space-y-5">
+        <!-- ---- Joriy firma ---- -->
+        <section x-show="settingsTab==='firm'" class="space-y-4">
+          <div class="grid sm:grid-cols-2 gap-3">
+            <label class="block"><span class="text-xs text-slate-500">Firma nomi</span>
+              <input x-model="firmForm.name" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+            <label class="block"><span class="text-xs text-slate-500">STIR (1C dagi tashkilot)</span>
+              <input x-model="firmForm.inn" inputmode="numeric" maxlength="9" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
           </div>
-          <label class="block text-xs text-slate-500">Gemini API kaliti</label>
-          <input type="password" x-model="settings.gemini_api_key" autocomplete="off" placeholder="AIza…" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <label class="block text-xs text-slate-500">Model</label>
-          <input x-model="settings.gemini_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-        </div>
-        <div x-show="settings.ai_provider==='openai'" class="grid grid-cols-2 gap-2">
-          <input type="password" x-model="settings.openai_api_key" placeholder="OpenAI API kaliti" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <input x-model="settings.openai_model" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-        </div>
-        <div x-show="settings.ai_provider==='claude'" class="grid grid-cols-2 gap-2">
-          <input type="password" x-model="settings.anthropic_api_key" placeholder="Anthropic API kaliti" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <input x-model="settings.anthropic_model" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-        </div>
-      </section>
+          <label class="block"><span class="text-xs text-slate-500">Bank hisob raqamlari (vergul bilan, ixtiyoriy) — boshqa firmaning vipiskasini aniqlash uchun</span>
+            <input x-model="firmForm.bank_accounts" placeholder="20208000100123456001, 20208000…" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
 
-      <section class="space-y-2">
-        <div class="font-semibold">🗄️ 1C OData ulanishi</div>
-        <label class="flex items-center gap-2"><input type="checkbox" x-model="settings.onec_demo_mode" class="rounded"> Demo 1C bazasi (sinov uchun, real 1C ga tegmaydi)</label>
-        <div x-show="!settings.onec_demo_mode" class="space-y-2">
-          <input x-model="settings.onec_base_url" placeholder="http://server/buh_uz  (…/odata/standard.odata)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <p class="text-xs text-slate-500">🔐 Manzil yoki login o'zgarsa, xavfsizlik uchun saqlangan parol o'chiriladi — parolni qayta kiriting.</p>
-          <div class="grid grid-cols-2 gap-2">
-            <input x-model="settings.onec_user" placeholder="1C foydalanuvchi" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            <input type="password" x-model="settings.onec_password" placeholder="Parol" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">🗄️ 1C OData ulanishi</div>
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.onec_demo_mode" class="rounded"> Demo 1C bazasi (sinov uchun, real 1C ga tegmaydi)</label>
+            <div x-show="!firmForm.onec_demo_mode" class="space-y-2">
+              <input x-model="firmForm.onec_base_url" placeholder="https://1c.uzcloud.uz/a/bpuz/1234" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <div class="grid grid-cols-2 gap-2">
+                <input x-model="firmForm.onec_user" placeholder="1C foydalanuvchi" autocomplete="off" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                <input type="password" x-model="firmForm.onec_password" placeholder="Parol" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              </div>
+              <p class="text-xs text-slate-500">🔐 Parol shifrlangan holda saqlanadi. Manzil yoki login o'zgarsa, eski parol o'chiriladi — qayta kiriting. Xato login bilan dastur 1C ga faqat bir marta urinadi.</p>
+            </div>
           </div>
-          <input x-model="settings.onec_org_inn" placeholder="Tashkilot STIR (bir nechta tashkilot bo'lsa)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <p class="text-xs text-slate-500">Maslahat: 1C uchun alohida, faqat kerakli huquqlarga ega foydalanuvchi yarating.</p>
-        </div>
-        <button @click="testOneC()" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5">🔌 Saqlash va 1C ulanishini tekshirish</button>
-        <div x-show="onecTest" class="text-xs whitespace-pre-line" x-text="onecTest"></div>
-      </section>
 
-      <section class="space-y-2">
-        <div class="font-semibold">📑 Didox</div>
-        <label class="flex items-center gap-2"><input type="checkbox" x-model="settings.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
-        <div x-show="!settings.didox_demo_mode" class="space-y-2">
-          <input x-model="settings.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <input type="password" x-model="settings.didox_user_key" placeholder="Didox user-key" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          <input type="password" x-model="settings.didox_partner_token" placeholder="Partner token (ixtiyoriy)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-        </div>
-      </section>
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">📑 Didox</div>
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
+            <div x-show="!firmForm.didox_demo_mode" class="space-y-2">
+              <input x-model="firmForm.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            </div>
+          </div>
+          <div x-show="onecTest" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs whitespace-pre-line" x-text="onecTest"></div>
+          <div class="flex flex-wrap justify-end gap-2">
+            <button @click="saveFirm(true)" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">🔌 Saqlash va 1C ni tekshirish</button>
+            <button @click="saveFirm(false)" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button>
+          </div>
+        </section>
 
-      <section x-show="!isTg" class="space-y-2">
-        <div class="font-semibold">🔐 Masofadan kirish tokeni</div>
-        <p class="text-xs text-slate-500">Server tashqi manzil (tunnel) orqali ochilganda kerak — .env dagi APP_ACCESS_TOKEN. Faqat shu brauzerda saqlanadi.</p>
-        <input type="password" x-model="accessToken" @change="saveToken()" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-      </section>
+        <!-- ---- Firmalar ---- -->
+        <section x-show="settingsTab==='firms'" class="space-y-4">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+            <template x-for="f in allFirms" :key="f.id">
+              <div class="flex flex-wrap items-center gap-2 px-3 py-2.5" :class="f.active ? '' : 'opacity-50'">
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium truncate" x-text="f.name"></div>
+                  <div class="text-xs text-slate-500" x-text="(f.inn ? 'STIR ' + f.inn + ' · ' : '') + (f.onec_demo_mode ? '1C: Demo' : '1C: ' + (f.onec_base_url || '—')) + (f.active ? '' : ' · o\'chirilgan')"></div>
+                </div>
+                <button x-show="f.active" @click="switchFirm(f.id); openTab('firm')" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1">✏️ Sozlash</button>
+                <button x-show="f.active" @click="deactivateFirm(f)" class="text-xs rounded-lg border border-rose-300 text-rose-600 dark:border-rose-900 px-2.5 py-1">O'chirish</button>
+              </div>
+            </template>
+          </div>
+          <form @submit.prevent="addFirm()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">➕ Yangi firma</div>
+            <div class="grid sm:grid-cols-[1fr_160px_auto] gap-2">
+              <input x-model="newFirm.name" required placeholder="Firma nomi" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input x-model="newFirm.inn" placeholder="STIR" inputmode="numeric" maxlength="9" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Qo'shish</button>
+            </div>
+            <p class="text-xs text-slate-500">Yangi firma Demo rejimda yaratiladi — keyin "✏️ Sozlash" orqali 1C manzili va loginini kiriting.</p>
+          </form>
+        </section>
 
-      <div class="flex justify-end gap-2 pt-1">
-        <button @click="settingsOpen=false" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">Bekor qilish</button>
-        <button @click="saveSettings()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button>
+        <!-- ---- Foydalanuvchilar ---- -->
+        <section x-show="settingsTab==='users'" class="space-y-4">
+          <template x-for="u in users" :key="u.id">
+            <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2" :class="u.active ? '' : 'opacity-60'">
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium" x-text="(u.full_name || u.username) + (u.id === me?.user.id ? ' (siz)' : '')"></div>
+                  <div class="text-xs text-slate-500" x-text="u.username + (u.telegram_id ? ' · 📱 Telegram bog\'langan' : '') + (u.last_login_at ? ' · oxirgi kirish ' + fmtTs(u.last_login_at) : '')"></div>
+                </div>
+                <select x-model="u.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
+                  <option value="owner">Egasi</option><option value="accountant">Buxgalter</option><option value="viewer">Kuzatuvchi</option>
+                </select>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="u.active" class="rounded"> Faol</label>
+              </div>
+              <div x-show="u.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                <span class="text-slate-500">Firmalar:</span>
+                <template x-for="f in allFirms.filter(f => f.active)" :key="f.id">
+                  <label class="flex items-center gap-1"><input type="checkbox" class="rounded" :checked="u.firm_ids.includes(f.id)" @change="toggleId(u.firm_ids, f.id)"><span x-text="f.name"></span></label>
+                </template>
+              </div>
+              <div x-show="u.role === 'owner'" class="text-xs text-slate-500">Egasi barcha firmalarni ko'radi.</div>
+              <div class="flex flex-wrap items-center gap-2">
+                <input type="password" x-model="u.new_password" placeholder="Yangi parol (ixtiyoriy)" autocomplete="new-password" class="flex-1 min-w-[160px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
+                <button @click="saveUser(u)" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5">💾 Saqlash</button>
+              </div>
+            </div>
+          </template>
+          <form @submit.prevent="addUser()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">➕ Yangi foydalanuvchi</div>
+            <div class="grid sm:grid-cols-2 gap-2">
+              <input x-model="newUser.username" required placeholder="Login" autocomplete="off" autocapitalize="none" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input x-model="newUser.full_name" placeholder="Ism-familiya" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="newUser.password" required placeholder="Parol (kamida 8 belgi)" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <select x-model="newUser.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                <option value="accountant">Buxgalter — yuklaydi va 1C ga yozadi</option>
+                <option value="viewer">Kuzatuvchi — faqat ko'radi</option>
+                <option value="owner">Egasi — hamma narsa</option>
+              </select>
+            </div>
+            <div x-show="newUser.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              <span class="text-slate-500">Firmalar:</span>
+              <template x-for="f in allFirms.filter(f => f.active)" :key="f.id">
+                <label class="flex items-center gap-1"><input type="checkbox" class="rounded" :checked="newUser.firm_ids.includes(f.id)" @change="toggleId(newUser.firm_ids, f.id)"><span x-text="f.name"></span></label>
+              </template>
+            </div>
+            <div class="flex justify-end"><button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Qo'shish</button></div>
+          </form>
+        </section>
+
+        <!-- ---- AI ---- -->
+        <section x-show="settingsTab==='ai'" class="space-y-2">
+          <select x-model="settings.ai_provider" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <option value="gemini">Google Gemini (bepul) — tavsiya etiladi</option>
+            <option value="openai">OpenAI (zaxira)</option>
+            <option value="claude">Anthropic Claude (zaxira)</option>
+            <option value="mock">Demo AI (kalitsiz)</option>
+          </select>
+          <div x-show="settings.ai_provider==='gemini'" class="space-y-2">
+            <div class="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+              🎁 Bepul Gemini API kalitini 30 soniyada oling:
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" @click="openExternal($event)" class="font-semibold underline">aistudio.google.com/app/apikey</a>
+              → "Create API key" → nusxa oling va shu yerga qo'ying.
+            </div>
+            <input type="password" x-model="settings.gemini_api_key" autocomplete="off" placeholder="Gemini API kaliti (AIza…)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input x-model="settings.gemini_model" placeholder="Model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <div x-show="settings.ai_provider==='openai'" class="space-y-2">
+            <input type="password" x-model="settings.openai_api_key" placeholder="OpenAI API kaliti" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input x-model="settings.openai_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <div x-show="settings.ai_provider==='claude'" class="space-y-2">
+            <input type="password" x-model="settings.anthropic_api_key" placeholder="Anthropic API kaliti" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input x-model="settings.anthropic_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <p class="text-xs text-slate-500">AI sozlamalari barcha firmalar uchun umumiy.</p>
+          <div class="flex justify-end"><button @click="saveAi()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button></div>
+        </section>
+
+        <!-- ---- Jurnal ---- -->
+        <section x-show="settingsTab==='audit'" class="space-y-2">
+          <p class="text-xs text-slate-500">Kim, qachon, qaysi firmada nima qilgani (oxirgi 100 ta).</p>
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+            <template x-for="a in audit" :key="a.id">
+              <div class="px-3 py-2 flex flex-wrap gap-x-3 gap-y-0.5">
+                <span class="text-slate-500 num" x-text="fmtTs(a.ts)"></span>
+                <span class="font-medium" x-text="a.user || '—'"></span>
+                <span x-show="a.firm" class="text-slate-500" x-text="'🏢 ' + a.firm"></span>
+                <span x-text="actionLabel(a)"></span>
+              </div>
+            </template>
+            <div x-show="!audit.length" class="px-3 py-4 text-slate-500 text-center">Hozircha yozuv yo'q</div>
+          </div>
+        </section>
+
+        <!-- ---- Akkaunt ---- -->
+        <section x-show="settingsTab==='account'" class="space-y-5">
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs" x-text="'👤 ' + (me?.user.full_name || me?.user.username || '') + ' · ' + (me?.user.username || '') + ' · ' + (me?.user.role_label || '')"></div>
+          <form x-show="!isTg" @submit.prevent="changePassword()" class="space-y-2">
+            <div class="font-semibold">🔑 Parolni o'zgartirish</div>
+            <input type="text" :value="me?.user.username" autocomplete="username" class="hidden" aria-hidden="true">
+            <input type="password" x-model="pwd.old" required placeholder="Joriy parol" autocomplete="current-password" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <div class="grid sm:grid-cols-2 gap-2">
+              <input type="password" x-model="pwd.new1" required placeholder="Yangi parol (kamida 8 belgi)" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="pwd.new2" required placeholder="Yangi parolni takrorlang" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            </div>
+            <p class="text-xs text-slate-500">Parol o'zgarganda boshqa barcha qurilmalardan chiqariladi.</p>
+            <div class="flex justify-end"><button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Parolni o'zgartirish</button></div>
+          </form>
+          <div class="space-y-2">
+            <div class="font-semibold">📱 Telegram'ni bog'lash</div>
+            <template x-if="me?.user.telegram_id">
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span>✅ Bog'langan (ID <span x-text="me.user.telegram_id"></span>)</span>
+                <button @click="unlinkTg()" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1">Uzish</button>
+              </div>
+            </template>
+            <template x-if="!me?.user.telegram_id">
+              <div class="space-y-2 text-xs">
+                <p class="text-slate-500" x-show="me?.telegram_bot">Kod oling va uni botga yuboring — shundan keyin bot va Mini App sizni taniydi.</p>
+                <p class="text-slate-500" x-show="!me?.telegram_bot">Telegram bot sozlanmagan (.env dagi TELEGRAM_BOT_TOKEN).</p>
+                <button x-show="me?.telegram_bot" @click="getTgCode()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5">Kod olish</button>
+                <div x-show="tgCode" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">Botga yuboring: <code class="text-base font-semibold" x-text="'/link ' + tgCode"></code> <span class="text-slate-500">(10 daqiqa amal qiladi)</span></div>
+              </div>
+            </template>
+          </div>
+        </section>
       </div>
     </div>
   </div>
@@ -573,7 +733,13 @@ function app() {
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
     settingsOpen: false, settings: {}, onecTest: '', inspect: null, confirmBox: null, forceReason: '', forceAck: false,
-    tg: window.Telegram && window.Telegram.WebApp, isTg: false, sid: '', accessToken: '',
+    tg: window.Telegram && window.Telegram.WebApp, isTg: false,
+    me: null, firms: [], firmId: null, noFirms: false, lastFile: null,
+    settingsTab: 'account', firmForm: {}, allFirms: [], users: [], audit: [], tgCode: '',
+    newFirm: { name: '', inn: '' }, newUser: { username: '', full_name: '', password: '', role: 'accountant', firm_ids: [] },
+    pwd: { old: '', new1: '', new2: '' },
+
+    get canPost() { return !!(this.me && this.me.can_post); },
 
     get snap() { return this.data[this.mode]; },
     get rows() { return (this.snap && this.snap.rows) || []; },
@@ -583,25 +749,51 @@ function app() {
     async init() {
       this.isTg = !!(this.tg && this.tg.initData);
       if (this.isTg) { this.tg.ready(); this.tg.expand(); }
-      let saved = null;
-      try { saved = localStorage.getItem('bx_theme'); this.accessToken = localStorage.getItem('bx_token') || '';
-            this.sid = localStorage.getItem('bx_sid') || ''; } catch (e) {}
-      if (!this.sid) { this.sid = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).replace(/-/g, '');
-                       try { localStorage.setItem('bx_sid', this.sid); } catch (e) {} }
+      let saved = null, savedFirm = null;
+      try { saved = localStorage.getItem('bx_theme'); savedFirm = +localStorage.getItem('bx_firm'); } catch (e) {}
       this.dark = saved ? saved === 'dark' : (this.isTg ? this.tg.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
       this.applyTheme();
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
       if (window.lucide) lucide.createIcons();
+      this.me = await this.api('/api/auth/me');
+      if (!this.me) return;
+      this.firms = this.me.firms;
+      if (!this.firms.length) { this.noFirms = true; return; }
+      const preferred = this.isTg ? this.me.user.tg_firm_id : savedFirm;
+      this.firmId = (this.firms.find(f => f.id === preferred) || this.firms[0]).id;
+      await this.loadFirmData();
+    },
+    async loadFirmData() {
       await this.loadStatus();
       const [v, d] = await Promise.all([this.api('/api/session?mode=vipiska'), this.api('/api/session?mode=didox')]);
       if (v) this.setSnap(v); if (d && d.rows.length) this.setSnap(d);
     },
+    async switchFirm(id) {
+      if (!id || id === this.firmId) return;
+      this.firmId = id;
+      try { localStorage.setItem('bx_firm', String(id)); } catch (e) {}
+      this.data = { vipiska: null, didox: null }; this.selected = { vipiska: [], didox: [] };
+      this.status = { onec: {}, ai: {} }; this.inspect = null; this.mode = 'vipiska';
+      this.chat = [{ role: 'model', html: this.md(WELCOME) }];
+      await this.loadFirmData();
+      const f = this.firms.find(x => x.id === id);
+      if (f) this.toast('🏢 ' + f.name, 'info');
+    },
+    async moveToFirm(f) {
+      const file = this.lastFile;
+      await this.switchFirm(f.id);
+      if (file) await this.upload(file); else this.toast("Vipiska faylini shu firmada qayta yuklang", 'info');
+    },
+    async logout() {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      location.replace('/login');
+    },
 
     // ---------------- API
     headers(extra = {}) {
-      const h = { 'X-Session-Id': this.sid, ...extra };
+      const h = { ...extra };
+      if (this.firmId) h['X-Firm-Id'] = String(this.firmId);
       if (this.isTg) h['X-Telegram-Init-Data'] = this.tg.initData;
-      if (this.accessToken) h['Authorization'] = 'Bearer ' + this.accessToken;
       return h;
     },
     async api(path, opts = {}) {
@@ -611,8 +803,8 @@ function app() {
         const r = await fetch(path, o);
         const body = await r.json().catch(() => ({}));
         if (!r.ok) {
-          if (r.status === 401 && !this.isTg) this.toast("🔐 " + (body.detail || 'Kirish tokeni kerak') + " — ⚙️ Sozlamalarda kiriting", 'error');
-          else this.toast('⚠️ ' + (body.detail || ('Xato ' + r.status)), 'error');
+          if (r.status === 401 && !this.isTg) { location.replace('/login'); return null; }
+          this.toast('⚠️ ' + (body.detail || ('Xato ' + r.status)), 'error');
           return null;
         }
         return body;
@@ -638,6 +830,7 @@ function app() {
     async upload(file) {
       if (!file) return;
       this.mode = 'vipiska'; this.mobileTab = 'table';
+      this.lastFile = file;
       const fd = new FormData(); fd.append('file', file);
       const s = await this.busy("📥 " + file.name + " o'qilmoqda, 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/upload', { method: 'POST', body: fd }));
       if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("✅ " + s.rows.length + " ta qator tahlil qilindi", 'ok'); }
@@ -737,19 +930,97 @@ function app() {
     scrollChat() { this.$nextTick(() => { const b = this.$refs.chatBox; if (b) b.scrollTop = b.scrollHeight; }); },
 
     // ---------------- sozlamalar
-    async openSettings() { const s = await this.api('/api/settings'); if (s) { this.settings = s; this.onecTest = ''; this.settingsOpen = true; } },
-    async saveSettings(close = true) {
+    settingsTabs() {
+      const all = [{ id: 'firm', label: '🏢 Joriy firma' }, { id: 'firms', label: '🗂 Firmalar' }, { id: 'users', label: '👥 Foydalanuvchilar' },
+                   { id: 'ai', label: '🤖 AI' }, { id: 'audit', label: '📜 Jurnal' }, { id: 'account', label: '👤 Akkaunt' }];
+      return this.me?.is_owner ? all : all.filter(t => t.id === 'account');
+    },
+    async openSettings(tab) {
+      this.onecTest = ''; this.tgCode = '';
+      this.settingsOpen = true;
+      await this.openTab(tab || (this.me?.is_owner ? 'firm' : 'account'));
+    },
+    async openTab(tab) {
+      this.settingsTab = tab;
+      if (tab === 'firm') { const f = (await this.api('/api/firms') || []).find(x => x.id === this.firmId); if (f) this.firmForm = { ...f }; }
+      if (tab === 'firms' || tab === 'users') this.allFirms = await this.api('/api/firms') || [];
+      if (tab === 'users') this.users = (await this.api('/api/users') || []).map(u => ({ ...u, new_password: '' }));
+      if (tab === 'ai') { const st = await this.api('/api/settings'); if (st) this.settings = st; }
+      if (tab === 'audit') this.audit = await this.api('/api/audit?limit=100') || [];
+    },
+    async refreshFirms() {
+      const me = await this.api('/api/auth/me');
+      if (me) { this.me = me; this.firms = me.firms; this.noFirms = !me.firms.length; }
+    },
+    async saveFirm(test) {
+      this.onecTest = '';
+      const f = await this.api('/api/firms/' + this.firmId, { method: 'PUT', json: this.firmForm });
+      if (!f) return;
+      this.firmForm = { ...f };
+      await this.refreshFirms();
+      if (!test) { this.toast('💾 Firma saqlandi', 'ok'); await this.loadStatus(); return; }
+      this.onecTest = '⏳ 1C tekshirilmoqda…';
+      const res = await this.api('/api/firms/' + this.firmId + '/test', { json: {} });
+      if (!res) { this.onecTest = ''; return; }
+      if (!res.onec.ok) { this.onecTest = '🔴 ' + (res.onec.error || "Ulanib bo'lmadi"); }
+      else this.onecTest = '🟢 1C ga ulanildi (' + res.onec.label + ')' + (res.metadata ? (res.metadata.ok ? '\n🟢 Barcha kerakli OData obyektlari nashr qilingan'
+        : '\n🟡 Nashr qilinmagan: ' + res.metadata.missing.join(', ') + '\n' + res.metadata.hint) : '');
+      await this.loadStatus();
+    },
+    async addFirm() {
+      const f = await this.api('/api/firms', { json: { ...this.newFirm, onec_demo_mode: true, didox_demo_mode: true } });
+      if (!f) return;
+      this.newFirm = { name: '', inn: '' };
+      await this.refreshFirms();
+      await this.switchFirm(f.id);
+      await this.openTab('firm');
+      this.toast('🏢 Firma qo\'shildi — endi 1C ulanishini sozlang', 'ok');
+    },
+    async deactivateFirm(f) {
+      if (!confirm('«' + f.name + '» firmasi o\'chirilsinmi? (Ma\'lumotlar o\'chmaydi, faqat ro\'yxatdan yashiriladi)')) return;
+      if (!await this.api('/api/firms/' + f.id, { method: 'DELETE' })) return;
+      await this.refreshFirms(); this.allFirms = await this.api('/api/firms') || [];
+      if (f.id === this.firmId && this.firms.length) await this.switchFirm(this.firms[0].id);
+    },
+    toggleId(list, id) { const i = list.indexOf(id); i >= 0 ? list.splice(i, 1) : list.push(id); },
+    async saveUser(u) {
+      const body = { role: u.role, active: u.active, firm_ids: u.firm_ids };
+      if (u.new_password) body.password = u.new_password;
+      const res = await this.api('/api/users/' + u.id, { method: 'PUT', json: body });
+      if (res) { Object.assign(u, res, { new_password: '' }); this.toast('💾 ' + res.username + ' saqlandi', 'ok'); }
+    },
+    async addUser() {
+      const res = await this.api('/api/users', { json: this.newUser });
+      if (!res) return;
+      this.newUser = { username: '', full_name: '', password: '', role: 'accountant', firm_ids: [] };
+      this.users.push({ ...res, new_password: '' });
+      this.toast('👤 ' + res.username + ' qo\'shildi', 'ok');
+    },
+    async saveAi() {
       const res = await this.api('/api/settings', { json: this.settings });
-      if (res) { this.settings = res.settings; this.status.onec = res.onec; this.status.ai = res.ai; if (close) { this.settingsOpen = false; this.toast('💾 Sozlamalar saqlandi', 'ok'); } }
-      return res;
+      if (res) { this.settings = res.settings; this.status.ai = res.ai; this.toast('💾 AI sozlamalari saqlandi', 'ok'); }
     },
-    async testOneC() {
-      const res = await this.saveSettings(false); if (!res) return;
-      if (!res.onec.ok) { this.onecTest = '🔴 ' + (res.onec.error || 'Ulanib bo\'lmadi'); return; }
-      const meta = await this.api('/api/1c/metadata');
-      this.onecTest = '🟢 1C ga ulanildi (' + res.onec.label + ')' + (meta ? (meta.ok ? '\n🟢 Barcha kerakli OData obyektlari nashr qilingan' : '\n🟡 Nashr qilinmagan: ' + meta.missing.join(', ') + '\n' + meta.hint) : '');
+    async changePassword() {
+      if (this.pwd.new1 !== this.pwd.new2) { this.toast('⚠️ Yangi parollar mos emas', 'error'); return; }
+      const res = await this.api('/api/auth/password', { json: { old_password: this.pwd.old, new_password: this.pwd.new1 } });
+      if (res) { this.pwd = { old: '', new1: '', new2: '' }; this.toast('🔑 Parol o\'zgartirildi', 'ok'); }
     },
-    saveToken() { try { localStorage.setItem('bx_token', this.accessToken); } catch (e) {} this.loadStatus(); },
+    async getTgCode() { const r = await this.api('/api/auth/telegram-code', { json: {} }); if (r) this.tgCode = r.code; },
+    async unlinkTg() { if (await this.api('/api/auth/telegram', { method: 'DELETE' })) await this.refreshFirms(); },
+    actionLabel(a) {
+      const d = a.details || {};
+      const map = {
+        login: '🔓 Tizimga kirdi', login_failed: '⛔ Xato login: ' + (d.username || ''), setup: '🆕 Egasi akkaunti yaratildi',
+        password_changed: '🔑 Parol o\'zgartirildi', telegram_linked: '📱 Telegram bog\'landi', telegram_unlinked: '📱 Telegram uzildi',
+        firm_created: '🏢 Firma qo\'shildi: ' + (d.name || ''), firm_updated: '🏢 Firma sozlamalari: ' + (d.fields || []).join(', '),
+        firm_deactivated: '🏢 Firma o\'chirildi', user_created: '👤 Foydalanuvchi qo\'shildi: ' + (d.username || ''),
+        user_updated: '👤 ' + (d.username || '') + ': ' + (d.fields || []).join(', '), ai_settings_updated: '🤖 AI sozlamalari',
+        vipiska_uploaded: '📥 Vipiska: ' + (d.file || '') + ' (' + (d.rows ?? '?') + ' qator)',
+        posted_to_1c: '✅ 1C ga qoralama: ' + (d.ok ?? 0) + ' ta' + (d.failed ? ', bloklandi ' + d.failed : '') + (d.forced ? ' · ⚠️ majburan: ' + (d.reason || '') : ''),
+      };
+      return map[a.action] || a.action;
+    },
+    fmtTs(ts) { try { return new Date(ts).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }); } catch (e) { return ts; } },
     openExternal(ev) { if (this.isTg) { ev.preventDefault(); this.tg.openLink(ev.currentTarget.href); } },
 
     // ---------------- ko'rinish

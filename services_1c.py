@@ -494,8 +494,8 @@ class OneCService:
         org = await self.organization()
         if not org:
             return None
-        acc = await self.find_bank_account(org["Ref_Key"], E_ORG, account_no) if account_no else None
-        return acc or await self.find_bank_account(org["Ref_Key"], E_ORG, None)
+        # Hisob raqami berilgan bo'lsa — FAQAT aniq mos hisob. Boshqa hisobga "jimgina" yozib yubormaslik uchun.
+        return await self.find_bank_account(org["Ref_Key"], E_ORG, account_no or None)
 
     async def find_nomenclature(self, name: str, ikpu: str | None = None) -> dict | None:
         async def f():
