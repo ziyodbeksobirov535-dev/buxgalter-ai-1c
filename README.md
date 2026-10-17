@@ -6,7 +6,7 @@ schyotlarni **buxgalterning oldingi 1C yozuvlaridan o'rganadigan** va yangi hujj
 
 - 🖥️ Split-screen Web App (70% jadval / 30% AI Copilot), yorug'/to'q rejim, 100% o'zbek tilida
 - 📱 Telegram bot + Telegram Mini App (WebApp)
-- 🤖 Bepul **Google Gemini** (`gemini-2.5-flash`) + Function Calling; kalitsiz ham Demo AI ishlaydi
+- 🤖 Bepul **Google Gemini** (`gemini-3.8-flash`) + Function Calling; kalitsiz ham Demo AI ishlaydi
 - 🛡️ Dublikat himoyasi: Raqam + Sana + Summa + Kontragent_Key
 - 🧠 Tarixdan o'rganish: `ВидОперации`, schyot (60.10 / 40.10 / 64.10 / 94.20), shartnoma, ДДС moddasi
 

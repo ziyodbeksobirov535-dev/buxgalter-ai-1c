@@ -23,7 +23,7 @@ load_dotenv(BASE_DIR / ".env")
 DEFAULTS: dict[str, object] = {
     "ai_provider": "gemini",  # gemini | openai | claude | mock
     "gemini_api_key": "",
-    "gemini_model": "gemini-2.5-flash",
+    "gemini_model": "gemini-3.8-flash",
     "openai_api_key": "",
     "openai_model": "gpt-4.1-mini",
     "anthropic_api_key": "",

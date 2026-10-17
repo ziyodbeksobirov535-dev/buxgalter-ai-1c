@@ -1,4 +1,4 @@
-"""AI Buxgalter Copilot: Google Gemini (bepul, gemini-2.5-flash) + Function Calling.
+"""AI Buxgalter Copilot: Google Gemini (bepul, gemini-3.8-flash) + Function Calling.
 
 Gemini quyidagi vositalarni (tools) chaqira oladi:
   analyze_and_deduplicate_vipiska(), check_didox_vs_1c(), learn_from_1c_history(stir),
@@ -242,7 +242,7 @@ async def _gemini(ctx: ToolContext, message: str, settings: dict) -> str:
 
     client = genai.Client(api_key=settings["gemini_api_key"])
     cfg = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT + f"\nJoriy rejim: {ctx.mode}.", temperature=0.2,
+        system_instruction=SYSTEM_PROMPT + f"\nJoriy rejim: {ctx.mode}.",
         tools=[types.Tool(function_declarations=[types.FunctionDeclaration(**d) for d in TOOL_DECLARATIONS])],
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
     contents = [types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part.from_text(text=m["text"])])
@@ -258,7 +258,8 @@ async def _gemini(ctx: ToolContext, message: str, settings: dict) -> str:
         for fc in calls:
             result = await ctx.run(fc.name, dict(fc.args or {}))
             parts.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
-        contents.append(types.Content(role="tool", parts=parts))
+        # Gemini 3.x "tool" rolini qabul qilmaydi — vosita natijalari "user" roli bilan qaytariladi
+        contents.append(types.Content(role="user", parts=parts))
     return "Vositalar ko'p marta chaqirildi — savolni aniqroq yozing."
 
 
