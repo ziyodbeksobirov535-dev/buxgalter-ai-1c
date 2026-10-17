@@ -39,14 +39,14 @@ vipiska egasi (sarlavhadagi hisob nomi) bo'yicha to'g'ri firma taklif qilinadi.
 
 **Shartnoma to'lov maqsadidan:** "дог№50 от 10.09.2026", "11.10.2026 yildagi 398 shartnomaga", "Shartnoma N_434",
 "№440 шартномага", "17-sonli shartnoma" kabi yozuvlardan raqam va sana olinadi va 1C dan aynan shu kontragentning
-o'sha shartnomasi qidiriladi. Topilmasa — qator bloklanadi (noto'g'ri shartnomaga yozilmasligi uchun). Raqam
-1C da topilmasa — yangi shartnoma sifatida 1C ga kiritishda yaratiladi; raqam bo'lmasa — 1C tarixidagi shartnoma.
+o'sha shartnomasi qidiriladi. Raqam 1C da topilmasa — bu yangi shartnoma bo'yicha birinchi to'lov deb hisoblanadi
+va shartnoma 1C ga kiritishda yaratiladi; raqam bo'lmasa — 1C tarixidagi shartnoma.
 
 **Ko'rish rejimi:** real 1C javob bermasa (masalan, OData'da obyektlar hali nashr qilinmagan) vipiska baribir
 ko'rsatiladi — schyotlar qoidalar/standart bo'yicha, shartnoma to'lov maqsadidan, "⚪ 1C da tekshirilmadi" belgisi
 bilan; yozish imkonsiz. 1C ulangach "🔄 1C da qayta tekshirish".
 
-### Namuna vipiska — sinov stsenariysi (8 qator)
+### Namuna vipiska — sinov stsenariysi (14 qator, faqat 🧪 Demo firmada)
 
 | # | Holat | Nima tekshiriladi |
 |---|-------|-------------------|
@@ -56,8 +56,12 @@ bilan; yozish imkonsiz. 1C ulangach "🔄 1C da qayta tekshirish".
 | №53 (QQS to'lovi) | 🟡 Yangi → **64.10** | 🧠 1C tarixidan `ПеречислениеНалога` |
 | №54 (bank komissiyasi) | 🟡 Yangi → **94.20** | 🧠 1C tarixidan `ПрочееСписание` |
 | №124 | 🔴 Farq bor | Summa tafovuti: faylda 19 500 000, 1C da 19 050 000 |
+| №16 / №17 / №18 | 🟡 Yangi → **65.20 / 64.10 / 65.20** | Soliq kodlari: 36 (ijtimoiy soliq), 46 (JShDS), 101 (INPS) |
+| №141 | 🟡 Yangi → **57.10** | Terminal (Humo/Uzcard) tushumi |
+| №58 | 🟡 Yangi → **55.20** | Korporativ karta (KPK) |
+| №57 | ⛔ To'siq | Ish haqi — 1C da vedomost bilan qo'lda |
 
-4 ta yangi qatorni kiritgach, shu faylni **qayta yuklang** — endi 7 ta qator dublikat sifatida bloklanadi.
+9 ta yangi qatorni kiritgach, shu faylni **qayta yuklang** — endi ular ham dublikat sifatida bloklanadi.
 Bu ikki marta kiritish imkonsizligini isbotlaydi.
 
 ---
@@ -192,6 +196,11 @@ Fayl turi sarlavhalardan avtomatik aniqlanadi; qayta yuklash dublikat yaratmaydi
 jadvalini (📚) o'rganadi va vipiskani qayta tekshiradi: dublikat (raqam/sana/summa/kontragent), shartnoma, schyot.
 1C manzili kiritilgan, lekin OData javob bermasa — avtomatik shu fayllar bo'yicha ishlaydi.
 
+**📋 Tekshiruv ro'yxati (Excel)** — jadval ustidagi tugma: har qator qaysi schyot, avans schyoti va shartnomaga
+tushishi kerakligi, holati va qarz/avans izohi. Import faylini 1C ga yuklagach solishtirish uchun.
+
+Telegram botda ham fayl rejimida «📤 1C import fayli» tugmasi chiqadi — fayl chatga yuboriladi.
+
 **2. Yozish (📤 1C import fayli):** jadval pastidagi tugma faqat yangi (1C da yo'q, to'siqsiz) qatorlardan
 `kl_to_1c_….txt` (1CClientBankExchange 1.03, Windows-1251) tayyorlaydi. 1C da: **Банк и касса → Банковские выписки →
 Загрузить** (Обмен с банком) → faylni tanlang → ro'yxatni ko'rib **Загрузить**. Bu formatda schyot maydoni yo'q —
@@ -253,6 +262,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 | GET/POST/PUT/DELETE | `/api/rules…` | Hisob qoidalari; `/api/rules/learn` — 1C tarixidan o'rganish |
 | GET/POST/DELETE | `/api/1c-files…` | 1C Excel eksportlari (o'qish, o'rganish, o'chirish) |
 | POST | `/api/vipiska/export-1c` | 1C ga import fayli (1CClientBankExchange) |
+| GET | `/api/vipiska/checklist` | 📋 Tekshiruv ro'yxati (Excel): schyot, avans, shartnoma |
 | POST | `/api/chat` | AI Copilot |
 
 ## 🧪 Avtomatik testlar
@@ -262,7 +272,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-154 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+167 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
@@ -276,6 +286,9 @@ Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
   1C da qo'lda kiritiladi.
 - "🔴 Farq bor" yoki "raqamsiz mos kelgan" qatorni 👁 Tekshirish oynasida sabab yozib, baribir yozish mumkin;
   to'liq dublikat (raqam + sana + summa + kontragent) hech qachon yozilmaydi.
+- 🧪 Namuna vipiska va Didox demo hisob-fakturalari faqat Demo firmada ishlaydi — haqiqiy firmada o'ylab topilgan
+  ma'lumot 1C bilan solishtirilmaydi. Didox uchun firma sozlamasida API kalitini kiriting.
+- Didox EHF da QQS stavkasi qator bo'yicha olinadi (12% / 0% / QQSsiz); stavka ko'rsatilmasa — 12%.
 - Didox partner API endpoint/maydon nomlari shartnomaga qarab farq qiladi — `services_didox.py`
   (`DIDOX_LIST_PATH`, `_map_invoice`) ni o'z hujjatlaringizga moslang.
 - Sessiyalar server xotirasida (bitta jarayon uchun mo'ljallangan).

@@ -20,7 +20,9 @@ DIDOX_LIST_PATH = "/v1/documents"  # ?owner=0 (kiruvchi) &doctype=002 (hisob-fak
 
 
 class DidoxError(Exception):
-    pass
+    def __init__(self, message: str, status: int = 502):  # 502 — Didox serveri; 400 — sozlama yetishmaydi
+        super().__init__(message)
+        self.status = status
 
 
 def _demo_invoices() -> list[dict]:
@@ -30,10 +32,35 @@ def _demo_invoices() -> list[dict]:
         out.append({
             "id": inv["id"], "number": inv["number"], "date": inv["date"], "seller_inn": inv["seller_inn"],
             "seller_name": COUNTERPARTIES[inv["seller_inn"]][0], "total": inv["total"], "kind": inv["kind"],
-            "items": [{"name": n, "ikpu": NOMENCLATURE.get(n), "qty": q, "price": p,
+            "items": [{"name": n, "ikpu": NOMENCLATURE.get(n), "qty": q, "price": p, "vat_rate": 12.0,
                        "total": round(inv["total"] / len(inv["items"]), 2)} for n, q, p in inv["items"]],
         })
     return out
+
+
+VAT_DEFAULT = 12.0  # O'zbekistonda QQS stavkasi; EHF qatorida stavka ko'rsatilmasa
+
+
+def _vat_rate(it: dict) -> float | None:
+    """EHF qatoridagi QQS stavkasi: 12 / 0; "QQSsiz" (aylanma solig'i to'lovchisi) — 0. Noma'lum — None."""
+    if it.get("without_vat") in (True, 1, "1", "true"):
+        return 0.0
+    for k in ("vat_rate", "vatRate", "nds_rate"):
+        if it.get(k) not in (None, ""):
+            try:
+                return float(it[k])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def vat_rate_of(item: dict) -> float:
+    rate = item.get("vat_rate")
+    return VAT_DEFAULT if rate is None else float(rate)
+
+
+def vat_code(rate: float) -> str:
+    return "БезНДС" if rate <= 0 else f"НДС{int(rate) if float(rate).is_integer() else rate}"
 
 
 def _map_invoice(d: dict) -> dict:
@@ -45,7 +72,7 @@ def _map_invoice(d: dict) -> dict:
         return default
     items = [{"name": it.get("name") or it.get("product_name") or "", "ikpu": it.get("catalog_code") or it.get("ikpu"),
               "qty": float(it.get("count") or it.get("quantity") or 1), "price": float(it.get("price") or 0),
-              "total": float(it.get("delivery_sum_with_vat") or it.get("total") or 0)}
+              "total": float(it.get("delivery_sum_with_vat") or it.get("total") or 0), "vat_rate": _vat_rate(it)}
              for it in pick("items", "products", default=[]) or []]
     number = str(pick("doc_number", "number", "facturaNo", default=""))
     return {"id": str(pick("doc_id", "id", "_id", default=number)), "number": number,
@@ -84,17 +111,22 @@ async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None
            "purpose": f"EHF: {', '.join(i['name'] for i in inv['items'])}"[:300], "items": inv["items"],
            "doc_kind": inv.get("kind", "Товары"), "blockers": [], "posted": False, "posted_ref": None,
            "posted_number": None, "error": None, "learned": None}
-    kontr = await onec.find_counterparty(inv["seller_inn"])
+    readonly = onec.mode in ("offline", "file")  # 1C ga ulanmagan: xaridlar 1C bilan solishtirib bo'lmaydi
+    kontr = await onec.find_counterparty(inv["seller_inn"]) or await onec.find_counterparty_by_name(inv["seller_name"])
     row["counterparty_key"] = kontr["Ref_Key"] if kontr else None
     row["counterparty_1c_name"] = kontr.get("Description") if kontr else None
-    if not kontr:
+    if not kontr and not readonly:
         row["blockers"].append("Yetkazib beruvchi 1C da topilmadi (STIR bo'yicha)")
     for it in inv["items"]:
-        nom = await onec.find_nomenclature(it["name"], it.get("ikpu"))
+        nom = None if readonly else await onec.find_nomenclature(it["name"], it.get("ikpu"))
         it["nomenclature_key"] = nom["Ref_Key"] if nom else None
-        if not nom:
+        if not nom and not readonly:
             row["blockers"].append(f"Nomenklatura topilmadi: {it['name']} (IKPU {it.get('ikpu') or '—'})")
-    dup = await onec.check_duplicate(E_PURCHASE, inv["number"], d, inv["total"], row["counterparty_key"])
+    if readonly:
+        dup = {"status": "unchecked", "kind": "none", "match": None, "diffs": [],
+               "reason": "1C ga ulanmagan — xarid hujjatlari (Поступление товаров и услуг) bilan solishtirilmadi"}
+    else:
+        dup = await onec.check_duplicate(E_PURCHASE, inv["number"], d, inv["total"], row["counterparty_key"])
     row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"],
                dup_kind=dup.get("kind"))
     if dup["status"] != "duplicate" or dup.get("kind") == "weak":
@@ -120,10 +152,10 @@ async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None
     extra = (learned or {}).get("extra") or {}
     row["item_account"] = (await onec.account_code(extra.get("item_account_key"))
                            or ("94.20" if row["doc_kind"] == "Услуги" else "29.10"))
-    has_vat = any(round(it["total"] - it["total"] / 1.12, 2) > 0 for it in inv["items"])
+    has_vat = any(vat_rate_of(it) > 0 for it in inv["items"])
     row["vat_account"] = (await onec.account_code(extra.get("vat_account_key")) or VAT_ACCOUNT) if has_vat else ""
     row["posting_note"] = (f"Dt {row['item_account']}" + (f" + Dt {row['vat_account']} (QQS 12%)" if row["vat_account"] else "")
-                           + f" — Kt {{acc}}")
+                           + " — Kt {acc}")
     if prev and prev.get("posted"):
         row.update(posted=True, posted_ref=prev["posted_ref"], posted_number=prev["posted_number"], status="posted")
     finalize_row(row)
@@ -156,19 +188,22 @@ async def build_purchase_payload(row: dict, onec: OneCService) -> dict:
     if not contract_key:
         c = await onec.find_contract(row["counterparty_key"], "chiqim")
         contract_key = c["Ref_Key"] if c else None
-    vat_rate = (learned.get("extra") or {}).get("СтавкаНДС", "НДС12")
+    learned_rate = (learned.get("extra") or {}).get("СтавкаНДС")
     item_key = await onec.account_key(row["item_account"]) if row.get("item_account") else None
     vat_key = await onec.account_key(row["vat_account"]) if row.get("vat_account") else None
     item_field = "СчетЗатрат_Key" if row.get("doc_kind") == "Услуги" else "СчетУчета_Key"
     lines = []
     for i, it in enumerate(row["items"], 1):
-        total = it["total"]
-        net = round(total / 1.12, 2)
+        total, rate = it["total"], vat_rate_of(it)
+        net = round(total / (1 + rate / 100), 2)
+        code = vat_code(rate)
+        if rate == VAT_DEFAULT and learned_rate:  # 1C dagi aniq qiymat nomi (masalan "НДС12") tarixdan
+            code = learned_rate
         lines.append({k: v for k, v in {
             "LineNumber": str(i), "Номенклатура_Key": it["nomenclature_key"], "Количество": it["qty"],
             "Цена": round(net / it["qty"], 2) if it["qty"] else net, "Сумма": total,
-            "СтавкаНДС": vat_rate, "СуммаНДС": round(total - net, 2),
-            item_field: item_key, "СчетУчетаНДС_Key": vat_key}.items() if v is not None})
+            "СтавкаНДС": code, "СуммаНДС": round(total - net, 2),
+            item_field: item_key, "СчетУчетаНДС_Key": vat_key if rate > 0 else None}.items() if v is not None})
     common = await onec.common_fields(E_PURCHASE)
     return {
         **common,

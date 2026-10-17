@@ -22,6 +22,7 @@ import config
 import core
 import db
 import services_ai
+import services_files1c as files1c
 from services_1c import ODataError
 from services_vipiska import StatementError
 
@@ -93,11 +94,24 @@ async def need_context(m: Message) -> tuple[dict, dict, core.Session] | None:
     return ctx
 
 
+def file_mode(snap: dict) -> bool:
+    """1C ga to'g'ridan-to'g'ri ulanmagan: eksport fayllari bo'yicha yoki ko'rish rejimida tahlil qilingan."""
+    return bool(snap.get("files_mode") or snap.get("offline"))
+
+
+def source_label(snap: dict) -> str:
+    if snap.get("files_mode"):
+        return "eksport fayllari (OData'siz)"
+    if snap.get("offline"):
+        return "ulanmagan — ko'rish rejimi"
+    return "Demo baza" if snap.get("onec_mode") == "demo" else "OData"
+
+
 def summary_text(snap: dict, firm: dict, title: str = "🏦 Vipiska tahlili") -> str:
     k = snap["kpis"]
     lines = [f"🏢 <b>{html.escape(firm['name'])}</b>",
              f"<b>{title}</b>: {html.escape(snap.get('source') or '')}",
-             f"1C: {'Demo baza' if snap.get('onec_mode') == 'demo' else 'OData'}", "",
+             f"1C: {source_label(snap)}", "",
              f"Jami qatorlar: <b>{k['total']}</b>",
              f"🛡️ Dublikat (1C da bor, bloklandi): <b>{k['duplicates']}</b>",
              f"🟡 Yangi (kiritishga tayyor): <b>{k['ready']}</b> — {money(k['ready_sum'])}",
@@ -107,7 +121,7 @@ def summary_text(snap: dict, firm: dict, title: str = "🏦 Vipiska tahlili") ->
         lines.append(f"✅ Qoralama yozilgan: <b>{k['posted']}</b>")
     for w in snap.get("warnings", [])[:5]:
         lines.append(f"⚠️ {html.escape(w)}")
-    news = [r for r in snap["rows"] if r["selectable"]]
+    news = [r for r in snap["rows"] if (files1c.exportable(r) if file_mode(snap) else r["selectable"])]
     if news:
         lines += ["", "<b>Yangi qatorlar:</b>"]
         for r in news[:15]:
@@ -135,9 +149,15 @@ def post_button(session: core.Session, mode: str, ids: list[str], text: str) -> 
 
 def result_keyboard(snap: dict, user: dict, session: core.Session, mode: str = "vipiska") -> InlineKeyboardMarkup:
     rows = []
-    ready_ids = [r["id"] for r in snap["rows"] if r["selectable"]]
-    if ready_ids and user["role"] in auth.CAN_POST:
-        rows.append([post_button(session, mode, ready_ids, f"✅ Yangilarini 1C ga kiritish ({len(ready_ids)})")])
+    if mode == "vipiska" and file_mode(snap):  # 1C ga ulanmagan — import fayli (1C da "Загрузить")
+        n = sum(1 for r in snap["rows"] if files1c.exportable(r) and not r.get("exported_at"))
+        if n and user["role"] in auth.CAN_POST:
+            rows.append([InlineKeyboardButton(text=f"📤 1C import fayli ({n} ta yangi)",
+                                              callback_data=f"export:{session.firm_id}")])
+    else:
+        ready_ids = [r["id"] for r in snap["rows"] if r["selectable"]]
+        if ready_ids and user["role"] in auth.CAN_POST:
+            rows.append([post_button(session, mode, ready_ids, f"✅ Yangilarini 1C ga kiritish ({len(ready_ids)})")])
     btn = webapp_button("📱 Web App'da ko'rish")
     if btn:
         rows.append([btn])
@@ -154,7 +174,8 @@ async def cmd_start(m: Message) -> None:
     btn = webapp_button()
     if btn:
         kb.append([btn])
-    kb.append([InlineKeyboardButton(text="🧪 Test vipiskani tahlil qilish", callback_data="sample")])
+    if core.get_onec(firm["id"]).mode == "demo":  # namuna faqat Demo firmada
+        kb.append([InlineKeyboardButton(text="🧪 Test vipiskani tahlil qilish", callback_data="sample")])
     kb.append([InlineKeyboardButton(text="📑 Didox EHF vs 1C", callback_data="didox")])
     kb.append([InlineKeyboardButton(text=f"🏢 Firma: {firm['name'][:40]}", callback_data="firms")])
     note = "" if btn else ("\n\n<i>Web App tugmasi uchun .env da WEBAPP_URL=https://… (HTTPS tunnel) ni sozlang.</i>")
@@ -243,8 +264,9 @@ async def cmd_sample(m: Message) -> None:
         from demo_data import build_sample_xlsx
         build_sample_xlsx(config.SAMPLE_VIPISKA)
     await m.answer_document(BufferedInputFile(config.SAMPLE_VIPISKA.read_bytes(), "sample_bank_vipiska.xlsx"),
-                            caption="🧪 Test vipiska: 3 ta dublikat, 4 ta yangi, 1 ta farqli qator.\n"
-                                    "Shu faylni menga qayta yuboring — tahlil qilaman.")
+                            caption="🧪 Test vipiska (Demo firma uchun): 14 qator — 3 ta dublikat, 1 ta farqli, "
+                                    "1 ta ish haqi (vedomost bilan) va 9 ta yangi.\n"
+                                    "Demo firmada shu faylni menga qayta yuboring — tahlil qilaman.")
 
 
 @router.callback_query(F.data == "sample")
@@ -335,6 +357,38 @@ async def cb_post(c: CallbackQuery) -> None:
     lines.append("\n<i>Hujjatlar 1C da qoralama (Posted=false). Tekshirib, 1C ning o'zida o'tkazing.</i>")
     kb = [[b]] if (b := webapp_button("📱 Web App'da ko'rish")) else []
     await c.message.answer("\n".join(lines)[:4000], reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+
+@router.callback_query(F.data.startswith("export:"))
+async def cb_export(c: CallbackQuery) -> None:
+    """1C import fayli (1CClientBankExchange) — chatga fayl sifatida. 1C ga dastur o'zi hech narsa yozmaydi."""
+    user = user_of(c.from_user.id)
+    parts = (c.data or "").split(":")
+    if not user or len(parts) != 2 or not parts[1].isdigit():
+        return await c.answer("Ruxsat yo'q", show_alert=True)
+    firm_id = int(parts[1])
+    if not db.user_can_access(user, firm_id):
+        return await c.answer("Bu firmaga kirish huquqingiz yo'q", show_alert=True)
+    if user["role"] not in auth.CAN_POST:
+        return await c.answer("\"Kuzatuvchi\" roli import faylini tayyorlay olmaydi", show_alert=True)
+    session = core.get_session(core.session_id(user["id"], firm_id), firm_id)
+    try:
+        async with session.lock:
+            content, rows = core.export_client_bank(session)
+    except (ValueError, files1c.ExportFileError) as e:
+        return await c.answer(str(e)[:190], show_alert=True)
+    await c.answer("Fayl tayyor")
+    await c.message.edit_reply_markup(reply_markup=None)
+    db.audit(user["id"], firm_id, "onec_import_file", rows=len(rows), sum=round(sum(r["amount"] for r in rows), 2),
+             numbers=[r["number"] for r in rows][:200], via="telegram")
+    firm = db.get_firm(firm_id)
+    await c.message.answer_document(
+        BufferedInputFile(content, core.export_filename(firm_id, rows)),
+        caption=(f"🏢 <b>{html.escape(firm['name'])}</b>: 📤 {len(rows)} ta yangi qator — "
+                 f"{money(sum(r['amount'] for r in rows))}\n\n"
+                 "1C da: <b>Банк и касса → Банковские выписки → Загрузить</b> → shu faylni tanlang → ro'yxatni "
+                 "tekshirib <b>Загрузить</b>.\n<i>Faylda schyot yo'q — 1C schyotni shartnoma sozlamasidan qo'yadi; "
+                 "Web App'dagi 📋 tekshiruv ro'yxati bilan solishtiring.</i>"))
 
 
 @router.message(F.text)

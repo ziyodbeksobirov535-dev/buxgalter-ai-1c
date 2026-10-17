@@ -13,9 +13,9 @@ import config
 import db
 import services_files1c as files1c
 from services_1c import ACCOUNT_CHOICES, ODataError, OfflineOData, OneCService, build_service
-from services_didox import analyze_invoices, build_purchase_payload, fetch_invoices, recheck_purchase
+from services_didox import DidoxError, analyze_invoices, build_purchase_payload, fetch_invoices, recheck_purchase
 from services_rules import RuleSet
-from services_vipiska import (BankRow, Statement, analyze_statement, build_bank_payload, cash_flow, finalize_row, kpis,
+from services_vipiska import (BankRow, Statement, StatementError, analyze_statement, build_bank_payload, cash_flow, finalize_row, kpis,
                               parse_statement, post_rows, recheck_bank, set_account)
 
 log = logging.getLogger("buxgalter.core")
@@ -168,6 +168,26 @@ def analysis_onec(session: Session, mode: str) -> OneCService:
     return onec_for(session)
 
 
+async def readable_onec(session: Session) -> OneCService:
+    """O'qish uchun ishlaydigan manba: jonli 1C javob bermasa (OData nashr qilinmagan va h.k.) — eksport fayllari."""
+    onec = onec_for(session)
+    if onec.mode != "live":
+        return onec
+    if (await onec.status())["ok"]:
+        return onec
+    return file_onec(session.firm_id) or onec
+
+
+async def onec_status(firm_id: int) -> dict:
+    """Holat belgisi: jonli 1C ishlamasa-yu, eksport fayllari yuklangan bo'lsa — dastur shular bilan ishlaydi."""
+    onec = get_onec(firm_id)
+    st = await onec.status()
+    if onec.mode == "live" and not st["ok"] and (fs := file_onec(firm_id)):
+        return {**(await fs.status()), "label": "1C eksport fayllari (OData ishlamadi)",
+                "warning": "1C OData javob bermadi — tekshiruv yuklangan 1C eksport fayllari bo'yicha. " + st.get("error", "")}
+    return st
+
+
 def analysis_tag(session: Session, onec: OneCService) -> str:
     return files_tag(session.firm_id) if onec.mode == "file" else onec_fingerprint(session.firm_id)
 
@@ -299,6 +319,9 @@ async def load_statement(session: Session, filename: str, content: bytes, is_sam
 
 
 async def load_sample(session: Session) -> dict:
+    if onec_for(session).mode != "demo":
+        raise StatementError("🧪 Test (namuna) vipiska faqat Demo firmada ishlatiladi — bu firmaga o'z vipiskangizni "
+                             "yuklang")
     if not config.SAMPLE_VIPISKA.exists():
         from demo_data import build_sample_xlsx
         build_sample_xlsx(config.SAMPLE_VIPISKA)
@@ -318,13 +341,27 @@ async def recheck_vipiska(session: Session) -> dict:
 
 
 async def load_didox(session: Session) -> dict:
-    invoices, source = await fetch_invoices(firm_settings(session.firm_id))
+    settings = firm_settings(session.firm_id)
+    demo_didox = settings["didox_demo_mode"] or not settings.get("didox_user_key")
+    if demo_didox and onec_for(session).mode != "demo":
+        # Demo hisob-fakturalar o'ylab topilgan — haqiqiy firmaning 1C si bilan solishtirish chalg'itadi
+        raise DidoxError("📑 Bu firma uchun Didox API kaliti kiritilmagan (⚙️ Joriy firma → Didox). Demo "
+                         "hisob-fakturalar faqat Demo firmada ko'rsatiladi.", status=400)
+    invoices, source = await fetch_invoices(settings)
     async with session.lock:
         onec = onec_for(session)
         onec.invalidate()
-        session.didox = await analyze_invoices(invoices, onec, session.didox, rules_of(session))
+        try:
+            session.didox = await analyze_invoices(invoices, onec, session.didox, rules_of(session))
+            session.analyzed_with["didox"] = analysis_tag(session, onec)
+        except ODataError as e:
+            if onec.mode != "live":
+                raise
+            fs = file_onec(session.firm_id)  # jonli 1C javob bermadi — fayllar / ko'rish rejimi
+            fallback = fs or OneCService(OfflineOData(str(e)))
+            session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
+            session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
         session.didox_source = "Didox (demo)" if source == "demo" else "Didox API"
-        session.analyzed_with["didox"] = onec_fingerprint(session.firm_id)
         save_session(session)
     return snapshot(session, "didox")
 
@@ -456,3 +493,8 @@ def export_client_bank(session: Session, ids: list[str] | None = None) -> tuple[
         r["exported_at"] = stamp
     save_session(session)
     return content, chosen
+
+
+def export_filename(firm_id: int, rows: list[dict]) -> str:
+    day = max(r.get("posted_date") or r["date"] for r in rows).replace("-", "")
+    return f"kl_to_1c_{firm_id}_{day}.txt"

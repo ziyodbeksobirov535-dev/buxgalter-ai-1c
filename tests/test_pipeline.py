@@ -6,7 +6,7 @@ import pytest
 
 import core
 from services_1c import DemoOData, ODataError, OneCService
-from services_vipiska import BankRow, Statement, analyze_statement
+from services_vipiska import BankRow, Statement, StatementError, analyze_statement
 from tests.conftest import DEMO_FIRM, SAMPLE_NOT_POSTED, SAMPLE_READY, SAMPLE_ROWS
 
 
@@ -79,7 +79,14 @@ def test_sample_never_posts_to_live_1c(monkeypatch):
     monkeypatch.setattr(core, "get_onec", lambda *a: live)
     monkeypatch.setattr(core, "onec_fingerprint", lambda *a: "live")
     s = core.get_session("t", DEMO_FIRM)
-    snap = run(core.load_sample(s))
+    with pytest.raises(StatementError, match="Demo firmada"):  # 1-himoya: namuna haqiqiy 1C li firmaga yuklanmaydi
+        run(core.load_sample(s))
+    # 2-himoya: namuna baribir yuklangan bo'lsa ham (masalan, fayl qo'lda yuborilgan) — yozilmaydi
+    import config
+    from demo_data import build_sample_xlsx
+    if not config.SAMPLE_VIPISKA.exists():
+        build_sample_xlsx(config.SAMPLE_VIPISKA)
+    snap = run(core.load_statement(s, "sample.xlsx", config.SAMPLE_VIPISKA.read_bytes(), is_sample=True))
     assert snap["is_sample"] and snap["kpis"]["ready"] == 0
     assert all(any("Test" in b for b in r["blockers"]) for r in snap["rows"])
     with pytest.raises(ODataError, match="Test|Faqat tahlil"):

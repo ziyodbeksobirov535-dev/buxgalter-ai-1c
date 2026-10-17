@@ -102,9 +102,9 @@ class ToolContext:
     async def t_analyze_and_deduplicate_vipiska(self) -> dict:
         note = None
         if not self.session.statement:
-            if core.onec_for(self.session).mode == "live":
-                return {"xato": "Vipiska yuklanmagan. 📥 Bank vipiskasini yuklang — jonli 1C rejimida test (namuna) "
-                                "fayl avtomatik ishlatilmaydi."}
+            if core.onec_for(self.session).mode != "demo":
+                return {"xato": "Vipiska yuklanmagan. 📥 Bank vipiskasini yuklang — test (namuna) fayl faqat "
+                                "Demo firmada ishlatiladi."}
             snap = await core.load_sample(self.session)
             note = "Vipiska yuklanmagan edi — namunaviy test vipiskasi (sample_bank_vipiska.xlsx) yuklandi."
         else:
@@ -118,7 +118,7 @@ class ToolContext:
         return {"manba": snap["source"], "kpi": snap["kpis"], "qatorlar": [_brief(r) for r in snap["rows"]]}
 
     async def t_learn_from_1c_history(self, stir: str = "") -> dict:
-        onec = core.onec_for(self.session)
+        onec = await core.readable_onec(self.session)  # OData ishlamasa — 1C eksport fayllaridan
         kontr = await onec.find_counterparty(str(stir))
         if not kontr:
             return {"xato": f"STIR {stir} bo'yicha kontragent 1C da topilmadi"}
@@ -134,6 +134,15 @@ class ToolContext:
         rows = core.rows_of(self.session, mode)
         if not rows:
             return {"xato": "Avval vipiska (yoki Didox) ni yuklang va tekshiring"}
+        tag = self.session.analyzed_with.get(mode) or ""
+        if tag.startswith((core.FILES, core.OFFLINE)):
+            ready = [r for r in rows if r.get("kind") == "bank" and r["status"] in ("new", "unchecked")
+                     and not r["posted"] and not r.get("hard_blockers")]
+            return {"holat": "import_fayli_orqali",
+                    "izoh": "1C OData ulanmagan — dastur 1C ga o'zi yozmaydi. Yangi qatorlarni jadval pastidagi "
+                            "📤 «1C import fayli» tugmasi bilan yuklab oling va 1C da: Банк и касса → Банковские "
+                            "выписки → Загрузить. Schyotlarni 📋 tekshiruv ro'yxati bilan solishtiring.",
+                    "import_uchun_tayyor": len(ready), "summa": round(sum(r["amount"] for r in ready), 2)}
         wanted = set(doc_ids or [])
         chosen = [r for r in rows if r["selectable"] and (not wanted or r["id"] in wanted)]
         blocked = [r for r in rows if (not wanted or r["id"] in wanted) and not r["selectable"] and not r["posted"]]
@@ -150,7 +159,7 @@ class ToolContext:
 
     async def t_cash_flow_summary(self) -> dict:
         if not self.session.vipiska:
-            if core.onec_for(self.session).mode == "live":
+            if core.onec_for(self.session).mode != "demo":
                 return {"xato": "Vipiska yuklanmagan — avval bank vipiskasini yuklang."}
             await core.load_sample(self.session)
             self.refresh.add("vipiska")
@@ -227,6 +236,8 @@ def mock_reply(calls: list[tuple[str, dict]], results: list[dict], mode: str) ->
             if not found:
                 lines.append("- Bu kontragent bo'yicha o'tkazilgan hujjat topilmadi")
             parts.append("\n".join(lines))
+        elif name == "post_confirmed_to_1c" and res.get("holat") == "import_fayli_orqali":
+            parts.append(f"📤 **{res['import_uchun_tayyor']} ta yangi qator** ({money(res['summa'])}). " + res["izoh"])
         elif name == "post_confirmed_to_1c":
             if res["tayyor_soni"]:
                 parts.append(f"✅ **{res['tayyor_soni']} ta yangi hujjat** ({money(res['tayyor_summa'])}) 1C ga "

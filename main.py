@@ -84,7 +84,7 @@ async def _odata_error(_r, e):
 
 @app.exception_handler(DidoxError)
 async def _didox_error(_r, e):
-    return JSONResponse({"detail": str(e)}, status_code=502)
+    return JSONResponse({"detail": str(e)}, status_code=getattr(e, "status", 502))
 
 
 # ---------------------------------------------------------------- sahifalar
@@ -326,7 +326,7 @@ def _with_context(ctx: FirmCtx, snap: dict) -> dict:
 
 @app.get("/api/status")
 async def status(ctx: FirmCtx = Depends(firm_ctx)):
-    return {"onec": await core.onec_for(ctx.session).status(), "ai": services_ai.engine_info(), "dedup": True,
+    return {"onec": await core.onec_status(ctx.firm_id), "ai": services_ai.engine_info(), "dedup": True,
             "files": services_files1c.summary(services_files1c.load_store(ctx.firm_id)),
             "firm": db.get_firm(ctx.firm_id), "telegram": bool(config.TELEGRAM_BOT_TOKEN)}
 
@@ -435,7 +435,9 @@ class LearnIn(BaseModel):
 async def rules_learn(body: LearnIn, ctx: FirmCtx = Depends(firm_ctx)):
     """1C dagi o'tkazilgan hujjatlarni o'qib, qoidalar jadvalini yangilaydi (1C ga hech narsa yozmaydi)."""
     ctx.require_post()
-    learned, summary = await services_rules.learn_from_1c(core.onec_for(ctx.session), body.months)
+    onec = await core.readable_onec(ctx.session)  # OData ishlamasa — yuklangan 1C eksport fayllaridan
+    learned, summary = await services_rules.learn_from_1c(onec, body.months)
+    summary["source"] = onec.mode
     stats = db.upsert_learned_rules(ctx.firm_id, learned)
     db.audit(ctx.user["id"], ctx.firm_id, "rules_learned", **summary, **stats)
     return {"summary": {**summary, **stats}}
@@ -565,6 +567,20 @@ async def onec_files_clear(ctx: FirmCtx = Depends(firm_ctx)):
     return {"ok": True}
 
 
+@app.get("/api/vipiska/checklist")
+async def vipiska_checklist(ctx: FirmCtx = Depends(firm_ctx)):
+    """📋 Tekshiruv ro'yxati (Excel): har qator qaysi schyot, avans, shartnomaga tushishi kerak — import faylini
+    1C ga yuklagandan keyin solishtirish uchun (import faylida schyot yo'q)."""
+    session = ctx.session
+    if not session.vipiska:
+        raise HTTPException(400, "Avval vipiskani yuklang")
+    firm = db.get_firm(ctx.firm_id)
+    content = services_files1c.checklist_xlsx(session.vipiska, firm["name"],
+                                              session.statement.source if session.statement else "")
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="tekshiruv_royxati_firma{ctx.firm_id}.xlsx"'})
+
+
 class ExportIn(BaseModel):
     expected_firm_id: int | None = None
     ids: list[str] = Field(default_factory=list, max_length=1000)
@@ -583,9 +599,8 @@ async def export_1c(body: ExportIn, ctx: FirmCtx = Depends(firm_ctx)):
         raise HTTPException(400, str(e)) from None
     db.audit(ctx.user["id"], ctx.firm_id, "onec_import_file", rows=len(rows),
              sum=round(sum(r["amount"] for r in rows), 2), numbers=[r["number"] for r in rows][:200])
-    day = max(r.get("posted_date") or r["date"] for r in rows).replace("-", "")
     return Response(content, media_type="text/plain; charset=windows-1251",
-                    headers={"Content-Disposition": f'attachment; filename="kl_to_1c_{ctx.firm_id}_{day}.txt"',
+                    headers={"Content-Disposition": f'attachment; filename="{core.export_filename(ctx.firm_id, rows)}"',
                              "X-Rows": str(len(rows))})
 
 

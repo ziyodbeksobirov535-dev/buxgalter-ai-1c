@@ -25,7 +25,7 @@ from pathlib import Path
 import config
 from accounts_uz import UZ_ACCOUNTS
 from services_1c import (E_ACCOUNTS, E_BANK_ACCOUNT, E_BANK_IN, E_BANK_OUT, E_CASH_FLOW, E_CONTRACT, E_COUNTERPARTY,
-                         E_NOMENCLATURE, E_ORG, E_PURCHASE, FIELDS, DemoOData, ODataError, OneCService, fmt_account)
+                         E_NOMENCLATURE, E_ORG, E_PURCHASE, FIELDS, DemoOData, ODataError, OneCService)
 from services_vipiska import clean_code, operation_for, parse_amount, parse_date
 
 FILES_DIR = config.DATA_DIR / "onec_files"
@@ -704,3 +704,49 @@ def build_client_bank(rows: list[dict], own_account: str, own_inn: str, own_name
         lines += ["ВидОплаты=01", f"НазначениеПлатежа={_clean(r.get('purpose'))}", "КонецДокумента"]
     lines.append("КонецФайла")
     return ("\r\n".join(lines) + "\r\n").encode("cp1251", errors="replace")
+
+
+# ---------------------------------------------------------------- 📋 tekshiruv ro'yxati (Excel)
+CHECKLIST_COLUMNS = [("Sana", 11), ("Bank o'tkazgan", 11), ("№", 10), ("Turi", 8), ("Kontragent", 32), ("STIR", 11),
+                     ("Summa", 16), ("Holat", 26), ("Schyot", 9), ("Avans schyoti", 9), ("Schyot asosi", 40),
+                     ("Shartnoma", 36), ("Qarz / avans", 48), ("To'siqlar", 40), ("Import fayli", 18),
+                     ("To'lov maqsadi", 60)]
+
+
+def checklist_xlsx(rows: list[dict], firm_name: str, source: str = "") -> bytes:
+    """Har qator bo'yicha tavsiya: schyot, avans, shartnoma — 1C ga yuklangandan keyin qo'lda solishtirish uchun."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Tekshiruv"
+    ws.append([f"BUXGALTER AI — tekshiruv ro'yxati: {firm_name}"])
+    ws.append([f"Vipiska: {source} · tuzilgan {datetime.now():%d.%m.%Y %H:%M}"])
+    ws.append([])
+    ws.append([c for c, _w in CHECKLIST_COLUMNS])
+    ws["A1"].font = Font(bold=True, size=13)
+    head = PatternFill("solid", fgColor="E2E8F0")
+    for i, (_c, width) in enumerate(CHECKLIST_COLUMNS, 1):
+        cell = ws.cell(row=4, column=i)
+        cell.font, cell.fill = Font(bold=True), head
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.column_dimensions[cell.column_letter].width = width
+    fills = {"new": "FEF3C7", "duplicate": "DCFCE7", "discrepancy": "FEE2E2", "posted": "DBEAFE", "unchecked": "F1F5F9"}
+    for r in sorted(rows, key=lambda x: (x["date"], x["number"])):
+        ws.append([_d(r["date"]), _d(r.get("posted_date") or r["date"]), r["number"],
+                   "Kirim" if r["direction"] == "kirim" else "Chiqim", r["counterparty_name"],
+                   r.get("counterparty_inn") or "", r["amount"], r.get("status_label") or r["status"],
+                   r.get("account") or "", r.get("advance_account") or "", r.get("account_badge") or "",
+                   (r.get("contract") or {}).get("label") or "", r.get("settlement_note") or "",
+                   "; ".join(r.get("blockers") or []), "chiqarilgan" if r.get("exported_at") else "",
+                   r.get("purpose") or ""])
+        n = ws.max_row
+        ws.cell(row=n, column=7).number_format = "# ##0.00"
+        fill = fills.get(r["status"])
+        if fill:
+            ws.cell(row=n, column=8).fill = PatternFill("solid", fgColor=fill)
+    ws.freeze_panes = "A5"
+    ws.auto_filter.ref = f"A4:{ws.cell(row=4, column=len(CHECKLIST_COLUMNS)).column_letter}{max(ws.max_row, 5)}"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

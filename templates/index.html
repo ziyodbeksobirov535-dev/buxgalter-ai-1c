@@ -80,7 +80,7 @@
         <template x-if="mode==='vipiska'">
           <div class="flex items-center gap-1.5">
             <button @click="$refs.file.click()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">📥 <span class="hidden sm:inline">Vipiska/Excel Yuklash</span><span class="sm:hidden">Yuklash</span></button>
-            <button @click="loadSample()" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-3 py-1.5">🧪 <span class="hidden sm:inline">Test Vipiska Namunasini Yuklash</span><span class="sm:hidden">Test</span></button>
+            <button x-show="isDemoFirm()" @click="loadSample()" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-3 py-1.5">🧪 <span class="hidden sm:inline">Test Vipiska Namunasini Yuklash</span><span class="sm:hidden">Test</span></button>
           </div>
         </template>
         <template x-if="mode==='didox'">
@@ -163,8 +163,8 @@
               <template x-if="mode==='vipiska'">
                 <div class="flex flex-wrap justify-center gap-2">
                   <button @click="$refs.file.click()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">📥 Vipiska/Excel Yuklash</button>
-                  <button @click="loadSample()" class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2">🧪 Test Vipiska Namunasini Yuklash</button>
-                  <button @click="downloadSample()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-4 py-2">📥 Test Vipiska faylini yuklab olish</button>
+                  <button x-show="isDemoFirm()" @click="loadSample()" class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2">🧪 Test Vipiska Namunasini Yuklash</button>
+                  <button x-show="isDemoFirm()" @click="downloadSample()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-4 py-2">📥 Test Vipiska faylini yuklab olish</button>
                 </div>
               </template>
               <template x-if="mode==='didox'">
@@ -220,7 +220,8 @@
             <span class="font-semibold" x-text="mode==='vipiska' ? 'Vipiska qatorlari' : 'Didox EHF hujjatlari'"></span>
             <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500" x-text="onecChip()"></span>
             <div class="ml-auto flex items-center gap-2">
-              <button x-show="mode==='vipiska'" @click="downloadSample()" class="text-xs text-brand-600 dark:text-sky-400 hover:underline">📥 Test Vipiska faylini yuklab olish</button>
+              <button x-show="mode==='vipiska' && isDemoFirm()" @click="downloadSample()" class="text-xs text-brand-600 dark:text-sky-400 hover:underline">📥 Test Vipiska faylini yuklab olish</button>
+              <button x-show="mode==='vipiska'" @click="downloadChecklist()" title="Har qator qaysi schyot, avans va shartnomaga tushishi — 1C ga yuklagach solishtirish uchun" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">📋 Tekshiruv ro'yxati (Excel)</button>
               <button @click="recheck()" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">🔄 1C da qayta tekshirish</button>
             </div>
           </div>
@@ -1272,6 +1273,17 @@ function app() {
       if (!res) return;
       this.setSnap(res);
       this.toast('💾 Eslab qolindi: ' + (res.rule.name || res.rule.match) + ' → ' + res.rule.account + " (qat'iy qoida)", 'ok');
+    },
+
+    isDemoFirm() { return this.status.onec?.mode === 'demo'; },
+    async downloadChecklist() {
+      try {
+        const r = await fetch('/api/vipiska/checklist', { headers: this.headers() });
+        if (!r.ok) { const b = await r.json().catch(() => ({})); this.toast('⚠️ ' + (b.detail || ('Xato ' + r.status)), 'error'); return; }
+        const url = URL.createObjectURL(await r.blob());
+        const a = document.createElement('a'); a.href = url; a.download = 'tekshiruv_royxati.xlsx'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (e) { this.toast("⚠️ Server bilan aloqa yo'q", 'error'); }
     },
 
     // ---------------- 1C bilan fayl orqali (eksport / import)
