@@ -482,8 +482,8 @@ class OneCService:
                 if meta["missing"]:
                     return {"ok": True, "mode": self.mode, "label": f"1C OData ({len(meta['missing'])} obyekt yetishmaydi)",
                             "warning": "Nashr qilinmagan: " + ", ".join(meta["missing"]), "missing": meta["missing"]}
-            return {"ok": True, "mode": self.mode,
-                    "label": "1C OData (Demo baza)" if self.mode == "demo" else "1C OData"}
+            label = {"demo": "1C OData (Demo baza)", "file": "1C eksport fayllari"}.get(self.mode, "1C OData")
+            return {"ok": True, "mode": self.mode, "label": label}
         except ODataError as e:
             return {"ok": False, "mode": self.mode, "label": "1C OData", "error": str(e)}
 
@@ -517,6 +517,17 @@ class OneCService:
                                  top=2, select=["Ref_Key", "Description", FIELDS["inn"]])
             return rows[0] if rows else None
         return await self._cached(("kontr", inn), f)
+
+    async def find_counterparty_by_name(self, name: str) -> dict | None:
+        """Faqat fayl rejimida: eksportda STIR bo'lmasa — nomi bo'yicha (tashkiliy shakl va qo'shtirnoqsiz)."""
+        if self.mode != "file" or not name:
+            return None
+        from services_files1c import name_key
+        key = name_key(name)
+        if not key:
+            return None
+        rows = await self._q(E_COUNTERPARTY, [Cond("_name_key", "eq", key), Cond("DeletionMark", "eq", False)], top=2)
+        return rows[0] if len(rows) == 1 else None
 
     async def find_contract(self, kontr_key: str, direction: str) -> dict | None:
         async def f():

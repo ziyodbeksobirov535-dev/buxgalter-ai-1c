@@ -171,6 +171,33 @@ Dt 44.10 (QQS 12%) — Kt 60.10**.
 kompozit `Контрагент` + `Контрагент_Type`). Ular `services_1c.py` dagi `FIELDS` lug'atida bir joyda jamlangan.
 Birinchi real ulanishda `$metadata` ni tekshirib, kerak bo'lsa shu lug'atni moslang. Avval test bazada sinang.
 
+## 📁 1C bilan fayl orqali (OData ishlamasa — masalan, bulutli 1C:Fresh)
+
+OData nashr qilinmagan bo'lsa ham dastur to'liq tekshiruv qiladi: 1C dan Excel eksportlarini o'qiydi, yangi
+qatorlarni esa 1C ning o'z "Загрузить" oynasi orqali kiritiladigan fayl qilib beradi. **1C ga dastur o'zi hech narsa
+yozmaydi.**
+
+**1. O'qish (📚 Hisob qoidalari → 📁 1C eksport fayllari, yoki vipiska ustidagi banner):** 1C da har birini
+**Еще → Вывести список** (hisobotda **Сохранить как → Лист Excel 2007 (.xlsx)**) qilib yuklang — bir nechtasini birga:
+
+| 1C dagi joy | Nima uchun |
+|---|---|
+| Справочники → **Контрагенты** (Наименование, ИНН) | kontragentni STIR bo'yicha topish |
+| Справочники → **Договоры** (Наименование, Контрагент, Номер, Дата, Вид договора) | to'lov maqsadidagi shartnoma 1C da bormi |
+| Отчеты → **Карточка счета 51.10** (12 oy) | qaysi to'lov qaysi schyotga olingan (qarz 40.10 + avans 63.10 bo'linishi ham) |
+| *(ixtiyoriy)* Банк и касса → **Банковские выписки** ro'yxati | «Вх. номер» bo'lsa — dublikat raqam bo'yicha aniq |
+| *(ixtiyoriy)* **ОСВ по счету 40.10 / 60.10** (kontragentlar bo'yicha) | to'lovning qancha qismi qarzni yopadi, qanchasi avans |
+
+Fayl turi sarlavhalardan avtomatik aniqlanadi; qayta yuklash dublikat yaratmaydi. Yuklangach dastur qoidalar
+jadvalini (📚) o'rganadi va vipiskani qayta tekshiradi: dublikat (raqam/sana/summa/kontragent), shartnoma, schyot.
+1C manzili kiritilgan, lekin OData javob bermasa — avtomatik shu fayllar bo'yicha ishlaydi.
+
+**2. Yozish (📤 1C import fayli):** jadval pastidagi tugma faqat yangi (1C da yo'q, to'siqsiz) qatorlardan
+`kl_to_1c_….txt` (1CClientBankExchange 1.03, Windows-1251) tayyorlaydi. 1C da: **Банк и касса → Банковские выписки →
+Загрузить** (Обмен с банком) → faylni tanlang → ro'yxatni ko'rib **Загрузить**. Bu formatda schyot maydoni yo'q —
+1C schyotni shartnoma/kontragent sozlamasidan qo'yadi; yuklagach jadvaldagi schyot bilan solishtiring.
+Chiqarilgan qatorlar "📤 Import fayliga chiqarildi" deb belgilanadi va keyingi faylga qayta tushmaydi.
+
 ### Xavfsizlik tamoyillari
 - Bog'langan obyektlar hech qachon matn bilan yuborilmaydi — har doim `Ref_Key` (`$filter=ИНН eq '...'`).
 - Har bir yozuvdan **oldin** 1C qayta so'raladi (jadval ochilgandan keyin boshqa buxgalter kiritgan bo'lsa ham bloklanadi).
@@ -203,6 +230,7 @@ services_1c.py       1C OData: Ref_Key, dublikat, tarixdan o'rganish, qoralama; 
 services_vipiska.py  Excel / CSV / 1CClientBankExchange parser, tahlil, payload
 services_didox.py    Didox EHF ↔ ПоступлениеТоваровУслуг
 services_rules.py    Hisob qoidalari: 1C tarixidan o'rganish, ustuvorlik, Excel
+services_files1c.py  1C bilan fayl orqali: Excel eksportlari → 1C nusxasi, OSV qoldiqlari, 1CClientBankExchange
 services_ai.py       Gemini Function Calling + Demo AI + OpenAI/Claude zaxira
 demo_data.py         Demo 1C bazasi (OData shaklida) va namuna vipiska generatori
 config.py            .env + umumiy AI sozlamalari (data/settings.json, git'ga kirmaydi)
@@ -223,6 +251,8 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 | GET/POST/PUT | `/api/users…` | Foydalanuvchilar (Egasi) |
 | GET | `/api/audit` | Jurnal (Egasi) |
 | GET/POST/PUT/DELETE | `/api/rules…` | Hisob qoidalari; `/api/rules/learn` — 1C tarixidan o'rganish |
+| GET/POST/DELETE | `/api/1c-files…` | 1C Excel eksportlari (o'qish, o'rganish, o'chirish) |
+| POST | `/api/vipiska/export-1c` | 1C ga import fayli (1CClientBankExchange) |
 | POST | `/api/chat` | AI Copilot |
 
 ## 🧪 Avtomatik testlar
@@ -232,9 +262,9 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-134 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+154 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
-bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel) va sahifadagi JS satrlari.
+bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
 
 **Zaxira nusxa:** `data/` papkasini (ayniqsa `app.db` va `secret.key`) muntazam nusxalang.

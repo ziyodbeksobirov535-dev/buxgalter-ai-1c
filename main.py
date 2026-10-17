@@ -19,6 +19,7 @@ import core
 import db
 import accounts_uz
 import services_ai
+import services_files1c
 import services_rules
 from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, set_session_cookie
 from demo_data import build_sample_xlsx
@@ -326,6 +327,7 @@ def _with_context(ctx: FirmCtx, snap: dict) -> dict:
 @app.get("/api/status")
 async def status(ctx: FirmCtx = Depends(firm_ctx)):
     return {"onec": await core.onec_for(ctx.session).status(), "ai": services_ai.engine_info(), "dedup": True,
+            "files": services_files1c.summary(services_files1c.load_store(ctx.firm_id)),
             "firm": db.get_firm(ctx.firm_id), "telegram": bool(config.TELEGRAM_BOT_TOKEN)}
 
 
@@ -524,6 +526,67 @@ async def rules_import(file: UploadFile = File(...), ctx: FirmCtx = Depends(firm
             errors.append(f"{item['_row']}-qator: {e}")
     db.audit(ctx.user["id"], ctx.firm_id, "rules_imported", file=file.filename, saved=saved, errors=len(errors))
     return {"saved": saved, "errors": errors}
+
+
+# ---------------------------------------------------------------- 📁 1C bilan fayl orqali (OData ishlamaganda)
+MAX_EXPORT_FILE = 20 * 1024 * 1024
+
+
+@app.get("/api/1c-files")
+async def onec_files(ctx: FirmCtx = Depends(firm_ctx)):
+    return services_files1c.summary(services_files1c.load_store(ctx.firm_id))
+
+
+@app.post("/api/1c-files/upload")
+async def onec_files_upload(files: list[UploadFile] = File(...), ctx: FirmCtx = Depends(firm_ctx)):
+    ctx.require_post()
+    if len(files) > 10:
+        raise HTTPException(400, "Bir martada 10 tagacha fayl")
+    items = []
+    for f in files:
+        content = await f.read(MAX_EXPORT_FILE + 1)
+        if len(content) > MAX_EXPORT_FILE:
+            raise HTTPException(400, f"{f.filename}: fayl juda katta (20 MB gacha)")
+        items.append((f.filename or "1c_export.xlsx", content))
+    res = await core.load_1c_exports(ctx.session, items, ctx.user["username"])
+    db.audit(ctx.user["id"], ctx.firm_id, "onec_files_uploaded",
+             files=[{"file": r["file"], "kind": r.get("kind"), "count": r.get("count"), "error": r.get("error")}
+                    for r in res["results"]], learned=res["learned"])
+    if res["snapshot"]:
+        res["snapshot"] = _with_context(ctx, res["snapshot"])
+    return res
+
+
+@app.delete("/api/1c-files")
+async def onec_files_clear(ctx: FirmCtx = Depends(firm_ctx)):
+    ctx.require_post()
+    core.clear_1c_exports(ctx.session)
+    db.audit(ctx.user["id"], ctx.firm_id, "onec_files_cleared")
+    return {"ok": True}
+
+
+class ExportIn(BaseModel):
+    expected_firm_id: int | None = None
+    ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+@app.post("/api/vipiska/export-1c")
+async def export_1c(body: ExportIn, ctx: FirmCtx = Depends(firm_ctx)):
+    """1C ga import fayli (1CClientBankExchange). 1C ga o'zimiz hech narsa yozmaymiz — faylni buxgalter yuklaydi."""
+    ctx.require_post()
+    if body.expected_firm_id is not None and body.expected_firm_id != ctx.firm_id:
+        raise HTTPException(409, "Firma almashgan — qatorlar boshqa firmaga tegishli. Sahifani yangilang.")
+    try:
+        async with ctx.session.lock:
+            content, rows = core.export_client_bank(ctx.session, body.ids or None)
+    except (ValueError, services_files1c.ExportFileError) as e:
+        raise HTTPException(400, str(e)) from None
+    db.audit(ctx.user["id"], ctx.firm_id, "onec_import_file", rows=len(rows),
+             sum=round(sum(r["amount"] for r in rows), 2), numbers=[r["number"] for r in rows][:200])
+    day = max(r.get("posted_date") or r["date"] for r in rows).replace("-", "")
+    return Response(content, media_type="text/plain; charset=windows-1251",
+                    headers={"Content-Disposition": f'attachment; filename="kl_to_1c_{ctx.firm_id}_{day}.txt"',
+                             "X-Rows": str(len(rows))})
 
 
 # ---------------------------------------------------------------- AI chat

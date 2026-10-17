@@ -69,7 +69,7 @@
 
       <!-- Holat belgilari -->
       <div class="hidden md:flex items-center gap-1.5 text-xs">
-        <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode==='demo')"
+        <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')"
               :title="status.onec.error || ''" x-text="onecBadge()"></span>
         <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)"
               :title="status.ai.label" x-text="aiBadge()"></span>
@@ -104,7 +104,7 @@
     </div>
     <!-- mobil holat belgilari -->
     <div class="md:hidden flex gap-1.5 overflow-x-auto thin-scroll px-4 pb-2 text-[11px] whitespace-nowrap">
-      <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode==='demo')" x-text="onecBadge()"></span>
+      <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')" x-text="onecBadge()"></span>
       <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)" x-text="aiBadge()"></span>
       <span class="px-2 py-0.5 rounded-full border border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800">🛡️ Dublikat Himoyasi: Yoqilgan</span>
     </div>
@@ -197,6 +197,11 @@
              x-text="'🟡 ' + (status.onec?.warning || '')"></div>
         <div x-show="snap?.offline" class="rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm px-3 py-2">
           ⚪ <b>Ko'rish rejimi:</b> 1C ga ulanib bo'lmadi — dublikat va kontragentlar 1C bilan tekshirilmadi. Schyotlar qoidalar va standart bo'yicha, shartnomalar to'lov maqsadidan ko'rsatilmoqda. 1C ulangach «🔄 1C da qayta tekshirish» ni bosing.
+          <button x-show="canPost" @click="openFiles()" class="mt-1.5 block text-xs rounded-lg border border-slate-400 dark:border-slate-600 px-2.5 py-1 hover:bg-white dark:hover:bg-slate-700">📁 1C eksport fayllarini yuklash (OData'siz tekshirish)</button>
+        </div>
+        <div x-show="snap?.files_mode && mode==='vipiska'" class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 text-sky-900 dark:text-sky-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
+          <span x-text="filesBanner()"></span>
+          <button @click="openFiles()" class="ml-auto text-xs rounded-lg border border-sky-300 dark:border-sky-800 px-2.5 py-1 hover:bg-white dark:hover:bg-sky-900/40">📁 1C fayllari</button>
         </div>
         <div x-show="snap?.stale" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
           <span>⚠️ 1C sozlamalari tahlildan keyin o'zgargan — yozishdan oldin qayta tekshiring.</span>
@@ -213,7 +218,7 @@
         <div x-show="rows.length && !loading" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 text-sm">
             <span class="font-semibold" x-text="mode==='vipiska' ? 'Vipiska qatorlari' : 'Didox EHF hujjatlari'"></span>
-            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500" x-text="snap?.onec_mode==='demo' ? '1C: Demo baza' : '1C: OData'"></span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500" x-text="onecChip()"></span>
             <div class="ml-auto flex items-center gap-2">
               <button x-show="mode==='vipiska'" @click="downloadSample()" class="text-xs text-brand-600 dark:text-sky-400 hover:underline">📥 Test Vipiska faylini yuklab olish</button>
               <button @click="recheck()" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">🔄 1C da qayta tekshirish</button>
@@ -276,7 +281,7 @@
                       <div x-show="r.kind === 'ehf' && r.posting_note" class="mt-0.5 text-[11px] text-sky-700 dark:text-sky-400" title="Provodka" x-text="'🧾 ' + r.posting_note"></div>
                       <div class="mt-1 text-[11px] leading-tight" :class="['history','rule','keyword','classified'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
                       <div x-show="r.advance_account && r.status !== 'duplicate'" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400"
-                           :title="r.settlement_note" x-text="'↳ qarz yo\'q bo\'lsa: ' + r.advance_account + ' (avans)'"></div>
+                           :title="r.settlement_note" x-text="advanceLine(r)"></div>
                       <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)"
                               class="mt-1 text-[11px] rounded-md border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 hover:bg-violet-50 dark:hover:bg-violet-900/30">💾 Shu kontragent uchun eslab qol</button>
                     </td>
@@ -285,11 +290,12 @@
                       <div x-show="r.diffs && r.diffs.length" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400" x-text="(r.diffs || []).join('; ')"></div>
                       <div x-show="r.posted_number" class="mt-1 text-[11px] text-brand-600 dark:text-sky-400" x-text="'1C: ' + r.posted_number + ' (qoralama' + (r.forced ? ', majburan' : '') + ')'"></div>
                       <div x-show="r.overridable" class="mt-1 text-[11px] text-amber-600 dark:text-amber-400">👁 Tekshirish orqali baribir yozish mumkin</div>
+                      <div x-show="r.exported_at" class="mt-1 text-[11px] text-sky-600 dark:text-sky-400" x-text="exportedLabel(r)"></div>
                     </td>
                     <td class="px-2 py-2.5 align-top">
                       <div class="flex flex-col items-end gap-1 whitespace-nowrap">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">👁 Tekshirish</button>
-                      <button x-show="r.selectable && canPost" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      <button x-show="r.selectable && canPost && !fileMode()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
                       </div>
                     </td>
                   </tr>
@@ -332,7 +338,7 @@
                     <div x-show="r.overridable" class="text-[11px] text-amber-600">👁 Tekshirish orqali baribir yozish mumkin</div>
                     <div class="mt-2 flex gap-2">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1">👁 Tekshirish</button>
-                      <button x-show="r.selectable && canPost" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      <button x-show="r.selectable && canPost && !fileMode()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
                     </div>
                   </div>
                 </div>
@@ -378,6 +384,7 @@
                         x-text="learning ? '⏳ 1C o\'qilmoqda…' : '🧠 1C tarixidan o\'rganish'"></button>
               </div>
             </template>
+            <button @click="openFiles()" class="rounded-lg border border-sky-300 dark:border-sky-800 text-sky-800 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-sm px-3 py-1.5">📁 1C eksport fayllari</button>
             <button @click="exportRules()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5">📥 Excel'ga yuklab olish</button>
             <button x-show="rulesCanEdit" @click="$refs.rulesFile.click()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5">📤 Excel'dan yuklash</button>
             <input type="file" x-ref="rulesFile" class="hidden" accept=".xlsx" @change="importRules($event.target.files[0]); $event.target.value=''">
@@ -483,7 +490,10 @@
           <span class="hidden sm:inline"> · 🛡️ Dublikat va farqli qatorlarni tanlab bo'lmaydi</span>
         </div>
         <span x-show="!canPost" class="ml-auto text-xs text-slate-500">👁 Kuzatuvchi rejimi — 1C ga yozish huquqi yo'q</span>
-        <button x-show="canPost" @click="askPost(selectedIds())" :disabled="!selCount() || posting"
+        <button x-show="canPost && fileMode() && mode==='vipiska'" @click="exportImportFile()" :disabled="!exportCount() || exporting"
+                class="ml-auto w-full sm:w-auto rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
+                x-text="exportLabel()"></button>
+        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="askPost(selectedIds())" :disabled="!selCount() || posting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="posting ? '⏳ 1C ga yozilmoqda…' : '✅ Faqat yangi (dublikat bo\'lmagan) ' + selCount() + ' ta hujjatni 1C ga Qoralama kiritish'"></button>
       </div>
@@ -595,6 +605,63 @@
     </div>
   </div>
 
+  <!-- ===================== 1C EKSPORT FAYLLARI MODALI ===================== -->
+  <div x-show="filesBox" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="filesBox=false">
+    <div @click.outside="filesBox=false" class="w-full sm:max-w-2xl max-h-[90dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-5 space-y-4 text-sm">
+      <div class="flex items-start gap-2">
+        <div>
+          <h3 class="font-semibold">📁 1C bilan fayl orqali ishlash</h3>
+          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">OData ishlamasa: 1C dan ro'yxatlarni Excel'ga chiqarib shu yerga yuklang. Dastur dublikatni, shartnomani va schyotlarni shular bo'yicha tekshiradi, yangi qatorlarni esa 📤 import fayli orqali 1C ga o'zingiz yuklaysiz. 1C ga dastur o'zi hech narsa yozmaydi.</p>
+        </div>
+        <button @click="filesBox=false" class="ml-auto text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+      </div>
+
+      <div class="rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+        <div class="font-medium mb-1.5">1️⃣ 1C dan qaysi fayllar (har biri: <b>Еще → Вывести список</b> yoki hisobotda <b>Сохранить как → .xlsx</b>)</div>
+        <ol class="list-decimal pl-5 space-y-1 text-xs text-slate-600 dark:text-slate-300">
+          <li><b>Справочники → Контрагенты</b> — Наименование, ИНН</li>
+          <li><b>Справочники → Договоры</b> — Наименование, Контрагент, Номер, Дата, Вид договора</li>
+          <li><b>Отчеты → Карточка счета 51.10</b> (oxirgi 12 oy) — qaysi to'lov qaysi schyotga olingani</li>
+          <li><i>(ixtiyoriy)</i> <b>Банк и касса → Банковские выписки</b> ro'yxati — «Вх. номер» ustuni bilan dublikat aniqroq</li>
+          <li><i>(ixtiyoriy)</i> <b>ОСВ по счету 40.10 / 60.10</b> kontragentlar bo'yicha — qarz va avans taqsimoti</li>
+        </ol>
+        <div x-show="canPost" class="mt-3 flex flex-wrap items-center gap-2">
+          <button @click="$refs.exportsFile.click()" :disabled="filesUploading" class="rounded-lg bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white font-medium px-3 py-1.5"
+                  x-text="filesUploading ? '⏳ O\'qilmoqda…' : '📤 Fayllarni tanlash (bir nechta)'"></button>
+          <input type="file" multiple x-ref="exportsFile" class="hidden" accept=".xlsx,.xlsm,.csv" @change="uploadExports($event.target.files); $event.target.value=''">
+          <span class="text-xs text-slate-500">Qayta yuklash dublikat yaratmaydi — yangilari qo'shiladi</span>
+        </div>
+        <div x-show="filesResult.length" class="mt-2 space-y-1">
+          <template x-for="r in filesResult" :key="r.file">
+            <div class="text-xs rounded-lg px-2 py-1" :class="r.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-rose-50 text-rose-800 dark:bg-rose-900/20 dark:text-rose-300'" x-text="fileResultLine(r)"></div>
+          </template>
+        </div>
+      </div>
+
+      <div x-show="filesInfo?.loaded" class="rounded-xl border border-slate-200 dark:border-slate-800 p-3 space-y-2">
+        <div class="font-medium">📦 Yuklangan 1C ma'lumotlari</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2"><div class="text-slate-500">Kontragent</div><div class="font-semibold num" x-text="filesInfo?.counts?.counterparties ?? 0"></div></div>
+          <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2"><div class="text-slate-500">Shartnoma</div><div class="font-semibold num" x-text="filesInfo?.counts?.contracts ?? 0"></div></div>
+          <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2"><div class="text-slate-500">Bank hujjati</div><div class="font-semibold num" x-text="filesInfo?.counts?.docs ?? 0"></div></div>
+          <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-2"><div class="text-slate-500">Qoldiq (OSV)</div><div class="font-semibold num" x-text="filesInfo?.counts?.balances ?? 0"></div></div>
+        </div>
+        <div class="text-xs text-slate-500" x-text="filesPeriod()"></div>
+        <ul class="text-xs space-y-0.5 text-slate-600 dark:text-slate-300">
+          <template x-for="f in (filesInfo?.files || [])" :key="f.name + f.kind"><li x-text="fileLine(f)"></li></template>
+        </ul>
+        <button x-show="canPost" @click="clearExports()" class="text-xs text-rose-600 hover:underline">🗑 Yuklangan 1C fayllarini o'chirish</button>
+      </div>
+
+      <div class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 p-3 text-xs text-sky-900 dark:text-sky-200 space-y-1">
+        <div class="font-medium text-sm">2️⃣ Yangi qatorlarni 1C ga kiritish</div>
+        <div>Vipiskani yuklang → jadvalda «🟡 Yangi» qatorlarni tekshiring → pastdagi <b>📤 1C import fayli</b> tugmasi (<b>kl_to_1c….txt</b>).</div>
+        <div>1C da: <b>Банк и касса → Банковские выписки → Загрузить</b> (Обмен с банком) → faylni tanlang → ro'yxatni ko'rib <b>Загрузить</b>.</div>
+        <div>⚠️ Faylda schyot yo'q — 1C schyotni shartnoma/kontragent sozlamasidan qo'yadi. Yuklagach, jadvaldagi schyot bilan solishtiring.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== TEKSHIRISH MODALI ===================== -->
   <div x-show="inspect" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="inspect=null">
     <div @click.outside="inspect=null" class="w-full sm:max-w-2xl max-h-[90dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
@@ -679,7 +746,7 @@
 
           <div class="flex flex-wrap justify-end gap-2 pt-2">
             <button @click="inspect=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Yopish</button>
-            <button x-show="inspect.row.selectable && canPost" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
+            <button x-show="inspect.row.selectable && canPost && !fileMode()" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
             <button x-show="inspect.row.overridable && canPost" @click="doForce(inspect.row.id)" :disabled="!forceAck || forceReason.trim().length < 5 || posting"
                     class="rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2">⚠️ Baribir 1C ga yozish</button>
           </div>
@@ -921,6 +988,7 @@ function app() {
     pwd: { old: '', new1: '', new2: '' },
     rules: [], rulesSummary: {}, rulesCanEdit: false, rulesFilter: 'all', rulesSearch: '', learnMonths: 12,
     learning: false, learnResult: '', importErrors: [], rulesDirty: false,
+    filesBox: false, filesInfo: null, filesUploading: false, filesResult: [], exporting: false,
     newRule: { kind: 'counterparty', match: '', direction: 'chiqim', doc_kind: 'bank', account: '', advance_account: '', locked: true },
 
     get canPost() { return !!(this.me && this.me.can_post); },
@@ -1070,11 +1138,11 @@ function app() {
 
     // ---------------- tanlash
     selectableRows() { return this.rows.filter(r => r.selectable); },
-    isSel(id) { return this.selected[this.mode].includes(id); },
+    isSel(id) { return (this.selected[this.mode] || []).includes(id); },
     toggleSel(id) { const s = this.selected[this.mode]; const i = s.indexOf(id); i >= 0 ? s.splice(i, 1) : s.push(id); },
     toggleAll(on) { this.selected[this.mode] = on ? this.selectableRows().map(r => r.id) : []; },
     allSelected() { const s = this.selectableRows(); return s.length > 0 && s.every(r => this.isSel(r.id)); },
-    selectedIds() { const ok = new Set(this.selectableRows().map(r => r.id)); return this.selected[this.mode].filter(id => ok.has(id)); },
+    selectedIds() { const ok = new Set(this.selectableRows().map(r => r.id)); return (this.selected[this.mode] || []).filter(id => ok.has(id)); },
     selCount() { return this.selectedIds().length; },
     selSum() { const ids = new Set(this.selectedIds()); return this.rows.filter(r => ids.has(r.id)).reduce((a, r) => a + r.amount, 0); },
 
@@ -1206,6 +1274,93 @@ function app() {
       this.toast('💾 Eslab qolindi: ' + (res.rule.name || res.rule.match) + ' → ' + res.rule.account + " (qat'iy qoida)", 'ok');
     },
 
+    // ---------------- 1C bilan fayl orqali (eksport / import)
+    fileMode() { return !!(this.snap?.files_mode || this.snap?.offline); },
+    isExportable(r) { return r.kind === 'bank' && !r.posted && ['new', 'unchecked'].includes(r.status) && !(r.hard_blockers || []).length; },
+    exportIds() { return this.selectedIds().filter(id => this.rows.some(r => r.id === id && this.isExportable(r) && !r.exported_at)); },
+    exportCount() { return this.exportIds().length || this.rows.filter(r => this.isExportable(r) && !r.exported_at).length; },
+    exportLabel() {
+      if (this.exporting) return "⏳ Fayl tayyorlanmoqda…";
+      const n = this.exportCount();
+      return n ? "📤 1C import fayli: " + n + " ta yangi qator" : "📤 Import uchun yangi qator yo'q";
+    },
+    onecChip() {
+      if (this.snap?.files_mode) return "1C: eksport fayllari";
+      if (this.snap?.offline) return "1C: ulanmagan";
+      return this.snap?.onec_mode === 'demo' ? "1C: Demo baza" : "1C: OData";
+    },
+    filesBanner() {
+      const c = this.snap?.files || {};
+      return "📁 1C eksport fayllari bo'yicha tekshirildi (" + (c.docs ?? 0) + " bank hujjati, " + (c.counterparties ?? 0) +
+        " kontragent). 1C ga to'g'ridan-to'g'ri yozilmaydi — yangi qatorlarni 📤 import fayli bilan yuklang.";
+    },
+    advanceLine(r) {
+      if (r.balance_split?.found) return "↳ " + (r.settlement_note || '').replace(/^💡\s*/, '');
+      return "↳ qarz yo'q bo'lsa: " + r.advance_account + " (avans)";
+    },
+    exportedLabel(r) { return "📤 Import fayliga chiqarildi: " + this.fmtTs(r.exported_at); },
+    filesPeriod() {
+      const i = this.filesInfo || {};
+      const parts = [];
+      if (i.period) parts.push("Bank hujjatlari: " + i.period.from + " — " + i.period.to);
+      if (i.balances_as_of) parts.push("OSV qoldig'i: " + i.balances_as_of + " holatiga");
+      return parts.join(' · ');
+    },
+    fileLine(f) { return "• " + f.label + ": " + f.name + " — " + f.count + " ta (" + this.fmtTs(f.loaded_at) + ")"; },
+    fileResultLine(r) {
+      if (!r.ok) return "⚠️ " + r.file + ": " + r.error;
+      return "✅ " + r.file + " → " + r.label + ": " + r.count + " ta" + (r.added !== r.count ? " (yangi " + r.added + ")" : '') +
+        ((r.warnings || []).length ? " · ⚠️ " + r.warnings.length + " ogohlantirish" : '');
+    },
+    async openFiles() {
+      this.filesBox = true; this.filesResult = [];
+      const i = await this.api('/api/1c-files'); if (i) this.filesInfo = i;
+    },
+    async uploadExports(list) {
+      if (!list || !list.length) return;
+      const fd = new FormData();
+      for (const f of list) fd.append('files', f);
+      this.filesUploading = true;
+      try {
+        const res = await this.api('/api/1c-files/upload', { method: 'POST', body: fd });
+        if (!res) return;
+        this.filesResult = res.results; this.filesInfo = res.summary;
+        if (res.snapshot) this.setSnap(res.snapshot);
+        const ok = res.results.filter(r => r.ok).length;
+        const l = res.learned;
+        this.toast("📁 " + ok + " ta fayl o'qildi" + (l ? " · 🧠 " + (l.added + l.updated) + " ta qoida o'rganildi" : ''), ok ? 'ok' : 'error');
+        this.rulesDirty = true;
+        if (this.mode === 'rules') await this.loadRules();
+        await this.loadStatus();
+      } finally { this.filesUploading = false; }
+    },
+    async clearExports() {
+      if (!confirm("Yuklangan 1C eksport fayllari o'chirilsinmi? (O'rganilgan qoidalar qoladi)")) return;
+      if (await this.api('/api/1c-files', { method: 'DELETE' })) {
+        this.filesInfo = { loaded: false, files: [], counts: {} }; this.filesResult = [];
+        await this.loadStatus();
+        if (this.data.vipiska?.rows?.length) await this.recheck();
+      }
+    },
+    async exportImportFile() {
+      if (this.exporting) return;
+      const firm = this.snap?.firm_id ?? this.firmId;
+      if (firm !== this.firmId) { this.toast("🏢 Bu qatorlar boshqa firmaga tegishli", 'error'); return; }
+      this.exporting = true;
+      try {
+        const r = await fetch('/api/vipiska/export-1c', { method: 'POST', headers: this.headers({ 'Content-Type': 'application/json' }, firm),
+                                                         body: JSON.stringify({ ids: this.exportIds(), expected_firm_id: firm }) });
+        if (!r.ok) { const b = await r.json().catch(() => ({})); this.toast('⚠️ ' + (b.detail || ('Xato ' + r.status)), 'error'); return; }
+        const name = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'kl_to_1c.txt';
+        const n = r.headers.get('X-Rows');
+        const url = URL.createObjectURL(await r.blob());
+        const a = document.createElement('a'); a.href = url; a.download = name; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        this.toast("📤 " + n + " ta qator " + name + " fayliga chiqarildi — 1C da: Банк и касса → Банковские выписки → Загрузить", 'ok');
+        const s = await this.api('/api/session?mode=vipiska'); if (s) this.setSnap(s);
+      } catch (e) { this.toast("⚠️ Server bilan aloqa yo'q", 'error'); } finally { this.exporting = false; }
+    },
+
     // ---------------- chat
     chips() {
       const base = ["🏦 Vipiskani dublikatga tekshir", "🧠 Oldingi 1C tarixidan schyotlarni mosla", "✅ Yangi vipiskalarni 1C ga kirit", "📊 Kunlik pul oqimi tahlili"];
@@ -1328,6 +1483,9 @@ function app() {
         rule_deleted: '🗑 Qoida o\'chirildi: ' + (d.match || ''),
         rule_remembered: '💾 Eslab qolindi: ' + (d.name || d.match || '') + ' → ' + (d.account || ''),
         rules_imported: '📤 Qoidalar Excel\'dan: ' + (d.saved ?? 0) + ' ta' + (d.errors ? ', xato ' + d.errors : ''),
+        onec_files_uploaded: '📁 1C eksport fayllari: ' + (d.files || []).map(f => f.file).join(', '),
+        onec_files_cleared: "📁 1C eksport fayllari o'chirildi",
+        onec_import_file: '📤 1C import fayli: ' + (d.rows ?? 0) + ' ta qator, ' + this.fmt(d.sum || 0) + " so'm",
         posted_to_1c: '✅ 1C ga qoralama: ' + (d.ok ?? 0) + ' ta' + (d.failed ? ', bloklandi ' + d.failed : '') + (d.forced ? ' · ⚠️ majburan: ' + (d.reason || '') : ''),
       };
       return map[a.action] || a.action;
@@ -1342,6 +1500,7 @@ function app() {
       const o = this.status.onec || {};
       if (o.ok === undefined) return '⏳ 1C OData';
       if (!o.ok) return '🔴 ' + (o.label && o.label !== '1C OData' ? o.label : '1C OData: ulanmagan');
+      if (o.mode === 'file') return '📁 1C eksport fayllari';
       return (o.mode === 'demo' ? '🟡 1C OData (Demo baza)' : '🟢 1C OData');
     },
     aiBadge() { const a = this.status.ai || {}; return a.ok ? (a.provider === 'gemini' ? '🟢 Gemini AI (Bepul)' : '🟢 ' + a.label) : '🟡 Demo AI (kalit yo\'q)'; },

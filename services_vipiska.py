@@ -568,10 +568,23 @@ def advance_for(row: dict) -> str:
     return ADVANCE_FOR.get(acc, "")
 
 
+def _sum(v: float) -> str:
+    return f"{v:,.2f}".replace(",", " ")
+
+
 def settlement_note(row: dict) -> str:
     acc, adv = row.get("account"), row.get("advance_account")
     if not adv:
         return ""
+    split = row.get("balance_split") or {}
+    if split.get("account") == acc and split.get("found"):
+        when = f"{split['as_of'][8:10]}.{split['as_of'][5:7]}.{split['as_of'][:4]} " if split.get("as_of") else ""
+        if split["debt"] <= 0:
+            return f"💡 OSV {when}bo'yicha qarz yo'q — butun summa {adv} (avans) ga tushadi"
+        if split["advance"] <= 0:
+            return f"💡 OSV {when}bo'yicha qarz {_sum(split['debt'])} — to'lov to'liq {acc} qarzini yopadi"
+        return (f"💡 OSV {when}bo'yicha qarz {_sum(split['debt'])}: {_sum(split['close'])} → {acc} (qarz yopiladi), "
+                f"{_sum(split['advance'])} → {adv} (avans)")
     if row.get("kind") == "ehf":
         return f"💡 1C o'tkazishda: oldin berilgan avans ({adv}) bo'lsa — avtomatik hisobga olinadi, qolgani {acc} qarzi"
     if row.get("direction") == "kirim":
@@ -588,11 +601,14 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
            "posted": False, "posted_ref": None, "posted_number": None, "error": None, "learned": None}
     kind, blocker = special_kind(r, org_inn)
     row["special"] = kind
-    kontr = await onec.find_counterparty(r.counterparty_inn)
+    kontr = await onec.find_counterparty(r.counterparty_inn) or await onec.find_counterparty_by_name(r.counterparty_name)
+    row["hard_blockers"] = [b for b in extra_blockers if not b.startswith("⚪")]  # import fayliga ham to'siq
     row["counterparty_key"] = kontr["Ref_Key"] if kontr else None
     row["counterparty_1c_name"] = kontr.get("Description") if kontr else None
     if blocker:
         row["blockers"].append(blocker)
+    elif not kontr and onec.mode == "file":
+        pass  # 1C eksportida yo'q — import faylini yuklashda 1C kontragentni STIR bo'yicha o'zi yaratadi
     elif not kontr and onec.mode == "offline":
         pass  # ko'rish rejimi: kontragent 1C da qidirilmadi (umumiy "tekshirilmadi" belgisi yetarli)
     elif not kontr and kind == "bank_fee":
@@ -726,7 +742,7 @@ async def analyze_statement(st: Statement, onec: OneCService, previous: list[dic
         if st.own_inn and org_inn and st.own_inn != org_inn:
             extra.append(f"🏢 Vipiska STIR {st.own_inn} ga tegishli, tanlangan firma esa STIR {org_inn} — "
                          "boshqa firmaning vipiskasi bo'lishi mumkin")
-        if st.own_account and not await onec.find_org_bank_account(st.own_account):
+        if st.own_account and onec.mode != "file" and not await onec.find_org_bank_account(st.own_account):
             extra.append(f"🏦 Vipiskadagi hisob raqami {st.own_account} tanlangan firmaning 1C dagi bank hisoblari "
                          "orasida yo'q — vipiska boshqa firmaniki bo'lishi mumkin")
     extra.extend(firm_blockers or [])
