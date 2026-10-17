@@ -21,6 +21,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -138,6 +139,51 @@ class ODataError(Exception):
     pass
 
 
+# ---------------------------------------------------------------- bloklanish xotirasi
+# 1C bloklangan foydalanuvchi bilan har yangi urinish blok muddatini uzaytiradi. Shuning uchun blok tugash vaqti
+# (URL + login bo'yicha) faylda saqlanadi va shu vaqtgacha BOSHQA parol kiritilsa ham 1C ga so'rov yuborilmaydi.
+BLOCK_FILE = Path(__file__).resolve().parent / "data" / "onec_blocks.json"
+DEFAULT_BLOCK = timedelta(minutes=60)
+
+
+def _block_key(base: str, user: str) -> str:
+    return f"{base}|{(user or '').strip().lower()}"
+
+
+def _load_blocks() -> dict:
+    try:
+        return json.loads(BLOCK_FILE.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def blocked_until(base: str, user: str) -> datetime | None:
+    raw = _load_blocks().get(_block_key(base, user))
+    try:
+        until = datetime.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
+    return until if until and until > datetime.now() else None
+
+
+def remember_block(base: str, user: str, text: str) -> datetime:
+    m = re.search(r"до\s+(\d{2}\.\d{2}\.\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)", text)
+    until = None
+    if m:
+        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+            try:
+                until = datetime.strptime(f"{m.group(1)} {m.group(2)}", fmt)
+                break
+            except ValueError:
+                continue
+    until = (until or datetime.now() + DEFAULT_BLOCK) + timedelta(minutes=1)
+    blocks = {k: v for k, v in _load_blocks().items() if v > datetime.now().isoformat()}
+    blocks[_block_key(base, user)] = until.isoformat(timespec="seconds")
+    BLOCK_FILE.parent.mkdir(exist_ok=True)
+    BLOCK_FILE.write_text(json.dumps(blocks, ensure_ascii=False, indent=2), "utf-8")
+    return until
+
+
 # ---------------------------------------------------------------- transportlar
 class HttpOData:
     mode = "live"
@@ -151,8 +197,14 @@ class HttpOData:
                                         headers={"Accept": "application/json"})
         # Login xato bo'lsa — sozlamalar o'zgarmaguncha 1C ga QAYTA urinilmaydi.
         # Aks holda har sahifa yangilanishi yangi xato urinish bo'lib, 1C foydalanuvchini bloklaydi.
+        self.user = user
         self.auth_error: str | None = None
-        if not user or not password:
+        until = blocked_until(self.base, user)
+        if until:
+            self.auth_error = (f"🔒 Bu 1C foydalanuvchisi {until:%d.%m.%Y %H:%M} gacha bloklangan. Har yangi urinish "
+                               "blokni uzaytirgani uchun shu vaqtgacha 1C ga so'rov yuborilmaydi (parol o'zgarsa ham). "
+                               "Blokni darhol olib tashlash uchun uzcloud qo'llab-quvvatlash xizmatiga murojaat qiling.")
+        elif not user or not password:
             self.auth_error = ("1C login yoki parol kiritilmagan — ⚙️ Sozlamalarda 1C bazasidagi foydalanuvchi nomi "
                                "va parolini kiriting (1C ga so'rov yuborilmadi)")
 
@@ -187,6 +239,7 @@ class HttpOData:
         low = text.lower()
         if "заблокирован" in low:
             blocked = next((p for p in text.split(" | ") if "заблокирован" in p.lower()), text)
+            remember_block(self.base, self.user, blocked)
             self.auth_error = (f"🔒 1C foydalanuvchisi BLOKLANGAN (xato urinishlar ko'p): {blocked} — blok muddati "
                                "tugashini kuting yoki uzcloud qo'llab-quvvatlash xizmatidan blokni olib tashlashni "
                                "so'rang. Dastur sozlamalar o'zgarmaguncha 1C ga qayta urinmaydi.")
