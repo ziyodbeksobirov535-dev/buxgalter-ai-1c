@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -148,6 +149,12 @@ class HttpOData:
         self.base = base
         self.client = httpx.AsyncClient(auth=(user, password) if user else None, timeout=timeout,
                                         headers={"Accept": "application/json"})
+        # Login xato bo'lsa — sozlamalar o'zgarmaguncha 1C ga QAYTA urinilmaydi.
+        # Aks holda har sahifa yangilanishi yangi xato urinish bo'lib, 1C foydalanuvchini bloklaydi.
+        self.auth_error: str | None = None
+        if not user or not password:
+            self.auth_error = ("1C login yoki parol kiritilmagan — ⚙️ Sozlamalarda 1C bazasidagi foydalanuvchi nomi "
+                               "va parolini kiriting (1C ga so'rov yuborilmadi)")
 
     @staticmethod
     def _effective_status(r: httpx.Response) -> int:
@@ -159,29 +166,56 @@ class HttpOData:
         m = re.search(r"[?&]code=(\d{3})", r.headers.get("location", ""))
         return int(m.group(1)) if m else r.status_code
 
+    @staticmethod
+    def _error_text(r: httpx.Response) -> str:
+        """OData xatosi yoki 1C platforma istisnosi ({"exception": {"descr", "inner": ...}}) matnini olish."""
+        try:
+            data = json.loads(r.text.lstrip("\ufeff"))
+        except ValueError:
+            return r.text[:300]
+        if isinstance(data, dict) and "odata.error" in data:
+            return str(data["odata.error"].get("message", {}).get("value", ""))
+        parts, e = [], (data.get("exception") if isinstance(data, dict) else None)
+        while isinstance(e, dict):
+            if e.get("descr"):
+                parts.append(" ".join(str(e["descr"]).split()))
+            e = e.get("inner")
+        return " | ".join(parts) or r.text[:300]
+
     def _raise_for(self, r: httpx.Response, status: int) -> None:
-        if status == 401:
-            raise ODataError("1C 401: login yoki parol noto'g'ri (yoki kiritilmagan), yoki bu foydalanuvchiga "
-                             "OData huquqi berilmagan")
+        text = "" if r.is_redirect else self._error_text(r)
+        low = text.lower()
+        if "заблокирован" in low:
+            blocked = next((p for p in text.split(" | ") if "заблокирован" in p.lower()), text)
+            self.auth_error = (f"🔒 1C foydalanuvchisi BLOKLANGAN (xato urinishlar ko'p): {blocked} — blok muddati "
+                               "tugashini kuting yoki uzcloud qo'llab-quvvatlash xizmatidan blokni olib tashlashni "
+                               "so'rang. Dastur sozlamalar o'zgarmaguncha 1C ga qayta urinmaydi.")
+            raise ODataError(self.auth_error)
+        if status in (401, 402, 403) or "пароль" in low or ("пользовател" in low and "неверно" in low):
+            self.auth_error = ("1C: login yoki parol noto'g'ri, yoki foydalanuvchiga OData huquqi berilmagan. "
+                               "Eslatma: uzcloud portali emas, 1C BAZASIDAGI foydalanuvchi nomi kerak. "
+                               "Dastur sozlamalar o'zgarmaguncha 1C ga qayta urinmaydi (bloklanishdan himoya).")
+            raise ODataError(self.auth_error)
         if status == 404:
             raise ODataError("1C 404: manzil topilmadi — baza manzilini yoki OData nashr qilinganini tekshiring")
         if r.is_redirect:
             raise ODataError(f"1C {status}: kutilmagan yo'naltirish → {r.headers.get('location', '')[:200]}")
-        msg = r.text[:500]
-        try:
-            msg = r.json().get("odata.error", {}).get("message", {}).get("value", msg)
-        except Exception:
-            pass
-        raise ODataError(f"1C OData xatosi {status}: {msg}")
+        raise ODataError(f"1C OData xatosi {status}: {text[:500]}")
 
-    async def _request(self, method: str, path: str, **kw) -> Any:
+    async def _send(self, method: str, url: str, **kw) -> httpx.Response:
+        if self.auth_error:
+            raise ODataError(self.auth_error)
         try:
-            r = await self.client.request(method, f"{self.base}/{path}", **kw)
+            r = await self.client.request(method, url, **kw)
         except httpx.HTTPError as e:
             raise ODataError(f"1C serveriga ulanib bo'lmadi: {e}") from e
         status = self._effective_status(r)
         if status >= 300:
             self._raise_for(r, status)
+        return r
+
+    async def _request(self, method: str, path: str, **kw) -> Any:
+        r = await self._send(method, f"{self.base}/{path}", **kw)
         if not r.content:
             return {}
         try:
@@ -220,14 +254,7 @@ class HttpOData:
         return True
 
     async def metadata_text(self) -> str:
-        try:
-            r = await self.client.get(f"{self.base}/$metadata")
-        except httpx.HTTPError as e:
-            raise ODataError(str(e)) from e
-        status = self._effective_status(r)
-        if status >= 300:
-            self._raise_for(r, status)
-        return r.text
+        return (await self._send("GET", f"{self.base}/$metadata")).text
 
 
 class DemoOData:
