@@ -12,7 +12,7 @@ import auth
 import config
 import db
 import main
-from tests.conftest import DEMO_FIRM
+from tests.conftest import DEMO_FIRM, SAMPLE_READY, SAMPLE_ROWS
 
 PASSWORD = "parol12345"
 
@@ -138,7 +138,7 @@ def test_firms_have_separate_sessions(client, users, firms):
     alfa, _ = firms
     login(client, "buh")
     client.post("/api/vipiska/sample", headers={"X-Firm-Id": str(DEMO_FIRM)})
-    assert len(client.get("/api/session", headers={"X-Firm-Id": str(DEMO_FIRM)}).json()["rows"]) == 8
+    assert len(client.get("/api/session", headers={"X-Firm-Id": str(DEMO_FIRM)}).json()["rows"]) == SAMPLE_ROWS
     assert client.get("/api/session", headers={"X-Firm-Id": str(alfa)}).json()["rows"] == []
 
 
@@ -159,7 +159,7 @@ def test_audit_records_posting(client, users):
     snap = client.post("/api/vipiska/sample", headers=h).json()
     client.post("/api/post", headers=h, json={"ids": [r["id"] for r in snap["rows"] if r["selectable"]]})
     entry = next(a for a in db.list_audit() if a["action"] == "posted_to_1c")
-    assert entry["user"] == "buh" and entry["details"]["ok"] == 4
+    assert entry["user"] == "buh" and entry["details"]["ok"] == SAMPLE_READY
 
 
 # ---------------------------------------------------------------- firma maxfiy ma'lumotlari

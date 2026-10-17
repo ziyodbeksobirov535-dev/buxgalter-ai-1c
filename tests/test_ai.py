@@ -5,14 +5,14 @@ import types as pytypes
 import config
 import core
 import services_ai
-from tests.conftest import DEMO_FIRM
+from tests.conftest import DEMO_FIRM, SAMPLE_READY
 
 
 def test_demo_ai_post_request_shows_confirmation_card_but_posts_nothing():
     s = core.get_session("ai", DEMO_FIRM)
     res = asyncio.run(services_ai.chat(s, "Yangi vipiskalarni 1C ga kirit", "vipiska"))
     assert res["engine"] == "mock"
-    assert [c["type"] for c in res["cards"]] == ["confirm_post"] and res["cards"][0]["count"] == 4
+    assert [c["type"] for c in res["cards"]] == ["confirm_post"] and res["cards"][0]["count"] == SAMPLE_READY
     assert not any(r["posted"] for r in s.vipiska)
 
 

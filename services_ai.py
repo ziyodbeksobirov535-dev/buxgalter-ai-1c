@@ -35,8 +35,12 @@ Qoidalar:
   karta ichidagi tugmani bosishni ayt. Dublikat va farqli qatorlar hech qachon kiritilmaydi.
 - Pul oqimi / tahlil — cash_flow_summary chaqir.
 - Hujjatlar 1C ga faqat qoralama (Posted=false) sifatida tushadi — buni eslatib qo'y.
-- Schyotlar: 60.10 — mol yetkazib beruvchilar, 40.10 — xaridorlar, 64.10 — byudjetga soliqlar, 94.20 — ma'muriy
-  xarajatlar (bank komissiyasi). Summalarni "45 000 000 so'm" ko'rinishida yoz.
+- Hisoblar rejasi (BHMS 21): 40.10 xaridorlar (qarz) / 63.10 xaridorlardan avans; 60.10 yetkazib beruvchilar /
+  43.10 berilgan avans; 64.10 budjet (QQS, JShDS — kod 46); 65.20 ijtimoiy soliq (kod 36) va pensiya badali/INPS
+  (kod 101); 67.10 ish haqi; 66.10 dividend; 68.10 kredit/qarz; 96.10 kredit foizi; 55.20 korporativ karta (KPK);
+  57.10 terminal/inkassatsiya; 94.20 ma'muriy xarajatlar (bank komissiyasi); 44.10 kiruvchi EHF dagi QQS.
+  To'lovni 1C o'tkazishda avval qarz (40.10/60.10) yopiladi, ortgani avansga (63.10/43.10) — avtomatik.
+  Summalarni "45 000 000 so'm" ko'rinishida yoz.
 - Javobni Markdown'da yoz: **qalin**, ro'yxatlar "- " bilan. Jadval ishlatma."""
 
 TOOL_DECLARATIONS = [

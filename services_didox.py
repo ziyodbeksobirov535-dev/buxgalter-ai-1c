@@ -12,6 +12,7 @@ from datetime import date
 
 import httpx
 
+from accounts_uz import VAT_ACCOUNT
 from services_1c import E_PURCHASE, FIELDS, ODataError, OneCService
 from services_vipiska import advance_key, apply_rule, finalize_row
 
@@ -115,9 +116,18 @@ async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None
         apply_rule(row, stored)
     else:
         row["account"], row["account_source"] = "60.10", "rules"
+    # Provodka: Dt tovar/xarajat (29.10 / 94.20) + Dt hisobga olinadigan QQS (44.10) — Kt yetkazib beruvchi (60.10)
+    extra = (learned or {}).get("extra") or {}
+    row["item_account"] = (await onec.account_code(extra.get("item_account_key"))
+                           or ("94.20" if row["doc_kind"] == "Услуги" else "29.10"))
+    has_vat = any(round(it["total"] - it["total"] / 1.12, 2) > 0 for it in inv["items"])
+    row["vat_account"] = (await onec.account_code(extra.get("vat_account_key")) or VAT_ACCOUNT) if has_vat else ""
+    row["posting_note"] = (f"Dt {row['item_account']}" + (f" + Dt {row['vat_account']} (QQS 12%)" if row["vat_account"] else "")
+                           + f" — Kt {{acc}}")
     if prev and prev.get("posted"):
         row.update(posted=True, posted_ref=prev["posted_ref"], posted_number=prev["posted_number"], status="posted")
     finalize_row(row)
+    row["posting_note"] = row["posting_note"].replace("{acc}", row["account"])
     return row
 
 
@@ -147,13 +157,18 @@ async def build_purchase_payload(row: dict, onec: OneCService) -> dict:
         c = await onec.find_contract(row["counterparty_key"], "chiqim")
         contract_key = c["Ref_Key"] if c else None
     vat_rate = (learned.get("extra") or {}).get("СтавкаНДС", "НДС12")
+    item_key = await onec.account_key(row["item_account"]) if row.get("item_account") else None
+    vat_key = await onec.account_key(row["vat_account"]) if row.get("vat_account") else None
+    item_field = "СчетЗатрат_Key" if row.get("doc_kind") == "Услуги" else "СчетУчета_Key"
     lines = []
     for i, it in enumerate(row["items"], 1):
         total = it["total"]
         net = round(total / 1.12, 2)
-        lines.append({"LineNumber": str(i), "Номенклатура_Key": it["nomenclature_key"], "Количество": it["qty"],
-                      "Цена": round(net / it["qty"], 2) if it["qty"] else net, "Сумма": total,
-                      "СтавкаНДС": vat_rate, "СуммаНДС": round(total - net, 2)})
+        lines.append({k: v for k, v in {
+            "LineNumber": str(i), "Номенклатура_Key": it["nomenclature_key"], "Количество": it["qty"],
+            "Цена": round(net / it["qty"], 2) if it["qty"] else net, "Сумма": total,
+            "СтавкаНДС": vat_rate, "СуммаНДС": round(total - net, 2),
+            item_field: item_key, "СчетУчетаНДС_Key": vat_key}.items() if v is not None})
     common = await onec.common_fields(E_PURCHASE)
     return {
         **common,

@@ -48,13 +48,46 @@ def test_contract_from_purpose_is_matched_in_1c():
     assert payload["ДоговорКонтрагента_Key"] == rows["52"]["contract"]["key"]
 
 
-def test_unknown_contract_number_blocks_row():
+def test_unknown_contract_is_created_on_posting():
+    """Yangi shartnoma bo'yicha birinchi to'lov: ko'rib chiqishda yaratilmaydi, 1C ga yozishda yaratiladi."""
     import asyncio
     import core
     from tests.conftest import DEMO_FIRM
     csv = ("Sana;Hujjat №;Debet;Kredit;Kontragent;STIR;To'lov maqsadi\n"
            "16.10.2026;901;5 000,00;;TOSHKENT QURILISH MATERIALLARI MChJ;304567890;Договор 999 от 01.10.2026 за товар\n").encode()
-    snap = asyncio.run(core.load_statement(core.get_session("c2", DEMO_FIRM), "v.csv", csv))
-    r = snap["rows"][0]
-    assert r["contract"]["source"] == "missing" and not r["selectable"]
-    assert any("№999" in b for b in r["blockers"])
+    s = core.get_session("c2", DEMO_FIRM)
+
+    async def scenario():
+        snap = await core.load_statement(s, "v.csv", csv)
+        r = snap["rows"][0]
+        assert r["contract"]["source"] == "new" and r["selectable"] and "№999" in r["contract"]["label"]
+        onec = core.get_onec(DEMO_FIRM)
+        before = len(onec.t.db["Catalog_ДоговорыКонтрагентов"])
+        preview = await core.preview_payload(s, "vipiska", r["id"])
+        assert len(onec.t.db["Catalog_ДоговорыКонтрагентов"]) == before  # ko'rib chiqish hech narsa yaratmaydi
+        assert "ДоговорКонтрагента_Key" not in preview["payload"]
+        res = await core.post(s, "vipiska", [r["id"]])
+        assert res["ok"] == 1 and "yangi shartnoma" in res["results"][0]["message"]
+        new = onec.t.db["Catalog_ДоговорыКонтрагентов"][-1]
+        assert len(onec.t.db["Catalog_ДоговорыКонтрагентов"]) == before + 1
+        assert new["Номер"] == "999" and new["Дата"] == "2026-10-01T00:00:00" and new["ВидДоговора"] == "СПоставщиком"
+        draft = onec.t.db["Document_СписаниеСРасчетногоСчета"][-1]
+        assert draft["ДоговорКонтрагента_Key"] == new["Ref_Key"]
+        # keyingi vipiskada shu shartnoma endi "topildi" — ikkinchi marta yaratilmaydi
+        again = await core.load_statement(core.get_session("c3", DEMO_FIRM), "v2.csv", csv.replace(b"901", b"902"))
+        assert again["rows"][0]["contract"]["source"] == "purpose"
+    asyncio.run(scenario())
+
+
+def test_didox_vat_split_44_10():
+    import asyncio
+    import core
+    from tests.conftest import DEMO_FIRM
+    s = core.get_session("vat", DEMO_FIRM)
+    snap = asyncio.run(core.load_didox(s))
+    new = next(r for r in snap["rows"] if r["status"] == "new")
+    assert (new["item_account"], new["vat_account"], new["account"]) == ("29.10", "44.10", "60.10")
+    assert new["posting_note"] == "Dt 29.10 + Dt 44.10 (QQS 12%) — Kt 60.10"
+    payload = asyncio.run(core.preview_payload(s, "didox", new["id"]))["payload"]
+    line = payload["Товары"][0]
+    assert line["СчетУчета_Key"] and line["СчетУчетаНДС_Key"]

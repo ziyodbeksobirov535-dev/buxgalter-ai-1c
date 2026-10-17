@@ -440,8 +440,61 @@ BANK_FEE = re.compile(r"за документ|комисс|komissiya|за обс
                       re.IGNORECASE)
 
 
+# ---------------------------------------------------------------- aniq belgilar (soliq kodi, ish haqi, kredit …)
+# Bular 1C tarixidan USTUN: G'aznachilik bitta kontragent, lekin har bir soliq o'z schyotiga olinadi.
+# Soliq kodlari: G'aznachilik to'lov maqsadi formati "~hisob~STIR~kod ..." yoki maqsad boshida kod ("101 …").
+TAX_CODE_ACCOUNTS = {
+    "36": ("65.20", "ijtimoiy soliq (kod 36)"),
+    "46": ("64.10", "JShDS — jismoniy shaxslar daromad solig'i (kod 46)"),
+    "101": ("65.20", "jamg'arib boriladigan pensiya badali / INPS (kod 101)"),
+}
+QQS_RE = re.compile(r"\bqqs\b|\bндс\b|\bnds\b|ққс|ққс", re.IGNORECASE)  # faqat soliq organiga to'lovda
+TAX_CODE_RE = re.compile(r"~\d{9,}~\d{9}~(\d{1,3})\b|^\s*(\d{2,3})\s+\D")
+CLASSIFIERS = [  # (regex, schyot, izoh, yo'nalishlar)
+    (r"ижтимоий|ijtimoiy soliq|соц\.?\s*налог|социальн\w*\s+налог|yagona ijtimoiy|\bесп\b", "65.20", "ijtimoiy soliq",
+     ("chiqim",)),
+    (r"жисмоний шахслар даромад|jismoniy shaxslar daromad|\bjshds\b|\bжшдс\b|\bндфл\b|daromad solig", "64.10",
+     "JShDS (daromad solig'i)", ("chiqim",)),
+    (r"пенсия бадал|pensiya badal|\bинпс\b|\binps\b|жам.ариб бориладиган|jamg.arib boriladigan", "65.20",
+     "pensiya badali / INPS", ("chiqim",)),
+    (r"ish haqi|иш ҳақи|иш хаки|\boylik\b|зарплат|заработн\w* плат|аванс по з/п", "67.10", "ish haqi", ("chiqim",)),
+    (r"dividend|дивиденд", "66.10", "dividend", ("chiqim",)),
+    (r"kredit foiz|процент\w* по кредит|кредит\w* бўйича фоиз|foiz to.lov", "96.10", "kredit foizi", ("chiqim",)),
+    (r"погашени\w* кредит|kredit asosiy|основно\w* долг|молиявий ёрдам|moliyaviy yordam|финансов\w* помощ|фин\.?\s*помощ"
+     r"|\bзай[мё]", "68.10", "kredit / moliyaviy yordam", ("chiqim", "kirim")),
+    (r"korporativ karta|корпоративн\w* карт|\bкпк\b|\bkpk\b", "55.20", "korporativ karta (KPK)", ("chiqim",)),
+    (r"terminal|uzcard|\bhumo\b|эквайринг|ekvayring|inkassats|инкассац|\bclick\b|\bpayme\b", "57.10",
+     "terminal / inkassatsiya tushumi", ("kirim",)),
+]
+CLASSIFIERS = [(re.compile(p, re.IGNORECASE), acc, why, dirs) for p, acc, why, dirs in CLASSIFIERS]
+
+
+def is_tax_payee(r: BankRow) -> bool:
+    return r.counterparty_inn in TAX_INNS or bool(TAX_NAME.search(r.counterparty_name or ""))
+
+
+def classify_purpose(r: BankRow) -> dict | None:
+    """Aniq belgi bo'yicha schyot: {"account", "reason"} yoki None (unda 1C tarixi / qoidalar / standart)."""
+    purpose = " ".join(str(r.purpose or "").split())
+    if r.direction == "chiqim" and is_tax_payee(r):
+        m = TAX_CODE_RE.search(purpose)
+        code = m and (m.group(1) or m.group(2))
+        if code in TAX_CODE_ACCOUNTS:
+            acc, why = TAX_CODE_ACCOUNTS[code]
+            return {"account": acc, "reason": f"🧾 Soliq kodi: {why} → {acc}"}
+        if QQS_RE.search(purpose):
+            return {"account": "64.10", "reason": "🧾 Soliq organiga QQS to'lovi → 64.10"}
+    for rx, acc, why, dirs in CLASSIFIERS:
+        if r.direction in dirs and rx.search(purpose):
+            return {"account": acc, "reason": f"🧾 To'lov maqsadi: {why} → {acc}"}
+    return None  # oddiy G'aznachilik to'lovi (kodsiz) — 1C tarixi aniqroq; bo'lmasa standart 64.10
+
+
 def rule_account(r: BankRow) -> str:
     """1C tarixi va qoidalar bo'lmasa — standart taxmin."""
+    classified = classify_purpose(r)
+    if classified:
+        return classified["account"]
     low = (r.purpose or "").lower()
     if r.direction == "chiqim":
         if r.counterparty_inn in TAX_INNS or TAX_NAME.search(r.counterparty_name or ""):
@@ -492,9 +545,9 @@ async def resolve_contract(row: dict, onec: OneCService) -> dict:
     if contract:
         return {"key": contract["Ref_Key"], "source": "purpose", "name": contract.get("Description", ""),
                 "label": f"📄 Shartnoma №{ref['number']}{when} — 1C da topildi ✓"}
-    return {"key": None, "source": "missing", "label": f"⚠️ Shartnoma №{ref['number']}{when} 1C da topilmadi",
-            "blocker": f"📄 To'lov maqsadidagi shartnoma №{ref['number']}{when} bu kontragent uchun 1C da topilmadi — "
-                       "1C da shartnomani yarating yoki raqamini tekshiring (noto'g'ri shartnomaga yozilmasligi uchun)"}
+    # 1C da yo'q — yangi shartnoma bo'yicha birinchi to'lov: 1C ga kiritishda shartnoma yaratiladi
+    return {"key": None, "source": "new", "number": ref["number"], "date": ref.get("date"),
+            "label": f"➕ Yangi shartnoma №{ref['number']}{when} — 1C ga kiritishda yaratiladi"}
 
 
 def rule_brief(rule: dict) -> dict:
@@ -579,6 +632,11 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         row["operation"] = operation_for(row["account"], r.direction)
     elif locked:
         apply_rule(row, locked)
+    elif classified := classify_purpose(r):
+        # aniq belgi (soliq kodi, ish haqi, kredit …) 1C tarixidan ustun: bitta kontragent — turli schyotlar
+        row["account"], row["account_source"], row["account_reason"] = classified["account"], "classified", classified["reason"]
+        row["operation"] = operation_for(classified["account"], r.direction)
+        row["class_account"], row["class_reason"] = classified["account"], classified["reason"]
     elif learned and learned.get("account_code"):
         row["account"], row["account_source"], row["operation"] = learned["account_code"], "history", learned["operation"]
         row["account_reason"] = (f"🧠 1C tarixi: shu kontragentning oxirgi hujjatlari ({learned['confidence']}) "
@@ -629,7 +687,7 @@ def finalize_row(row: dict) -> None:
     # "Baribir yozish" faqat farqli yoki raqamsiz-mos (weak) qatorlar uchun — to'liq dublikat hech qachon
     row["overridable"] = (not row["posted"] and not row["blockers"] and
                           (row["status"] == "discrepancy" or (row["status"] == "duplicate" and row.get("dup_kind") == "weak")))
-    if row["account_source"] in ("rule", "keyword") or (row["account_source"] == "history" and row.get("account_reason")):
+    if row["account_source"] in ("rule", "keyword", "classified") or (row["account_source"] == "history" and row.get("account_reason")):
         row["account_badge"] = row["account_reason"]
     elif row["account_source"] == "history":
         row["account_badge"] = f"🧠 Oldingi 1C tarixidan o'rganildi ({row['account']})"
@@ -679,7 +737,7 @@ async def analyze_statement(st: Statement, onec: OneCService, previous: list[dic
 def kpis(rows: list[dict]) -> dict:
     ready = [r for r in rows if r["selectable"]]
     cands = [r for r in rows if r["status"] in ("new", "posted")]
-    learned = [r for r in cands if r["account_source"] in ("history", "rule", "keyword")]
+    learned = [r for r in cands if r["account_source"] in ("history", "rule", "keyword", "classified")]
     return {
         "total": len(rows), "ready": len(ready), "duplicates": sum(r["status"] == "duplicate" for r in rows),
         "discrepancies": sum(r["status"] == "discrepancy" for r in rows), "posted": sum(r["posted"] for r in rows),
@@ -709,7 +767,23 @@ def cash_flow(rows: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------- qoralama (draft) payload
-async def build_bank_payload(row: dict, onec: OneCService, own_account: str = "") -> dict:
+async def ensure_contract(row: dict, onec: OneCService, create_missing: bool) -> str | None:
+    """"Yangi shartnoma" qatori: yozishdan oldin yana qidiriladi (boshqa birov yaratgan bo'lishi mumkin), bo'lmasa —
+    yaratiladi. Ko'rib chiqishda (create_missing=False) hech narsa yaratilmaydi."""
+    c = row.get("contract") or {}
+    if c.get("source") != "new":
+        return c.get("key")
+    found = await onec.find_contract_by_ref(row["counterparty_key"], c["number"], c.get("date"))
+    if found:
+        return found["Ref_Key"]
+    if not create_missing:
+        return None
+    created = await onec.create_contract(row["counterparty_key"], c["number"], c.get("date"), row["direction"])
+    c.update(key=created["Ref_Key"], created=created.get("Description") or f"№{c['number']}")
+    return created["Ref_Key"]
+
+
+async def build_bank_payload(row: dict, onec: OneCService, own_account: str = "", create_missing: bool = False) -> dict:
     if not row.get("counterparty_key"):
         raise ODataError("Kontragent Ref_Key topilmadi")
     org = await onec.organization()
@@ -726,9 +800,12 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
     rule = row.get("rule") or {}
     rule_fits = rule.get("account") == row["account"]
     # 1) to'lov maqsadidagi shartnoma (1C da topilgan) → 2) 1C tarixi / qoida → 3) shu turdagi birinchi shartnoma
-    contract_key = ((row.get("contract") or {}).get("key") or learned.get("contract_key")
-                    or (rule.get("contract_key") if rule_fits else None) or None)
-    if not contract_key:
+    if (row.get("contract") or {}).get("source") == "new":
+        contract_key = await ensure_contract(row, onec, create_missing)  # to'lov maqsadidagi YANGI shartnoma
+    else:
+        contract_key = ((row.get("contract") or {}).get("key") or learned.get("contract_key")
+                        or (rule.get("contract_key") if rule_fits else None) or None)
+    if not contract_key and (row.get("contract") or {}).get("source") != "new":
         contract = await onec.find_contract(row["counterparty_key"], row["direction"])
         contract_key = contract["Ref_Key"] if contract else None
     kontr_bank = await onec.find_bank_account(row["counterparty_key"], E_COUNTERPARTY, row.get("account_no") or None)
@@ -790,7 +867,10 @@ def set_account(row: dict, account: str) -> None:
     learned = row.get("learned") or {}
     rule = row.get("rule") or {}
     row["account"] = acc
-    if rule.get("account") == acc and row.get("rule_source"):
+    if row.get("class_account") == acc:
+        row["account_source"], row["account_reason"] = "classified", row["class_reason"]
+        row["operation"] = operation_for(acc, row["direction"])
+    elif rule.get("account") == acc and row.get("rule_source"):
         row["account_source"], row["account_reason"] = row["rule_source"], row["rule_reason"]
         row["operation"] = rule["operation"] or operation_for(acc, row["direction"])
     elif learned.get("account_code") == acc:
@@ -855,5 +935,7 @@ async def post_rows(rows: list[dict], ids: list[str], onec: OneCService, builder
                    error=None, forced=bool(forced and fresh["status"] != "new"))
         finalize_row(row)
         msg = f"Qoralama yaratildi: {created['number']}" + (" (majburan)" if row["forced"] else "")
+        if (row.get("contract") or {}).get("created"):
+            msg += f" · yangi shartnoma yaratildi: {row['contract']['created']}"
         results.append({"id": rid, "ok": True, "message": msg, "number": created["number"]})
     return results

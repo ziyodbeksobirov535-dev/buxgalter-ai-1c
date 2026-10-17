@@ -17,6 +17,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 import config
 import core
 import db
+import accounts_uz
 import services_ai
 import services_rules
 from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, set_session_cookie
@@ -94,6 +95,12 @@ async def index():
 @app.get("/login", include_in_schema=False)
 async def login_page():
     return FileResponse(TEMPLATES / "login.html", headers=NO_CACHE)
+
+
+@app.get("/api/accounts")
+async def accounts(_user: dict = Depends(current_user)):
+    """Hisoblar rejasi — guruhlar bo'yicha (tanlash ro'yxatlari uchun)."""
+    return {"groups": accounts_uz.grouped(), "vat_account": accounts_uz.VAT_ACCOUNT}
 
 
 @app.get("/api/sample")

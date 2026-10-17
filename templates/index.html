@@ -140,7 +140,7 @@
             </div>
           </div>
           <div class="rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900/60 p-4">
-            <div class="text-xs text-violet-700 dark:text-violet-400">🧠 Tarixdan aniqlangan schyotlar (<span x-text="(kpis.learned_pct ?? 0) + '%'"></span>)</div>
+            <div class="text-xs text-violet-700 dark:text-violet-400">🧠 Aniqlangan schyotlar (tarix, qoida, kod) (<span x-text="(kpis.learned_pct ?? 0) + '%'"></span>)</div>
             <div class="mt-1 text-2xl font-bold num"><span x-text="kpis.learned ?? 0"></span><span class="text-base text-slate-400" x-text="' / ' + (kpis.learned_base ?? 0)"></span></div>
             <div class="mt-2 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
               <div class="h-full bg-violet-500 transition-all" :style="`width:${kpis.learned_pct || 0}%`"></div>
@@ -263,13 +263,18 @@
                     <td class="px-2 py-2.5 align-top text-right font-semibold num whitespace-nowrap" x-text="fmt(r.amount)"></td>
                     <td class="px-2 py-2.5 align-top max-w-[240px] hidden 2xl:table-cell"><div class="text-xs text-slate-600 dark:text-slate-300 line-clamp-2" :title="r.purpose" x-text="r.purpose"></div></td>
                     <td class="px-2 py-2.5 align-top">
-                      <select class="text-sm rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 border px-2 py-1 disabled:opacity-60"
-                              :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
-                        <template x-for="a in (snap?.account_choices || [])" :key="a">
-                          <option :value="a" :selected="a===r.account" x-text="a"></option>
+                      <select class="w-[7.5rem] text-sm rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 border px-2 py-1 disabled:opacity-60"
+                              :title="accountTitle(r.account)" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
+                        <template x-for="g in accountOptions(r)" :key="g.label">
+                          <optgroup :label="g.label">
+                            <template x-for="a in g.accounts" :key="a.code">
+                              <option :value="a.code" :selected="a.code===r.account" x-text="a.code + ' — ' + a.title"></option>
+                            </template>
+                          </optgroup>
                         </template>
                       </select>
-                      <div class="mt-1 text-[11px] leading-tight" :class="['history','rule','keyword'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                      <div x-show="r.kind === 'ehf' && r.posting_note" class="mt-0.5 text-[11px] text-sky-700 dark:text-sky-400" title="Provodka" x-text="'🧾 ' + r.posting_note"></div>
+                      <div class="mt-1 text-[11px] leading-tight" :class="['history','rule','keyword','classified'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
                       <div x-show="r.advance_account && r.status !== 'duplicate'" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400"
                            :title="r.settlement_note" x-text="'↳ qarz yo\'q bo\'lsa: ' + r.advance_account + ' (avans)'"></div>
                       <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)"
@@ -310,10 +315,16 @@
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                       <span class="text-[11px] font-medium px-2 py-0.5 rounded-lg" :class="statusClass(r.status)" x-text="r.status_label"></span>
                       <select class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
-                        <template x-for="a in (snap?.account_choices || [])" :key="a"><option :value="a" :selected="a===r.account" x-text="a"></option></template>
+                        <template x-for="g in accountOptions(r)" :key="g.label">
+                          <optgroup :label="g.label">
+                            <template x-for="a in g.accounts" :key="a.code">
+                              <option :value="a.code" :selected="a.code===r.account" x-text="a.code + ' — ' + a.title"></option>
+                            </template>
+                          </optgroup>
+                        </template>
                       </select>
                     </div>
-                    <div class="mt-1 text-[11px]" :class="['history','rule','keyword'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                    <div class="mt-1 text-[11px]" :class="['history','rule','keyword','classified'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
                     <div x-show="r.advance_account && r.status !== 'duplicate'" class="text-[11px] text-slate-500" x-text="'↳ qarz yo\'q bo\'lsa: ' + r.advance_account + ' (avans)'"></div>
                     <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)" class="mt-1 text-[11px] rounded-md border border-violet-300 text-violet-700 px-1.5 py-0.5">💾 Eslab qol</button>
                     <div x-show="r.diffs && r.diffs.length" class="text-[11px] text-rose-600" x-text="(r.diffs || []).join('; ')"></div>
@@ -439,7 +450,7 @@
               </tbody>
             </table>
             <datalist id="acc-list">
-              <template x-for="a in accountSuggestions()" :key="a"><option :value="a"></option></template>
+              <template x-for="a in accountSuggestions()" :key="a"><option :value="a" :label="a + ' — ' + accountTitle(a)"></option></template>
             </datalist>
           </div>
 
@@ -640,6 +651,11 @@
             <div :class="contractClass(inspect.row.contract)" x-text="inspect.row.contract?.label"></div>
             <div x-show="inspect.row.contract?.name" class="text-slate-500" x-text="'1C dagi: ' + (inspect.row.contract?.name || '')"></div>
             <div x-show="inspect.row.contract_ref" class="text-slate-500" x-text="'To\'lov maqsadidan: «' + (inspect.row.contract_ref?.text || '') + '»'"></div>
+          </div>
+          <div x-show="inspect.row.kind === 'ehf' && inspect.row.posting_note" class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 p-3 text-xs">
+            <div class="font-semibold">🧾 Provodka</div>
+            <div class="num" x-text="inspect.row.posting_note"></div>
+            <div class="text-slate-500" x-text="accountTitle(inspect.row.item_account) + (inspect.row.vat_account ? ' · ' + inspect.row.vat_account + ' — ' + accountTitle(inspect.row.vat_account) : '')"></div>
           </div>
           <div x-show="inspect.row.settlement_note" class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 p-3 text-xs space-y-1">
             <div class="font-semibold">💡 1C da qanday yopiladi</div>
@@ -899,7 +915,7 @@ function app() {
     chat: [], chatInput: '', chatBusy: false, toasts: [],
     settingsOpen: false, settings: {}, onecTest: '', inspect: null, confirmBox: null, forceReason: '', forceAck: false,
     tg: window.Telegram && window.Telegram.WebApp, isTg: false,
-    me: null, firms: [], firmId: null, noFirms: false, lastFile: null,
+    me: null, firms: [], firmId: null, noFirms: false, lastFile: null, accountGroups: [],
     settingsTab: 'account', firmForm: {}, allFirms: [], users: [], audit: [], tgCode: '',
     newFirm: { name: '', inn: '' }, newUser: { username: '', full_name: '', password: '', role: 'accountant', firm_ids: [] },
     pwd: { old: '', new1: '', new2: '' },
@@ -926,6 +942,8 @@ function app() {
       this.me = await this.api('/api/auth/me', { anyFirm: true });
       if (!this.me) return;
       this.firms = this.me.firms;
+      const acc = await this.api('/api/accounts', { anyFirm: true });
+      if (acc) this.accountGroups = acc.groups;
       if (!this.firms.length) { this.noFirms = true; return; }
       const preferred = this.isTg ? this.me.user.tg_firm_id : savedFirm;
       this.firmId = (this.firms.find(f => f.id === preferred) || this.firms[0]).id;
@@ -1118,8 +1136,20 @@ function app() {
       return ({ history: '🧠 1C tarixi', manual: '✍️ Buxgalter', correction: '💾 Tuzatishdan', import: '📤 Excel' })[r.source] || r.source;
     },
     accountSuggestions() {
-      const base = ['40.10', '43.10', '48.90', '50.10', '51.10', '60.10', '61.10', '64.10', '66.10', '67.10', '68.10', '69.90', '94.20', '94.30', '94.40', '95.10'];
+      const base = this.accountGroups.flatMap(g => g.accounts.map(a => a.code));
       return [...new Set([...base, ...this.rules.map(r => r.account), ...(this.data.vipiska?.account_choices || [])])].sort();
+    },
+    accountTitle(code) {
+      for (const g of this.accountGroups) { const a = g.accounts.find(x => x.code === code); if (a) return a.title; }
+      return '';
+    },
+    accountOptions(r) {
+      // Hisoblar rejasi guruhlari + qatordagi/firmadagi rejada yo'q schyotlar ("Boshqa")
+      const known = new Set(this.accountGroups.flatMap(g => g.accounts.map(a => a.code)));
+      const extra = [...new Set([...(this.snap?.account_choices || []), r?.account].filter(c => c && !known.has(c)))];
+      const groups = this.accountGroups.map(g => ({ label: g.label, accounts: g.accounts }));
+      if (extra.length) groups.push({ label: '📁 Boshqa (1C dagi)', accounts: extra.map(c => ({ code: c, title: '' })) });
+      return groups;
     },
     async learnRules() {
       this.learning = true; this.learnResult = '';

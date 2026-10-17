@@ -302,7 +302,7 @@ async def post(session: Session, mode: str, ids: list[str], force_ids: list[str]
     own = session.statement.own_account if session.statement else ""
 
     async def bank_builder(row, onec):
-        return await build_bank_payload(row, onec, own)
+        return await build_bank_payload(row, onec, own, create_missing=True)  # faqat yozishda yangi shartnoma
     builders = {"bank": (bank_builder, recheck_bank), "ehf": (build_purchase_payload, recheck_purchase)}
     async with _post_lock, session.lock:
         results = await post_rows(rows_of(session, mode), ids, onec_for(session), builders,

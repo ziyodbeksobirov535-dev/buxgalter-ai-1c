@@ -13,6 +13,12 @@ import services_1c  # noqa: E402
 
 DEMO_FIRM = 1  # db.init() har doim birinchi bo'lib demo firmani yaratadi
 
+# Namuna vipiska (demo_data.SAMPLE_TRANSACTIONS): 14 qator =
+#   3 dublikat + 1 farqli + 1 ish haqi (vedomost kerak — bloklanadi) + 9 kiritishga tayyor
+SAMPLE_ROWS = 14
+SAMPLE_READY = 9
+SAMPLE_NOT_POSTED = SAMPLE_ROWS - SAMPLE_READY  # 5
+
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):

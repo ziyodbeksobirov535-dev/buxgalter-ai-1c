@@ -70,14 +70,10 @@ ADVANCE_FOR = {"40.10": "63.10", "60.10": "43.10"}
 REPAYMENT_AUTO = "Автоматически"
 
 # Tarixda topilmasa — standart qoidalar (O'zbekiston BHMS 21 hisoblar rejasi)
-ACCOUNT_CHOICES = ["60.10", "40.10", "64.10", "94.20"]
-OPERATION_BY_ACCOUNT = {
-    # schyot: (chiqim uchun ВидОперации, kirim uchun ВидОперации)
-    "60.10": ("ОплатаПоставщику", "ВозвратДенежныхСредствПоставщиком"),
-    "40.10": ("ВозвратДенежныхСредствПокупателю", "ОплатаОтПокупателя"),
-    "64.10": ("ПеречислениеНалога", "ПрочееПоступление"),
-    "94.20": ("ПрочееСписание", "ПрочееПоступление"),
-}
+from accounts_uz import UZ_ACCOUNTS  # noqa: E402 — to'liq hisoblar rejasi (BHMS 21)
+
+ACCOUNT_CHOICES = list(UZ_ACCOUNTS)
+OPERATION_BY_ACCOUNT = {code: (a[3], a[4]) for code, a in UZ_ACCOUNTS.items()}  # (chiqimda, kirimda)
 # To'lov maqsadidagi kalit so'zlar (kontragent tarixi bo'lmasa, shu so'z bo'yicha 1C tarixidan qidiriladi)
 # (kalit so'z, schyot, yo'nalish). "QQS bilan" kabi iboralar soliq to'lovi EMAS — shuning uchun aniq iboralar.
 PURPOSE_KEYWORDS = [
@@ -552,6 +548,20 @@ class OneCService:
             return hits[0] if hits else None
         return await self._cached(("contract_ref", kontr_key, number, on_date), f)
 
+    async def create_contract(self, kontr_key: str, number: str, on_date: str | None, direction: str) -> dict:
+        """Yangi shartnoma (to'lov maqsadidagi raqam 1C da yo'q — yangi shartnoma bo'yicha birinchi to'lov)."""
+        org = await self.organization()
+        when = f" от {on_date[8:10]}.{on_date[5:7]}.{on_date[:4]}" if on_date else ""
+        body = {"Owner_Key": kontr_key, "Description": f"№{number}{when}", "Номер": number,
+                "Дата": f"{on_date}T00:00:00" if on_date else None,
+                "ВидДоговора": "СПоставщиком" if direction == "chiqim" else "СПокупателем",
+                "Организация_Key": org["Ref_Key"] if org else None, "DeletionMark": False,
+                "Комментарий": "BUXGALTER AI: to'lov maqsadidagi shartnoma bo'yicha yaratildi"}
+        body, _dropped = await self.filter_payload(E_CONTRACT, {k: v for k, v in body.items() if v is not None})
+        created = await self.t.create(E_CONTRACT, body)
+        self.invalidate()
+        return created
+
     async def find_bank_account(self, owner_key: str, owner_entity: str, account_no: str | None) -> dict | None:
         async def f():
             conds = [Cond("Owner", "eq", Cast(owner_key, owner_entity)), Cond("DeletionMark", "eq", False)]
@@ -674,9 +684,15 @@ class OneCService:
         if _is_empty_key(contract):
             contract = line.get(FIELDS["contract"])
         extra = {k: doc[k] for k in ACCOUNT_BOUND_FIELDS if k in doc and not _is_empty_key(doc[k])}
-        goods = doc.get("Товары") or []
+        goods = doc.get("Товары") or doc.get("Услуги") or []
         if goods and goods[0].get("СтавкаНДС"):
             extra["СтавкаНДС"] = goods[0]["СтавкаНДС"]
+        if goods:  # xarid: tovar/xarajat schyoti va QQS schyoti (Dt 29.10 + Dt 44.10 — Kt 60.10)
+            item_acc = goods[0].get("СчетУчета_Key") or goods[0].get("СчетЗатрат_Key")
+            if not _is_empty_key(item_acc):
+                extra["item_account_key"] = item_acc
+            if not _is_empty_key(goods[0].get("СчетУчетаНДС_Key")):
+                extra["vat_account_key"] = goods[0]["СчетУчетаНДС_Key"]
         adv = doc.get(FIELDS["advance_account"])
         if _is_empty_key(adv):
             adv = line.get(FIELDS["advance_account"])

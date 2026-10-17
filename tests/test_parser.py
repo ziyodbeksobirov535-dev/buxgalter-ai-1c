@@ -128,7 +128,8 @@ def test_tax_and_bank_fee_defaults():
     dsi = BankRow(date(2026, 10, 15), "18", "chiqim", 7875.0, "Яшнобод тумани ДСИ", "200000001", purpose="101 ...")
     fee = BankRow(date(2026, 10, 16), "90000001", "chiqim", 100000.0, 'ООО "TEST FIRMA"', "300000777",
                   account_no="16401000100000000777", purpose="За документ №101 S=100 000 00")
-    assert rule_account(tax) == "64.10" and rule_account(dsi) == "64.10"
+    assert rule_account(tax) == "64.10"                 # kodsiz G'aznachilik to'lovi — standart 64.10
+    assert rule_account(dsi) == "65.20"                 # "101 … pensiya badali" — 65.20
     assert special_kind(fee, "300000777")[0] == "bank_fee" and rule_account(fee) == "94.20"
     own = BankRow(date(2026, 10, 16), "7", "chiqim", 5.0, "O'zimiz", "300000777", account_no="20208000999999999001",
                   purpose="O'z hisobimizga o'tkazma")

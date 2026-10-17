@@ -39,6 +39,8 @@ ACCOUNTS = {  # 1C Hisoblar rejasi kodi -> nomi (O'zbekiston BHMS 21)
     "9420": "Ma'muriy xarajatlar",
     "6990": "Boshqa majburiyatlar",
     "6310": "Xaridorlardan olingan avanslar",
+    "2910": "Ombordagi tovarlar",
+    "4410": "Hisobga olinadigan QQS",
     "4310": "Mol yetkazib beruvchilarga berilgan avanslar",
     "5110": "Hisob-kitob schyoti",
 }
@@ -88,6 +90,19 @@ SAMPLE_TRANSACTIONS = [
      "QQS bo'yicha 2026-yil sentyabr oyi uchun to'lov (soliq)", "new"),
     (date(2026, 10, 15), "54", "chiqim", 125_000.00, "207000001",
      "Bank xizmatlari uchun komissiya, 2026-yil oktyabr", "new"),
+    # --- hisoblar rejasi bo'yicha aniq belgilar (soliq kodlari, terminal, ish haqi, KPK)
+    (date(2026, 10, 16), "16", "chiqim", 2_450_000.00, "200999001",
+     "~2001108601262903212160093~200999001~36 Ijtimoiy soliq uchun to'lov sentabr 2026", "new"),
+    (date(2026, 10, 16), "17", "chiqim", 3_120_000.00, "200999001",
+     "~1000218604262903111103093~200999001~46 Jismoniy shaxslar daromad solig'i uchun to'lov sentabr 2026", "new"),
+    (date(2026, 10, 16), "18", "chiqim", 31_200.00, "200999001",
+     "101 Jamg'arib boriladigan pensiya badali (INPS) uchun to'lov sentabr 2026", "new"),
+    (date(2026, 10, 16), "141", "kirim", 4_870_000.00, "207000001",
+     "Humo/Uzcard terminal orqali savdo tushumi 15.10.2026", "new"),
+    (date(2026, 10, 16), "57", "chiqim", 18_600_000.00, "207000001",
+     "Oktyabr oyi uchun ish haqi plastik kartalarga o'tkazish", "new"),
+    (date(2026, 10, 16), "58", "chiqim", 2_000_000.00, "207000001",
+     "Korporativ kartani (KPK) to'ldirish", "new"),
 ]
 DIFF_AMOUNT_IN_1C = 19_050_000.00  # 124-son: 1C da boshqa summa
 
@@ -127,7 +142,9 @@ def seed_1c() -> dict[str, list[dict]]:
         "Ref_Key": org_acc_key, "Owner": org_key, "Owner_Type": "StandardODATA.Catalog_Организации",
         "НомерСчета": ORG["account"], "Description": "Asosiy hisob (ATB NAMUNA BANK)", "DeletionMark": False})
 
-    for code, name in ACCOUNTS.items():
+    from accounts_uz import UZ_ACCOUNTS  # demo 1C da to'liq hisoblar rejasi (BHMS 21)
+    chart = {**{c.replace(".", ""): a[1] for c, a in UZ_ACCOUNTS.items()}, **ACCOUNTS}
+    for code, name in chart.items():
         db["ChartOfAccounts_Хозрасчетный"].append({"Ref_Key": gid("acc", code), "Code": code, "Description": name})
     for role, name in CASH_FLOW_ITEMS.items():
         db["Catalog_СтатьиДвиженияДенежныхСредств"].append({"Ref_Key": gid("cfi", role), "Description": name,
@@ -224,9 +241,11 @@ def seed_1c() -> dict[str, list[dict]]:
             "Контрагент_Key": gid("kontr", inn), "ДоговорКонтрагента_Key": gid("contract", inn),
             "СуммаДокумента": amount, "НомерВходящегоДокумента": number, "ДатаВходящегоДокумента": _dt(d, 0),
             "СчетУчетаРасчетовСКонтрагентом_Key": gid("acc", "6010"), "СуммаВключаетНДС": True,
-            "Товары": [{"LineNumber": "1", "Номенклатура_Key": gid("nom", item), "Количество": qty,
-                        "Цена": round(net / qty, 2), "Сумма": amount, "СтавкаНДС": "НДС12",
-                        "СуммаНДС": round(amount - net, 2)}],
+            ("Услуги" if kind == "Услуги" else "Товары"): [{
+                "LineNumber": "1", "Номенклатура_Key": gid("nom", item), "Количество": qty,
+                "Цена": round(net / qty, 2), "Сумма": amount, "СтавкаНДС": "НДС12", "СуммаНДС": round(amount - net, 2),
+                ("СчетЗатрат_Key" if kind == "Услуги" else "СчетУчета_Key"): gid("acc", "9420" if kind == "Услуги" else "2910"),
+                "СчетУчетаНДС_Key": gid("acc", "4410")}],
         })
 
     for inn, d, number, amount, kind, item in [
@@ -258,7 +277,7 @@ def build_sample_xlsx(path) -> None:
     ws["A1"].font = Font(bold=True, size=13)
     ws["A2"] = f"Mijoz: {ORG['name']}   STIR: {ORG['inn']}"
     ws["A3"] = f"Hisob raqami: {ORG['account']}   MFO: {ORG['mfo']}   Valyuta: UZS"
-    ws["A4"] = "Davr: 01.10.2026 — 15.10.2026"
+    ws["A4"] = "Davr: 01.10.2026 — 16.10.2026"
     headers = ["Sana", "Hujjat №", "Debet (Chiqim)", "Kredit (Kirim)", "Kontragent nomi", "Kontragent STIR",
                "MFO", "Hisob raqami", "To'lov maqsadi"]
     ws.append([])

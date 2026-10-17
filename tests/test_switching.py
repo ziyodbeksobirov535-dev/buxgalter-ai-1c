@@ -8,7 +8,7 @@ import pytest
 import bot
 import core
 import db
-from tests.conftest import DEMO_FIRM
+from tests.conftest import DEMO_FIRM, SAMPLE_READY
 
 TG = 4242
 
@@ -62,7 +62,7 @@ def test_old_post_button_never_writes_into_the_newly_selected_firm(two_firms):
         await bot.cb_post(callback(button))                                              # eski tugma bosildi
     asyncio.run(scenario())
     assert len(drafts(alfa)) == 0, "eski tugma yangi tanlangan firmaga yozib yubordi"
-    assert len(drafts(DEMO_FIRM)) == 4  # tugma qaysi firma uchun chiqqan bo'lsa — o'sha firmaga
+    assert len(drafts(DEMO_FIRM)) == SAMPLE_READY  # tugma qaysi firma uchun chiqqan bo'lsa — o'sha firmaga
 
 
 def test_old_ai_confirm_button_is_bound_to_its_firm(two_firms):
@@ -87,7 +87,7 @@ def test_old_ai_confirm_button_is_bound_to_its_firm(two_firms):
         await bot.cb_post(callback(button))
     asyncio.run(scenario())
     assert len(drafts(alfa)) == 0
-    assert len(drafts(DEMO_FIRM)) == 4
+    assert len(drafts(DEMO_FIRM)) == SAMPLE_READY
 
 
 def test_button_for_firm_without_access_is_refused(two_firms):
@@ -120,7 +120,7 @@ def test_button_is_single_use(two_firms):
         await bot.cb_post(second)
         return second
     second = asyncio.run(scenario())
-    assert len(drafts(DEMO_FIRM)) == 4
+    assert len(drafts(DEMO_FIRM)) == SAMPLE_READY
     assert "ishlatilgan" in str(second.answer.call_args)
 
 

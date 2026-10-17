@@ -40,7 +40,7 @@ vipiska egasi (sarlavhadagi hisob nomi) bo'yicha to'g'ri firma taklif qilinadi.
 **Shartnoma to'lov maqsadidan:** "дог№50 от 10.09.2026", "11.10.2026 yildagi 398 shartnomaga", "Shartnoma N_434",
 "№440 шартномага", "17-sonli shartnoma" kabi yozuvlardan raqam va sana olinadi va 1C dan aynan shu kontragentning
 o'sha shartnomasi qidiriladi. Topilmasa — qator bloklanadi (noto'g'ri shartnomaga yozilmasligi uchun). Raqam
-bo'lmasa — 1C tarixidagi shartnoma, bo'lmasa shu turdagi birinchi shartnoma (⚠️ "tekshiring" belgisi bilan).
+1C da topilmasa — yangi shartnoma sifatida 1C ga kiritishda yaratiladi; raqam bo'lmasa — 1C tarixidagi shartnoma.
 
 **Ko'rish rejimi:** real 1C javob bermasa (masalan, OData'da obyektlar hali nashr qilinmagan) vipiska baribir
 ko'rsatiladi — schyotlar qoidalar/standart bo'yicha, shartnoma to'lov maqsadidan, "⚪ 1C da tekshirilmadi" belgisi
@@ -132,6 +132,30 @@ yo'q maydonlar yuborilmaydi (👁 Tekshirish oynasida ro'yxati ko'rinadi). Hozir
 rejimi** yoqilgan — 1C ga hech narsa yozilmaydi.
 Qoidalarni Egasi va Buxgalter tahrirlaydi, Kuzatuvchi faqat ko'radi; har o'zgarish jurnalga yoziladi.
 
+## 🧾 Hisoblar rejasi (BHMS 21) va aniq belgilar
+
+`accounts_uz.py` — 33 ta asosiy schyot 6 guruhda (pul mablag'lari, hisob-kitoblar, soliqlar, ish haqi/kreditlar,
+TMZ, daromad/xarajatlar); tanlash ro'yxatlari guruhlangan va o'zbekcha nomlar bilan.
+
+To'lov maqsadidagi **aniq belgilar 1C tarixidan ustun** (G'aznachilik bitta kontragent, lekin har soliq o'z schyotiga):
+
+| Belgi | Schyot |
+|---|---|
+| Soliq kodi 46 (JShDS), QQS soliq organiga | 64.10 |
+| Soliq kodi 36 (ijtimoiy soliq), 101 (jamg'arib boriladigan pensiya / INPS) | 65.20 |
+| ish haqi / зарплата | 67.10 (vedomost bilan qo'lda) |
+| dividend | 66.10 |
+| kredit foizi / проценты по кредиту | 96.10 |
+| kredit asosiy qarzi, moliyaviy yordam, заём | 68.10 |
+| korporativ karta (KPK) | 55.20 |
+| terminal, Humo/Uzcard, эквайринг, inkassatsiya (kirim) | 57.10 |
+
+"QQS 12% bilan" yozilgan oddiy to'lovlar soliq deb olinmaydi. Kiruvchi EHF: **Dt 29.10 (tovar) / 94.20 (xizmat) +
+Dt 44.10 (QQS 12%) — Kt 60.10**.
+
+**Yangi shartnoma:** to'lov maqsadidagi shartnoma 1C da topilmasa — "➕ Yangi shartnoma №… — kiritishda yaratiladi";
+1C ga yozishdan oldin yana qidiriladi, bo'lmasa kontragentga raqami va sanasi bilan yaratiladi va to'lov unga bog'lanadi.
+
 ## 🗄️ Real 1C ga ulanish (OData)
 
 1. 1C Konfigurator: **Администрирование → Публикация на веб-сервере** (OData yoqilgan holda).
@@ -208,7 +232,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-106 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+134 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel) va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

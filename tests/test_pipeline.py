@@ -7,7 +7,7 @@ import pytest
 import core
 from services_1c import DemoOData, ODataError, OneCService
 from services_vipiska import BankRow, Statement, analyze_statement
-from tests.conftest import DEMO_FIRM
+from tests.conftest import DEMO_FIRM, SAMPLE_NOT_POSTED, SAMPLE_READY, SAMPLE_ROWS
 
 
 def run(coro):
@@ -27,21 +27,21 @@ def test_sample_statement_classification():
     assert rows["124"]["status"] == "discrepancy" and rows["124"]["overridable"]
     assert {n: rows[n]["account"] for n in ("52", "131", "53", "54")} == {
         "52": "60.10", "131": "40.10", "53": "64.10", "54": "94.20"}
-    assert snap["kpis"]["learned_pct"] == 100 and snap["kpis"]["ready"] == 4
+    assert snap["kpis"]["learned_pct"] == 100 and snap["kpis"]["ready"] == SAMPLE_READY
 
 
 def test_post_creates_unposted_drafts_and_blocks_reupload():
     s = core.get_session("t", DEMO_FIRM)
     snap = run(core.load_sample(s))
     res = run(core.post(s, "vipiska", [r["id"] for r in snap["rows"]]))
-    assert res["ok"] == 4 and res["failed"] == 4
+    assert res["ok"] == SAMPLE_READY and res["failed"] == SAMPLE_NOT_POSTED
     onec = core.get_onec(DEMO_FIRM)
     drafts = [d for e in ("Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета")
               for d in onec.t.db[e] if d.get("Комментарий", "").startswith("BUXGALTER AI")]
-    assert len(drafts) == 4 and all(d["Posted"] is False for d in drafts)
+    assert len(drafts) == SAMPLE_READY and all(d["Posted"] is False for d in drafts)
     assert all(d.get("ВалютаДокумента_Key") and d.get("СчетБанк_Key") for d in drafts)  # tarixdan to'ldirilgan
     again = run(core.load_sample(core.get_session("t2", DEMO_FIRM)))
-    assert sum(r["status"] == "duplicate" for r in again["rows"]) == 7
+    assert sum(r["status"] == "duplicate" for r in again["rows"]) == 3 + SAMPLE_READY
 
 
 def test_force_requires_overridable_and_never_posts_exact_duplicates():
@@ -100,7 +100,7 @@ def test_session_survives_restart():
     run(core.load_sample(s))
     core.SESSIONS.clear()
     restored = core.get_session("persist", DEMO_FIRM)
-    assert restored.statement.is_sample and len(restored.vipiska) == 8
+    assert restored.statement.is_sample and len(restored.vipiska) == SAMPLE_ROWS
     assert restored.statement.rows[0].date == date(2026, 10, 1)
 
 
@@ -127,10 +127,10 @@ def test_parallel_posts_of_same_rows_create_each_draft_once(monkeypatch):
         return await asyncio.gather(core.post(s1, "vipiska", [r["id"] for r in s1.vipiska]),
                                     core.post(s2, "vipiska", [r["id"] for r in s2.vipiska]))
     a, b = run(scenario())
-    assert a["ok"] + b["ok"] == 4
+    assert a["ok"] + b["ok"] == SAMPLE_READY
     drafts = [d for e in ("Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета")
               for d in slow.t.db[e] if d.get("Комментарий", "").startswith("BUXGALTER AI")]
-    assert len(drafts) == 4
+    assert len(drafts) == SAMPLE_READY
 
 
 def test_failed_analysis_keeps_previous_statement(monkeypatch):
@@ -164,9 +164,29 @@ def test_offline_preview_when_1c_objects_unpublished(monkeypatch):
     snap = run(core.load_statement(s, "v.csv", csv))
     assert snap["offline"] and not snap["stale"] and snap["kpis"]["ready"] == 0
     tax, sale = snap["rows"]
-    assert tax["status"] == "unchecked" and tax["account"] == "64.10"
+    assert tax["status"] == "unchecked" and tax["account"] == "65.20"  # "Ижтимоий солиқ" — 65.20
     assert sale["account"] == "40.10" and sale["advance_account"] == "63.10"
     assert "№398" in sale["contract"]["label"] and "tekshirilmadi" in sale["contract"]["label"]
     assert not any("Kontragent 1C da topilmadi" in b for b in sale["blockers"])  # chalg'ituvchi xabar yo'q
     with pytest.raises(ODataError, match="Ko'rish rejimi|Faqat tahlil"):
         run(core.post(s, "vipiska", [sale["id"]]))
+
+
+def test_sample_chart_of_accounts_rows():
+    """Hisoblar rejasi: soliq kodlari, terminal, ish haqi, KPK — schyot, ВидОперации va qoralama."""
+    s = core.get_session("chart", DEMO_FIRM)
+    rows = by_number(run(core.load_sample(s))["rows"])
+    expected = {"16": ("65.20", "ПеречислениеНалога"), "17": ("64.10", "ПеречислениеНалога"),
+                "18": ("65.20", "ПеречислениеНалога"), "141": ("57.10", "ПоступленияОтПродажПоПлатежнымКартам"),
+                "57": ("67.10", "ПеречислениеЗаработнойПлаты"), "58": ("55.20", "ПереводНаДругойСчет")}
+    for number, (account, operation) in expected.items():
+        assert (rows[number]["account"], rows[number]["operation"]) == (account, operation), number
+        assert rows[number]["account_source"] == "classified"
+    assert not rows["57"]["selectable"]  # ish haqi — vedomost bilan qo'lda
+    res = run(core.post(s, "vipiska", [rows[n]["id"] for n in ("16", "141", "58")]))
+    assert res["ok"] == 3
+    onec = core.get_onec(DEMO_FIRM)
+    acc = {d["Ref_Key"]: d["Code"] for d in onec.t.db["ChartOfAccounts_Хозрасчетный"]}
+    new_docs = [d for e in ("Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета")
+                for d in onec.t.db[e] if d.get("Комментарий", "").startswith("BUXGALTER AI")]
+    assert sorted(acc[d["СчетУчетаРасчетовСКонтрагентом_Key"]] for d in new_docs) == ["5520", "5710", "6520"]
