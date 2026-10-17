@@ -15,7 +15,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 
-from services_1c import (ACCOUNT_CHOICES, E_BANK_IN, E_BANK_OUT, E_COUNTERPARTY, FIELDS, OPERATION_BY_ACCOUNT,
+from services_1c import (E_BANK_IN, E_BANK_OUT, E_COUNTERPARTY, FIELDS, OPERATION_BY_ACCOUNT,
                          PURPOSE_KEYWORDS, ODataError, OneCService, fmt_account)
 
 STATUS_LABELS = {
@@ -406,9 +406,13 @@ def special_kind(r: BankRow, org_inn: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def rule_brief(rule: dict) -> dict:
+    return {k: rule[k] for k in ("id", "kind", "match", "account", "operation", "contract_key", "cash_flow_key", "locked")}
+
+
 async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = None,
                            in_file_duplicate: bool = False, extra_blockers: list[str] | tuple = (),
-                           org_inn: str = "") -> dict:
+                           org_inn: str = "", rules=None) -> dict:
     entity = E_BANK_OUT if r.direction == "chiqim" else E_BANK_IN
     row = {**asdict(r), "date": r.date.isoformat(), "kind": "bank", "entity": entity, "blockers": list(extra_blockers),
            "posted": False, "posted_ref": None, "posted_number": None, "error": None, "learned": None}
@@ -434,14 +438,22 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         row["learned"] = await onec.learn_history(entity, row["counterparty_key"], r.purpose, direction=r.direction)
     learned = row["learned"]
     match_code = await onec.account_code((dup["match"] or {}).get("account_key"))
+    locked = rules.locked(r.counterparty_inn, r.direction, "bank", r.purpose) if rules else None
+    stored = rules.learned(r.counterparty_inn, r.direction, "bank", r.purpose) if rules else None
     if dup["status"] == "duplicate" and match_code:
         row["account"], row["account_source"] = match_code, "onec"
         row["operation"] = dup["match"].get("operation") or operation_for(match_code, r.direction)
-    elif prev and prev.get("account_source") == "manual":
+    elif prev and prev.get("account_source") == "manual" and not (locked and locked.rule["account"] == prev["account"]):
         row["account"], row["account_source"] = prev["account"], "manual"
         row["operation"] = operation_for(row["account"], r.direction)
+    elif locked:
+        apply_rule(row, locked)
     elif learned and learned.get("account_code"):
         row["account"], row["account_source"], row["operation"] = learned["account_code"], "history", learned["operation"]
+        row["account_reason"] = (f"🧠 1C tarixi: shu kontragentning oxirgi hujjatlari ({learned['confidence']}) "
+                                 f"→ {learned['account_code']}")
+    elif stored:
+        apply_rule(row, stored)
     else:
         row["account"] = rule_account(r.direction, r.purpose)
         row["account_source"] = "rules"
@@ -452,16 +464,28 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     return row
 
 
+def apply_rule(row: dict, hit) -> None:
+    """Qoida bo'yicha schyot (RuleHit: qoida + sabab matni)."""
+    rule = hit.rule
+    row["account"], row["account_source"], row["account_reason"] = rule["account"], hit.source, hit.reason
+    row["operation"] = rule["operation"] or (operation_for(rule["account"], row["direction"]) if row["kind"] == "bank"
+                                             else row.get("doc_kind", "Товары"))
+    row["rule"] = rule_brief(rule)
+    row["rule_source"], row["rule_reason"] = hit.source, hit.reason
+
+
 def finalize_row(row: dict) -> None:
     row["status_label"] = STATUS_LABELS.get(row["status"], row["status"])
     row["selectable"] = row["status"] == "new" and not row["blockers"] and not row["posted"]
     # "Baribir yozish" faqat farqli yoki raqamsiz-mos (weak) qatorlar uchun — to'liq dublikat hech qachon
     row["overridable"] = (not row["posted"] and not row["blockers"] and
                           (row["status"] == "discrepancy" or (row["status"] == "duplicate" and row.get("dup_kind") == "weak")))
-    if row["account_source"] == "history":
+    if row["account_source"] in ("rule", "keyword") or (row["account_source"] == "history" and row.get("account_reason")):
+        row["account_badge"] = row["account_reason"]
+    elif row["account_source"] == "history":
         row["account_badge"] = f"🧠 Oldingi 1C tarixidan o'rganildi ({row['account']})"
     elif row["account_source"] == "manual":
-        row["account_badge"] = "✍️ Buxgalter tanladi"
+        row["account_badge"] = "✍️ Buxgalter tanladi — 💾 eslab qolish mumkin"
     elif row["account_source"] == "onec":
         row["account_badge"] = "📄 1C dagi mavjud hujjatdan"
     else:
@@ -469,7 +493,7 @@ def finalize_row(row: dict) -> None:
 
 
 async def analyze_statement(st: Statement, onec: OneCService, previous: list[dict] | None = None,
-                            firm_blockers: list[str] | None = None) -> list[dict]:
+                            firm_blockers: list[str] | None = None, rules=None) -> list[dict]:
     prev = {p["id"]: p for p in previous or []}
     seen: set[tuple] = set()
     flags = []
@@ -494,14 +518,14 @@ async def analyze_statement(st: Statement, onec: OneCService, previous: list[dic
             extra.append(f"🏦 Vipiskadagi hisob raqami {st.own_account} tanlangan firmaning 1C dagi bank hisoblari "
                          "orasida yo'q — vipiska boshqa firmaniki bo'lishi mumkin")
     extra.extend(firm_blockers or [])
-    return list(await asyncio.gather(*(analyze_bank_row(r, onec, prev.get(r.id), f, extra, org_inn)
+    return list(await asyncio.gather(*(analyze_bank_row(r, onec, prev.get(r.id), f, extra, org_inn, rules)
                                        for r, f in zip(st.rows, flags))))
 
 
 def kpis(rows: list[dict]) -> dict:
     ready = [r for r in rows if r["selectable"]]
     cands = [r for r in rows if r["status"] in ("new", "posted")]
-    learned = [r for r in cands if r["account_source"] == "history"]
+    learned = [r for r in cands if r["account_source"] in ("history", "rule", "keyword")]
     return {
         "total": len(rows), "ready": len(ready), "duplicates": sum(r["status"] == "duplicate" for r in rows),
         "discrepancies": sum(r["status"] == "discrepancy" for r in rows), "posted": sum(r["posted"] for r in rows),
@@ -545,12 +569,15 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
     acc_key = acc_key or await onec.account_key(row["account"])
     if not acc_key:
         raise ODataError(f"{row['account']} schyoti 1C hisoblar rejasida topilmadi")
-    contract_key = learned.get("contract_key")
+    rule = row.get("rule") or {}
+    rule_fits = rule.get("account") == row["account"]
+    contract_key = learned.get("contract_key") or (rule.get("contract_key") if rule_fits else None) or None
     if not contract_key:
         contract = await onec.find_contract(row["counterparty_key"], row["direction"])
         contract_key = contract["Ref_Key"] if contract else None
     kontr_bank = await onec.find_bank_account(row["counterparty_key"], E_COUNTERPARTY, row.get("account_no") or None)
     cfi = learned.get("cash_flow_key") if learned.get("account_code") == row["account"] else None
+    cfi = cfi or (rule.get("cash_flow_key") if rule_fits else None) or None
     payload = {
         "Date": f"{row['date']}T12:00:00",
         "Организация_Key": org["Ref_Key"],
@@ -586,13 +613,19 @@ async def recheck_bank(row: dict, onec: OneCService) -> dict:
 
 
 def set_account(row: dict, account: str) -> None:
-    acc = fmt_account(account.replace(".", "")) or account
-    if acc not in ACCOUNT_CHOICES and not (row.get("learned") or {}).get("account_code") == acc:
-        raise ValueError(f"Noma'lum schyot: {account}")
+    digits = account.replace(".", "").replace(" ", "")
+    if not (len(digits) == 4 and digits.isdigit()):
+        raise ValueError(f"Schyot formati 60.10 ko'rinishida bo'lsin: {account}")
+    acc = fmt_account(digits)
     learned = row.get("learned") or {}
+    rule = row.get("rule") or {}
     row["account"] = acc
-    if learned.get("account_code") == acc:
+    if rule.get("account") == acc and row.get("rule_source"):
+        row["account_source"], row["account_reason"] = row["rule_source"], row["rule_reason"]
+        row["operation"] = rule["operation"] or operation_for(acc, row["direction"])
+    elif learned.get("account_code") == acc:
         row["account_source"], row["operation"] = "history", learned["operation"]
+        row["account_reason"] = f"🧠 1C tarixi: shu kontragentning oxirgi hujjatlari ({learned['confidence']}) → {acc}"
     else:
         row["account_source"] = "manual"
         if row["kind"] == "bank":

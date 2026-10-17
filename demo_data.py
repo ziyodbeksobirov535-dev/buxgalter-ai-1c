@@ -37,6 +37,7 @@ ACCOUNTS = {  # 1C Hisoblar rejasi kodi -> nomi (O'zbekiston BHMS 21)
     "4010": "Xaridorlar va buyurtmachilardan olinadigan schyotlar",
     "6410": "Byudjetga to'lovlar bo'yicha qarz",
     "9420": "Ma'muriy xarajatlar",
+    "6990": "Boshqa majburiyatlar",
     "5110": "Hisob-kitob schyoti",
 }
 
@@ -187,6 +188,13 @@ def seed_1c() -> dict[str, list[dict]]:
     for inn, direction, docs in history:
         for d, number, amount in docs:
             bank_doc(inn, direction, d, number, float(amount), purposes[COUNTERPARTIES[inn][1]])
+
+    # Ziddiyatli holat (o'rganish sinovi uchun): ORIENT LOGISTICS bir marta 69.90 ga olingan
+    bank_doc("302345678", "chiqim", "2026-07-15", "22", 4_200_000.0, "Transport xizmati (bir martalik)")
+    last = db["Document_СписаниеСРасчетногоСчета"][-1]
+    last["СчетУчетаРасчетовСКонтрагентом_Key"] = gid("acc", "6990")
+    last["ВидОперации"] = "ПрочееСписание"
+    last["РасшифровкаПлатежа"][0]["СчетУчетаРасчетовСКонтрагентом_Key"] = gid("acc", "6990")
 
     # --- Vipiskaning 1C da allaqachon bor qatorlari (dublikat) va farqli qatori
     for d, number, direction, amount, inn, purpose, state in SAMPLE_TRANSACTIONS:

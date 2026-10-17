@@ -88,6 +88,25 @@ Gemini quyidagi vositalarni (tools) chaqiradi: `analyze_and_deduplicate_vipiska(
   bog'langan va bir martalik; Web App'da firma almashgandan keyin kelgan eski javoblar ko'rsatilmaydi, server esa
   boshqa firmaning qatorlarini yozishni rad etadi. Firmaga ruxsat olib tashlansa — ruxsat etilgan firmaga o'tiladi.
 
+## 📚 Hisob qoidalari — dastur bazani qanday yuritganingizni o'rganadi
+
+Yuqoridagi **📚 Hisob qoidalari** bo'limi (har bir firma uchun alohida):
+
+- **🧠 1C tarixidan o'rganish** — oxirgi 3/6/12/24 oydagi barcha o'tkazilgan bank va xarid hujjatlarini o'qib,
+  jadval tuzadi: qaysi kontragent qaysi schyotga, qaysi ВидОперации, shartnoma va ДДС moddasi bilan olingan,
+  necha marta (ishonch: masalan 18/18). 1C ga hech narsa yozilmaydi.
+- **⚠️ Ziddiyatli** — bir kontragent turli schyotlarga olingan bo'lsa (masalan 60.10×3, 69.90×1) — bir marta ko'rib
+  chiqib, to'g'ri schyotni tanlab 🔒 belgilang.
+- **🔤 Kalit so'z qoidalari** — to'lov maqsadidagi so'z bo'yicha ("komissiya" → 94.20, "ijara" → 94.20 …);
+  tarixdan topiladi yoki qo'lda qo'shiladi.
+- **🔒 Qat'iy qoida** — 1C tarixidan ustun turadi. Qayta o'rganishda qat'iy qoidaning schyoti o'zgartirilmaydi.
+- **💾 Eslab qolish** — vipiskada schyotni o'zgartirsangiz, "Shu kontragent uchun eslab qol" tugmasi chiqadi.
+- **📥/📤 Excel** — qoidalarni Excel'ga yuklab olib tekshirish/to'ldirish va qayta yuklash.
+- Har bir vipiska qatorida **"nega bu schyot?"** ko'rinadi: 🔒 Qat'iy qoida / 🧠 1C tarixi (3/3) / 🔤 Kalit so'z / 🤖 Standart.
+
+**Ustuvorlik:** 🔒 qat'iy qoida → 🧠 kontragentning 1C tarixi → 🔤 kalit so'z → 🤖 standart taxmin.
+Qoidalarni Egasi va Buxgalter tahrirlaydi, Kuzatuvchi faqat ko'radi; har o'zgarish jurnalga yoziladi.
+
 ## 🗄️ Real 1C ga ulanish (OData)
 
 1. 1C Konfigurator: **Администрирование → Публикация на веб-сервере** (OData yoqilgan holda).
@@ -134,6 +153,7 @@ core.py              Umumiy ish oqimlari (Web, bot va AI shu yerdan foydalanadi)
 services_1c.py       1C OData: Ref_Key, dublikat, tarixdan o'rganish, qoralama; Http + Demo transport
 services_vipiska.py  Excel / CSV / 1CClientBankExchange parser, tahlil, payload
 services_didox.py    Didox EHF ↔ ПоступлениеТоваровУслуг
+services_rules.py    Hisob qoidalari: 1C tarixidan o'rganish, ustuvorlik, Excel
 services_ai.py       Gemini Function Calling + Demo AI + OpenAI/Claude zaxira
 demo_data.py         Demo 1C bazasi (OData shaklida) va namuna vipiska generatori
 config.py            .env + umumiy AI sozlamalari (data/settings.json, git'ga kirmaydi)
@@ -153,6 +173,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 | GET/POST/PUT/DELETE | `/api/firms…` | Firmalar (Egasi) |
 | GET/POST/PUT | `/api/users…` | Foydalanuvchilar (Egasi) |
 | GET | `/api/audit` | Jurnal (Egasi) |
+| GET/POST/PUT/DELETE | `/api/rules…` | Hisob qoidalari; `/api/rules/learn` — 1C tarixidan o'rganish |
 | POST | `/api/chat` | AI Copilot |
 
 ## 🧪 Avtomatik testlar
@@ -162,9 +183,9 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-66 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+79 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
-bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi va boshqa firmaning vipiskasi.
+bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel) va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
 
 **Zaxira nusxa:** `data/` papkasini (ayniqsa `app.db` va `secret.key`) muntazam nusxalang.

@@ -94,6 +94,28 @@ CREATE TABLE IF NOT EXISTS link_codes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS account_rules (
+    id INTEGER PRIMARY KEY,
+    firm_id INTEGER NOT NULL REFERENCES firms(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('counterparty', 'keyword')),
+    match TEXT NOT NULL,                 -- kontragent STIR yoki kalit so'z (kichik harfda)
+    name TEXT NOT NULL DEFAULT '',       -- kontragent nomi (ko'rsatish uchun)
+    direction TEXT NOT NULL DEFAULT '',  -- kirim | chiqim | '' (har ikkisi)
+    doc_kind TEXT NOT NULL DEFAULT 'bank' CHECK (doc_kind IN ('bank', 'ehf')),
+    account TEXT NOT NULL,               -- masalan 60.10
+    operation TEXT NOT NULL DEFAULT '',  -- ВидОперации (bo'sh — schyotdan aniqlanadi)
+    contract_key TEXT NOT NULL DEFAULT '',
+    cash_flow_key TEXT NOT NULL DEFAULT '',
+    locked INTEGER NOT NULL DEFAULT 0,   -- 1 = qat'iy qoida (1C tarixidan ustun)
+    source TEXT NOT NULL DEFAULT 'history',  -- history | manual | correction | import
+    hits INTEGER NOT NULL DEFAULT 0,     -- tarixda shu schyotga olingan hujjatlar soni
+    total INTEGER NOT NULL DEFAULT 0,    -- tarixdagi jami hujjatlar
+    variants TEXT NOT NULL DEFAULT '[]', -- [{"account", "operation", "count"}]
+    last_date TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL DEFAULT '',
+    UNIQUE (firm_id, kind, match, direction, doc_kind)
+);
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY,
     ts TEXT NOT NULL,
@@ -588,3 +610,135 @@ def list_audit(limit: int = 100, firm_id: int | None = None) -> list[dict]:
         rows = c.execute(q, (*args, max(1, min(limit, 500)))).fetchall()
     return [{"id": r["id"], "ts": r["ts"], "user": r["username"], "firm": r["firm_name"], "action": r["action"],
              "details": json.loads(r["details"] or "{}")} for r in rows]
+
+
+# ---------------------------------------------------------------- hisob qoidalari (qaysi kontragent qaysi schyotga)
+RULE_FIELDS = ("kind", "match", "name", "direction", "doc_kind", "account", "operation", "contract_key",
+               "cash_flow_key", "locked", "source", "hits", "total", "variants", "last_date")
+
+
+def _rule_dict(r: sqlite3.Row) -> dict:
+    d = {k: r[k] for k in ("id", "firm_id", *RULE_FIELDS, "updated_at", "updated_by")}
+    d["locked"] = bool(d["locked"])
+    d["variants"] = json.loads(d["variants"] or "[]")
+    d["confidence"] = round(100 * d["hits"] / d["total"]) if d["total"] else None
+    d["conflict"] = len(d["variants"]) > 1
+    return d
+
+
+def _norm_rule(data: dict) -> dict:
+    kind = data.get("kind", "counterparty")
+    if kind not in ("counterparty", "keyword"):
+        raise DBError("Qoida turi: counterparty yoki keyword")
+    match = str(data.get("match") or "").strip()
+    match = "".join(ch for ch in match if ch.isdigit()) if kind == "counterparty" else match.lower()
+    if kind == "counterparty" and len(match) != 9:
+        raise DBError("Kontragent STIR'i 9 xonali bo'lsin")
+    if kind == "keyword" and len(match) < 3:
+        raise DBError("Kalit so'z kamida 3 belgi bo'lsin")
+    direction = data.get("direction", "") or ""
+    if direction not in ("", "kirim", "chiqim"):
+        raise DBError("Yo'nalish: kirim, chiqim yoki bo'sh")
+    doc_kind = data.get("doc_kind", "bank") or "bank"
+    if doc_kind not in ("bank", "ehf"):
+        raise DBError("Hujjat turi: bank yoki ehf")
+    account = str(data.get("account") or "").replace(" ", "")
+    digits = account.replace(".", "")
+    if not (len(digits) == 4 and digits.isdigit()):
+        raise DBError(f"Schyot formati: 60.10 ko'rinishida (berilgan: {account or '—'})")
+    return {"kind": kind, "match": match, "direction": direction, "doc_kind": doc_kind,
+            "account": f"{digits[:2]}.{digits[2:]}"}
+
+
+def list_rules(firm_id: int) -> list[dict]:
+    with tx() as c:
+        rows = c.execute("SELECT * FROM account_rules WHERE firm_id = ? ORDER BY kind, name, match, direction",
+                         (firm_id,)).fetchall()
+    return [_rule_dict(r) for r in rows]
+
+
+def get_rule(rule_id: int) -> dict | None:
+    with tx() as c:
+        r = c.execute("SELECT * FROM account_rules WHERE id = ?", (rule_id,)).fetchone()
+    return _rule_dict(r) if r else None
+
+
+def save_rule(firm_id: int, data: dict, by: str, *, locked: bool, source: str) -> dict:
+    """Buxgalter qoidasi (qo'lda, tuzatishdan yoki Excel'dan). Bir xil kalitdagi qoida bo'lsa — yangilanadi."""
+    key = _norm_rule(data)
+    values = {**key, "name": str(data.get("name") or "")[:200], "operation": str(data.get("operation") or "")[:100],
+              "contract_key": str(data.get("contract_key") or ""), "cash_flow_key": str(data.get("cash_flow_key") or ""),
+              "locked": int(locked), "source": source, "updated_at": _iso(now()), "updated_by": by}
+    with tx() as c:
+        existing = c.execute("SELECT * FROM account_rules WHERE firm_id = ? AND kind = ? AND match = ? AND "
+                             "direction = ? AND doc_kind = ?",
+                             (firm_id, key["kind"], key["match"], key["direction"], key["doc_kind"])).fetchone()
+        if existing:
+            if not values["name"]:
+                values["name"] = existing["name"]
+            if existing["account"] == values["account"] and not values["contract_key"]:
+                values["contract_key"], values["cash_flow_key"] = existing["contract_key"], existing["cash_flow_key"]
+            c.execute(f"UPDATE account_rules SET {', '.join(f'{k} = ?' for k in values)} WHERE id = ?",
+                      (*values.values(), existing["id"]))
+            rule_id = existing["id"]
+        else:
+            cur = c.execute(f"INSERT INTO account_rules (firm_id, {', '.join(values)}) VALUES "
+                            f"(?, {', '.join('?' * len(values))})", (firm_id, *values.values()))
+            rule_id = cur.lastrowid
+    return get_rule(rule_id)
+
+
+def update_rule(rule_id: int, firm_id: int, data: dict, by: str) -> dict:
+    rule = get_rule(rule_id)
+    if not rule or rule["firm_id"] != firm_id:
+        raise DBError("Qoida topilmadi")
+    merged = {**rule, **{k: v for k, v in data.items() if k in ("account", "operation", "direction", "name")}}
+    _norm_rule(merged)
+    account = _norm_rule(merged)["account"]
+    locked = bool(data.get("locked", rule["locked"]))
+    changed = account != rule["account"] or str(merged.get("operation") or "") != rule["operation"]
+    source = "manual" if changed or (locked and not rule["locked"]) else rule["source"]  # buxgalter tasdiqladi
+    with tx() as c:
+        c.execute("UPDATE account_rules SET account = ?, operation = ?, name = ?, locked = ?, source = ?, "
+                  "contract_key = CASE WHEN account = ? THEN contract_key ELSE '' END, "
+                  "cash_flow_key = CASE WHEN account = ? THEN cash_flow_key ELSE '' END, "
+                  "updated_at = ?, updated_by = ? WHERE id = ?",
+                  (account, str(merged.get("operation") or "")[:100], str(merged.get("name") or "")[:200],
+                   int(locked), source, account, account, _iso(now()), by, rule_id))
+    return get_rule(rule_id)
+
+
+def delete_rule(rule_id: int, firm_id: int) -> None:
+    with tx() as c:
+        c.execute("DELETE FROM account_rules WHERE id = ? AND firm_id = ?", (rule_id, firm_id))
+
+
+def upsert_learned_rules(firm_id: int, learned: list[dict]) -> dict:
+    """1C tarixidan o'rganilgan qoidalar. Qat'iy (buxgalter) qoidalarning schyoti o'zgartirilmaydi —
+    faqat statistika yangilanadi. Natija: nechta qo'shildi / yangilandi / qat'iy qoldi."""
+    stats = {"added": 0, "updated": 0, "kept_locked": 0}
+    with tx() as c:
+        for r in learned:
+            row = c.execute("SELECT id, locked FROM account_rules WHERE firm_id = ? AND kind = ? AND match = ? AND "
+                            "direction = ? AND doc_kind = ?",
+                            (firm_id, r["kind"], r["match"], r["direction"], r["doc_kind"])).fetchone()
+            common = (r["hits"], r["total"], json.dumps(r["variants"], ensure_ascii=False), r["last_date"], _iso(now()))
+            if row and row["locked"]:
+                c.execute("UPDATE account_rules SET hits = ?, total = ?, variants = ?, last_date = ?, updated_at = ? "
+                          "WHERE id = ?", (*common, row["id"]))
+                stats["kept_locked"] += 1
+            elif row:
+                c.execute("UPDATE account_rules SET name = ?, account = ?, operation = ?, contract_key = ?, "
+                          "cash_flow_key = ?, source = 'history', hits = ?, total = ?, variants = ?, last_date = ?, "
+                          "updated_at = ?, updated_by = '1C tarixi' WHERE id = ?",
+                          (r["name"], r["account"], r["operation"], r["contract_key"], r["cash_flow_key"], *common,
+                           row["id"]))
+                stats["updated"] += 1
+            else:
+                c.execute("INSERT INTO account_rules (firm_id, kind, match, name, direction, doc_kind, account, operation, "
+                          "contract_key, cash_flow_key, locked, source, hits, total, variants, last_date, updated_at, "
+                          "updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,0,'history',?,?,?,?,?,'1C tarixi')",
+                          (firm_id, r["kind"], r["match"], r["name"], r["direction"], r["doc_kind"], r["account"],
+                           r["operation"], r["contract_key"], r["cash_flow_key"], *common))
+                stats["added"] += 1
+    return stats

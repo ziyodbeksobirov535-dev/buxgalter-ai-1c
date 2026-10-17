@@ -18,6 +18,7 @@ import config
 import core
 import db
 import services_ai
+import services_rules
 from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, set_session_cookie
 from demo_data import build_sample_xlsx
 from services_1c import ODataError
@@ -402,6 +403,117 @@ async def post_to_1c(body: PostIn, ctx: FirmCtx = Depends(firm_ctx)):
                         for r in res["results"] if r["ok"]],
              forced=body.force_ids or None, reason=body.force_reason.strip() or None)
     return _with_context(ctx, res)
+
+
+# ---------------------------------------------------------------- 📚 hisob qoidalari (firma bo'yicha)
+@app.get("/api/rules")
+async def rules_list(ctx: FirmCtx = Depends(firm_ctx)):
+    rules = db.list_rules(ctx.firm_id)
+    return {"rules": rules, "can_edit": ctx.can_post, "summary": {
+        "total": len(rules), "locked": sum(r["locked"] for r in rules), "conflicts": sum(r["conflict"] and not r["locked"] for r in rules),  # hal qilinmaganlari
+        "counterparty": sum(r["kind"] == "counterparty" for r in rules),
+        "keyword": sum(r["kind"] == "keyword" for r in rules)}}
+
+
+class LearnIn(BaseModel):
+    months: int = Field(12, ge=1, le=36)
+
+
+@app.post("/api/rules/learn")
+async def rules_learn(body: LearnIn, ctx: FirmCtx = Depends(firm_ctx)):
+    """1C dagi o'tkazilgan hujjatlarni o'qib, qoidalar jadvalini yangilaydi (1C ga hech narsa yozmaydi)."""
+    ctx.require_post()
+    learned, summary = await services_rules.learn_from_1c(core.onec_for(ctx.session), body.months)
+    stats = db.upsert_learned_rules(ctx.firm_id, learned)
+    db.audit(ctx.user["id"], ctx.firm_id, "rules_learned", **summary, **stats)
+    return {"summary": {**summary, **stats}}
+
+
+class RuleIn(BaseModel):
+    kind: str = "counterparty"
+    match: str = Field(..., max_length=100)
+    name: str = Field("", max_length=200)
+    direction: str = ""
+    doc_kind: str = "bank"
+    account: str = Field(..., max_length=10)
+    operation: str = Field("", max_length=100)
+    locked: bool = True
+
+
+@app.post("/api/rules")
+async def rules_create(body: RuleIn, ctx: FirmCtx = Depends(firm_ctx)):
+    ctx.require_post()
+    rule = db.save_rule(ctx.firm_id, body.model_dump(), ctx.user["username"], locked=body.locked, source="manual")
+    db.audit(ctx.user["id"], ctx.firm_id, "rule_saved", match=rule["match"], account=rule["account"], locked=rule["locked"])
+    return rule
+
+
+@app.put("/api/rules/{rule_id}")
+async def rules_update(rule_id: int, body: dict, ctx: FirmCtx = Depends(firm_ctx)):
+    ctx.require_post()
+    rule = db.update_rule(rule_id, ctx.firm_id, body, ctx.user["username"])
+    db.audit(ctx.user["id"], ctx.firm_id, "rule_updated", match=rule["match"], account=rule["account"],
+             locked=rule["locked"])
+    return rule
+
+
+@app.delete("/api/rules/{rule_id}")
+async def rules_delete(rule_id: int, ctx: FirmCtx = Depends(firm_ctx)):
+    ctx.require_post()
+    rule = db.get_rule(rule_id)
+    if not rule or rule["firm_id"] != ctx.firm_id:
+        raise HTTPException(404, "Qoida topilmadi")
+    db.delete_rule(rule_id, ctx.firm_id)
+    db.audit(ctx.user["id"], ctx.firm_id, "rule_deleted", match=rule["match"], account=rule["account"])
+    return {"ok": True}
+
+
+class RememberIn(BaseModel):
+    mode: str = "vipiska"
+
+
+@app.post("/api/rows/{row_id}/remember")
+async def remember_row(row_id: str, body: RememberIn, ctx: FirmCtx = Depends(firm_ctx)):
+    """Vipiskada tanlangan schyotni shu kontragent uchun qat'iy qoida qilib eslab qolish."""
+    ctx.require_post()
+    try:
+        rule = await core.remember_row(ctx.session, _mode(body.mode), row_id, ctx.user["username"])
+    except KeyError:
+        raise HTTPException(404, "Qator topilmadi") from None
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    db.audit(ctx.user["id"], ctx.firm_id, "rule_remembered", match=rule["match"], name=rule["name"],
+             account=rule["account"])
+    return {"rule": rule, **_with_context(ctx, core.snapshot(ctx.session, body.mode))}
+
+
+@app.get("/api/rules/export")
+async def rules_export(ctx: FirmCtx = Depends(firm_ctx)):
+    firm = db.get_firm(ctx.firm_id)
+    content = services_rules.export_xlsx(db.list_rules(ctx.firm_id), firm["name"])
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="hisob_qoidalari_firma{ctx.firm_id}.xlsx"'})
+
+
+@app.post("/api/rules/import")
+async def rules_import(file: UploadFile = File(...), ctx: FirmCtx = Depends(firm_ctx)):
+    ctx.require_post()
+    content = await file.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(400, "Fayl juda katta (5 MB gacha)")
+    try:
+        items, errors = services_rules.parse_import_xlsx(content)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    saved = 0
+    for item in items:
+        try:
+            db.save_rule(ctx.firm_id, item, ctx.user["username"], locked=item["locked"], source="import")
+            saved += 1
+        except db.DBError as e:
+            errors.append(f"{item['_row']}-qator: {e}")
+    db.audit(ctx.user["id"], ctx.firm_id, "rules_imported", file=file.filename, saved=saved, errors=len(errors))
+    return {"saved": saved, "errors": errors}
 
 
 # ---------------------------------------------------------------- AI chat

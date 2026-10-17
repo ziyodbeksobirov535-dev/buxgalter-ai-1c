@@ -284,12 +284,14 @@ class HttpOData:
                              "(…/odata/standard.odata) ishora qilayotganini tekshiring") from None
 
     async def query(self, entity: str, conds: list[Cond] | None = None, top: int | None = None,
-                    orderby: str | None = None, select: list[str] | None = None) -> list[dict]:
+                    orderby: str | None = None, select: list[str] | None = None, skip: int | None = None) -> list[dict]:
         params = {"$format": "json"}
         if conds:
             params["$filter"] = render_filter(conds)
         if top:
             params["$top"] = str(top)
+        if skip:
+            params["$skip"] = str(skip)
         if orderby:
             params["$orderby"] = orderby
         if select:
@@ -348,11 +350,13 @@ class DemoOData:
         except TypeError:
             return False
 
-    async def query(self, entity, conds=None, top=None, orderby=None, select=None) -> list[dict]:
+    async def query(self, entity, conds=None, top=None, orderby=None, select=None, skip=None) -> list[dict]:
         rows = [r for r in self.db.get(entity, []) if all(self._match(r, c) for c in conds or [])]
         if orderby:
             field, _, direction = orderby.partition(" ")
             rows.sort(key=lambda r: str(r.get(field, "")), reverse=direction.lower() == "desc")
+        if skip:
+            rows = rows[skip:]
         if top:
             rows = rows[:top]
         return copy.deepcopy(rows)

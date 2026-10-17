@@ -13,6 +13,7 @@ import config
 import db
 from services_1c import ACCOUNT_CHOICES, ODataError, OneCService, build_service
 from services_didox import analyze_invoices, build_purchase_payload, fetch_invoices, recheck_purchase
+from services_rules import RuleSet
 from services_vipiska import (BankRow, Statement, analyze_statement, build_bank_payload, cash_flow, kpis,
                               parse_statement, post_rows, recheck_bank, set_account)
 
@@ -154,6 +155,32 @@ def remember_batch(session: Session, mode: str, ids: list[str]) -> str:
     return token
 
 
+def rules_of(session: Session) -> RuleSet:
+    return RuleSet(db.list_rules(session.firm_id))
+
+
+async def remember_row(session: Session, mode: str, row_id: str, by: str) -> dict:
+    """Buxgalter tanlagan schyotni shu kontragent uchun qat'iy qoida qilib saqlash."""
+    row = next((r for r in rows_of(session, mode) if r["id"] == row_id), None)
+    if not row:
+        raise KeyError(row_id)
+    if not row.get("counterparty_inn"):
+        raise ValueError("Bu qatorda kontragent STIR'i yo'q — kalit so'z qoidasini \"📚 Hisob qoidalari\" bo'limida qo'shing")
+    learned = row.get("learned") or {}
+    same = learned.get("account_code") == row["account"]
+    rule = db.save_rule(session.firm_id, {
+        "kind": "counterparty", "match": row["counterparty_inn"], "name": row["counterparty_name"],
+        "direction": row["direction"] if row["kind"] == "bank" else "", "doc_kind": row["kind"],
+        "account": row["account"], "operation": row.get("operation", ""),
+        "contract_key": learned.get("contract_key") or "" if same else "",
+        "cash_flow_key": learned.get("cash_flow_key") or "" if same else ""}, by, locked=True, source="correction")
+    if mode == "didox":
+        await load_didox(session)
+    else:
+        await recheck_vipiska(session)
+    return rule
+
+
 def rows_of(session: Session, mode: str) -> list[dict]:
     return session.didox if mode == "didox" else session.vipiska
 
@@ -162,7 +189,7 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     rows = rows_of(session, mode)
     source = session.didox_source if mode == "didox" else (session.statement.source if session.statement else "")
     choices = list(ACCOUNT_CHOICES)
-    for r in rows:
+    for r in [*db.list_rules(session.firm_id), *rows]:  # firmada ishlatiladigan barcha schyotlar
         if r.get("account") and r["account"] not in choices:
             choices.append(r["account"])
     stale = bool(rows) and session.analyzed_with.get(mode) not in (None, onec_fingerprint(session.firm_id))
@@ -178,7 +205,7 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
 async def _analyze_vipiska(session: Session, previous: list[dict] | None = None) -> None:
     onec = onec_for(session)
     session.vipiska = await analyze_statement(session.statement, onec, previous,
-                                              firm_blockers(session, session.statement))
+                                              firm_blockers(session, session.statement), rules_of(session))
     session.analyzed_with["vipiska"] = onec_fingerprint(session.firm_id)
     save_session(session)
 
@@ -215,7 +242,7 @@ async def load_didox(session: Session) -> dict:
     async with session.lock:
         onec = onec_for(session)
         onec.invalidate()
-        session.didox = await analyze_invoices(invoices, onec, session.didox)
+        session.didox = await analyze_invoices(invoices, onec, session.didox, rules_of(session))
         session.didox_source = "Didox (demo)" if source == "demo" else "Didox API"
         session.analyzed_with["didox"] = onec_fingerprint(session.firm_id)
         save_session(session)

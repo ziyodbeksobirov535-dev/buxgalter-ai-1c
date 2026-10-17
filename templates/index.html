@@ -62,6 +62,9 @@
         <button @click="switchMode('didox')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
                 :class="mode==='didox' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
           📑 Didox EHF vs 1C</button>
+        <button @click="switchMode('rules')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
+                :class="mode==='rules' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
+          📚 Hisob qoidalari</button>
       </div>
 
       <!-- Holat belgilari -->
@@ -113,7 +116,7 @@
     <!-- ---------- CHAP PANEL (70%) ---------- -->
     <section class="flex-col min-w-0 lg:w-[70%] w-full" :class="mobileTab==='table' ? 'flex' : 'hidden lg:flex'"
              @dragover.prevent="drag=true" @dragleave.prevent="drag=false" @drop.prevent="drag=false; mode==='vipiska' && upload($event.dataTransfer.files[0])">
-      <div class="flex-1 overflow-y-auto thin-scroll p-4 space-y-4 relative">
+      <div x-show="mode !== 'rules'" class="flex-1 overflow-y-auto thin-scroll p-4 space-y-4 relative">
 
         <!-- KPI -->
         <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
@@ -181,8 +184,8 @@
         <!-- Ogohlantirishlar -->
         <template x-for="f in (snap?.owner_firms || [])" :key="f.id">
           <div class="rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
-            <span x-text="'🏢 Bu vipiska «' + f.name + '» firmasiga tegishli ko'rinadi — joriy firmaga yozilmaydi.'"></span>
-            <button @click="moveToFirm(f)" class="ml-auto text-xs rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1" x-text="'«' + f.name + '» ga o'tib tekshirish'"></button>
+            <span x-text="'🏢 Bu vipiska «' + f.name + '» firmasiga tegishli ko\'rinadi — joriy firmaga yozilmaydi.'"></span>
+            <button @click="moveToFirm(f)" class="ml-auto text-xs rounded-lg bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1" x-text="'«' + f.name + '» ga o\'tib tekshirish'"></button>
           </div>
         </template>
         <div x-show="noFirms" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm">
@@ -256,7 +259,9 @@
                           <option :value="a" :selected="a===r.account" x-text="a"></option>
                         </template>
                       </select>
-                      <div class="mt-1 text-[11px] leading-tight" :class="r.account_source==='history' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                      <div class="mt-1 text-[11px] leading-tight" :class="['history','rule','keyword'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                      <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)"
+                              class="mt-1 text-[11px] rounded-md border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 hover:bg-violet-50 dark:hover:bg-violet-900/30">💾 Shu kontragent uchun eslab qol</button>
                     </td>
                     <td class="px-2 py-2.5 align-top min-w-[150px] max-w-[190px]">
                       <span class="inline-block text-xs font-medium px-2 py-1 rounded-lg leading-tight" :class="statusClass(r.status)" x-text="r.status_label"></span>
@@ -295,7 +300,8 @@
                         <template x-for="a in (snap?.account_choices || [])" :key="a"><option :value="a" :selected="a===r.account" x-text="a"></option></template>
                       </select>
                     </div>
-                    <div class="mt-1 text-[11px]" :class="r.account_source==='history' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                    <div class="mt-1 text-[11px]" :class="['history','rule','keyword'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                    <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)" class="mt-1 text-[11px] rounded-md border border-violet-300 text-violet-700 px-1.5 py-0.5">💾 Eslab qol</button>
                     <div x-show="r.diffs && r.diffs.length" class="text-[11px] text-rose-600" x-text="(r.diffs || []).join('; ')"></div>
                     <div x-show="r.blockers.length" class="text-[11px] text-rose-600" x-text="'⚠️ ' + (r.blockers[0] || '')"></div>
                     <div x-show="r.overridable" class="text-[11px] text-amber-600">👁 Tekshirish orqali baribir yozish mumkin</div>
@@ -308,6 +314,136 @@
               </div>
             </template>
           </div>
+        </div>
+      </div>
+
+      <!-- ===================== 📚 HISOB QOIDALARI ===================== -->
+      <div x-show="mode==='rules'" class="flex-1 overflow-y-auto thin-scroll p-4 space-y-4">
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+            <div class="text-xs text-slate-500 dark:text-slate-400">📚 Jami qoidalar</div>
+            <div class="mt-1 text-2xl font-bold num" x-text="rulesSummary.total ?? 0"></div>
+            <div class="mt-1 text-xs text-slate-500" x-text="(rulesSummary.counterparty ?? 0) + ' kontragent · ' + (rulesSummary.keyword ?? 0) + ' kalit so\'z'"></div>
+          </div>
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900/60 p-4">
+            <div class="text-xs text-violet-700 dark:text-violet-400">🔒 Qat'iy (tasdiqlangan)</div>
+            <div class="mt-1 text-2xl font-bold num" x-text="rulesSummary.locked ?? 0"></div>
+            <div class="mt-1 text-xs text-slate-500">1C tarixidan ustun turadi</div>
+          </div>
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 p-4 cursor-pointer" @click="rulesFilter = 'conflict'">
+            <div class="text-xs text-amber-700 dark:text-amber-400">⚠️ Ziddiyatli (ko'rib chiqing)</div>
+            <div class="mt-1 text-2xl font-bold num" x-text="rulesSummary.conflicts ?? 0"></div>
+            <div class="mt-1 text-xs text-slate-500">Bir kontragent turli schyotlarga olingan</div>
+          </div>
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+            <div class="font-semibold text-slate-800 dark:text-slate-100 mb-1">Ustuvorlik</div>
+            🔒 Qat'iy qoida → 🧠 1C tarixi → 🔤 Kalit so'z → 🤖 Standart
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <template x-if="rulesCanEdit">
+              <div class="flex flex-wrap items-center gap-2">
+                <select x-model.number="learnMonths" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2 py-1.5">
+                  <option value="3">oxirgi 3 oy</option><option value="6">oxirgi 6 oy</option>
+                  <option value="12">oxirgi 12 oy</option><option value="24">oxirgi 24 oy</option>
+                </select>
+                <button @click="learnRules()" :disabled="learning" class="rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-sm font-medium px-3 py-1.5"
+                        x-text="learning ? '⏳ 1C o\'qilmoqda…' : '🧠 1C tarixidan o\'rganish'"></button>
+              </div>
+            </template>
+            <button @click="exportRules()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5">📥 Excel'ga yuklab olish</button>
+            <button x-show="rulesCanEdit" @click="$refs.rulesFile.click()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5">📤 Excel'dan yuklash</button>
+            <input type="file" x-ref="rulesFile" class="hidden" accept=".xlsx" @change="importRules($event.target.files[0]); $event.target.value=''">
+            <div class="ml-auto flex flex-wrap items-center gap-2">
+              <input x-model="rulesSearch" placeholder="Qidirish: nomi, STIR, so'z, schyot" class="w-56 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5">
+              <select x-model="rulesFilter" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2 py-1.5">
+                <option value="all">Hammasi</option><option value="conflict">⚠️ Ziddiyatli</option>
+                <option value="locked">🔒 Qat'iy</option><option value="counterparty">🏢 Kontragentlar</option>
+                <option value="keyword">🔤 Kalit so'zlar</option><option value="ehf">📑 EHF (xarid)</option>
+              </select>
+            </div>
+          </div>
+          <div x-show="learnResult" class="rounded-xl bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-900 text-violet-900 dark:text-violet-200 text-sm px-3 py-2" x-text="learnResult"></div>
+          <div x-show="importErrors.length" class="rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs px-3 py-2 space-y-0.5">
+            <template x-for="e in importErrors" :key="e"><div x-text="'⚠️ ' + e"></div></template>
+          </div>
+          <div x-show="!rules.length" class="text-center text-sm text-slate-500 py-8">
+            Hozircha qoida yo'q. <span x-show="rulesCanEdit">"🧠 1C tarixidan o'rganish" tugmasini bosing — dastur bazangizni qanday yuritganingizni o'qib, jadval tuzadi.</span>
+          </div>
+
+          <div x-show="rules.length" class="overflow-x-auto thin-scroll">
+            <table class="w-full text-sm">
+              <thead class="text-xs text-slate-500 dark:text-slate-400 text-left bg-slate-50 dark:bg-slate-800/60">
+                <tr>
+                  <th class="px-2 py-2">Kontragent / kalit so'z</th><th class="px-2 py-2">Yo'nalish</th>
+                  <th class="px-2 py-2">Schyot</th><th class="px-2 py-2">ВидОперации</th>
+                  <th class="px-2 py-2 whitespace-nowrap">1C tarixi</th><th class="px-2 py-2">Manba</th>
+                  <th class="px-2 py-2 text-center" title="Qat'iy qoida — 1C tarixidan ustun">🔒</th><th class="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                <template x-for="r in filteredRules()" :key="r.id">
+                  <tr :class="r.conflict && !r.locked ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''">
+                    <td class="px-2 py-2 align-top max-w-[240px]">
+                      <div class="font-medium truncate" :title="r.name || r.match" x-text="r.kind === 'keyword' ? '🔤 «' + r.match + '»' : (r.name || '—')"></div>
+                      <div class="text-xs text-slate-500 num" x-text="r.kind === 'keyword' ? 'to\'lov maqsadida' : 'STIR ' + r.match"></div>
+                      <div x-show="r.doc_kind === 'ehf'" class="text-[11px] text-slate-500">📑 EHF (xarid)</div>
+                    </td>
+                    <td class="px-2 py-2 align-top text-xs whitespace-nowrap" x-text="{kirim: '⬇️ Kirim', chiqim: '⬆️ Chiqim', '': 'Har ikkisi'}[r.direction]"></td>
+                    <td class="px-2 py-2 align-top">
+                      <input x-model="r.account" list="acc-list" :disabled="!rulesCanEdit" maxlength="5" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
+                    </td>
+                    <td class="px-2 py-2 align-top">
+                      <input x-model="r.operation" :disabled="!rulesCanEdit" placeholder="(schyotdan)" class="w-44 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs disabled:opacity-70">
+                    </td>
+                    <td class="px-2 py-2 align-top text-xs">
+                      <div x-show="r.total" class="num" :class="r.conflict ? 'text-amber-700 dark:text-amber-400 font-medium' : ''"
+                           x-text="(r.conflict ? '⚠️ ' : '✅ ') + r.hits + '/' + r.total"></div>
+                      <div x-show="r.conflict" class="text-[11px] text-slate-500 num" x-text="r.variants.map(v => v.account + '×' + v.count).join(' · ')"></div>
+                      <div x-show="!r.total" class="text-slate-400">—</div>
+                    </td>
+                    <td class="px-2 py-2 align-top text-xs whitespace-nowrap">
+                      <div x-text="ruleSourceLabel(r)"></div>
+                      <div class="text-[11px] text-slate-500" x-text="r.updated_by"></div>
+                    </td>
+                    <td class="px-2 py-2 align-top text-center"><input type="checkbox" x-model="r.locked" :disabled="!rulesCanEdit" class="rounded"></td>
+                    <td class="px-2 py-2 align-top whitespace-nowrap text-right">
+                      <template x-if="rulesCanEdit">
+                        <div class="flex justify-end gap-1">
+                          <button x-show="ruleChanged(r)" @click="saveRule(r)" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">💾</button>
+                          <button @click="deleteRule(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1" title="O'chirish">🗑</button>
+                        </div>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <datalist id="acc-list">
+              <template x-for="a in accountSuggestions()" :key="a"><option :value="a"></option></template>
+            </datalist>
+          </div>
+
+          <form x-show="rulesCanEdit" @submit.prevent="addRule()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-3 space-y-2">
+            <div class="text-sm font-semibold">➕ Yangi qoida</div>
+            <div class="grid grid-cols-2 xl:grid-cols-[150px_1fr_130px_110px_100px_auto] gap-2 text-sm">
+              <select x-model="newRule.kind" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
+                <option value="counterparty">🏢 Kontragent</option><option value="keyword">🔤 Kalit so'z</option>
+              </select>
+              <input x-model="newRule.match" required :placeholder="newRule.kind === 'keyword' ? 'masalan: ijara' : 'STIR (9 xona)'" class="min-w-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5">
+              <select x-model="newRule.direction" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
+                <option value="chiqim">⬆️ Chiqim</option><option value="kirim">⬇️ Kirim</option><option value="">Har ikkisi</option>
+              </select>
+              <select x-model="newRule.doc_kind" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
+                <option value="bank">🏦 Bank</option><option value="ehf">📑 EHF</option>
+              </select>
+              <input x-model="newRule.account" list="acc-list" required placeholder="60.10" maxlength="5" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
+              <button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-3 py-1.5">Qo'shish</button>
+            </div>
+            <label class="flex items-center gap-2 text-xs"><input type="checkbox" x-model="newRule.locked" class="rounded"> 🔒 Qat'iy qoida (1C tarixidan ustun)</label>
+          </form>
         </div>
       </div>
 
@@ -738,6 +874,9 @@ function app() {
     settingsTab: 'account', firmForm: {}, allFirms: [], users: [], audit: [], tgCode: '',
     newFirm: { name: '', inn: '' }, newUser: { username: '', full_name: '', password: '', role: 'accountant', firm_ids: [] },
     pwd: { old: '', new1: '', new2: '' },
+    rules: [], rulesSummary: {}, rulesCanEdit: false, rulesFilter: 'all', rulesSearch: '', learnMonths: 12,
+    learning: false, learnResult: '', importErrors: [], rulesDirty: false,
+    newRule: { kind: 'counterparty', match: '', direction: 'chiqim', doc_kind: 'bank', account: '', locked: true },
 
     get canPost() { return !!(this.me && this.me.can_post); },
 
@@ -774,6 +913,7 @@ function app() {
       try { localStorage.setItem('bx_firm', String(id)); } catch (e) {}
       this.data = { vipiska: null, didox: null }; this.selected = { vipiska: [], didox: [] };
       this.status = { onec: {}, ai: {} }; this.inspect = null; this.confirmBox = null; this.mode = 'vipiska';
+      this.rules = []; this.rulesSummary = {}; this.learnResult = ''; this.importErrors = []; this.rulesDirty = false;
       if (this.isTg) this.api('/api/auth/tg-firm', { json: { firm_id: id }, anyFirm: true });  // bot ham shu firmada
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
       await this.loadFirmData();
@@ -834,7 +974,11 @@ function app() {
 
     // ---------------- vipiska / didox
     switchMode(m) {
+      const leavingRules = this.mode === 'rules' && m !== 'rules';
       this.mode = m;
+      if (m === 'rules') { this.loadRules(); return; }
+      // qoidalar o'zgargan bo'lsa — jadvalni yangi qoidalar bilan qayta tekshiramiz
+      if (leavingRules && this.rulesDirty && this.data[m]?.rows?.length) { this.rulesDirty = false; this.recheck(); }
       if (m === 'didox' && !this.data.didox?.rows?.length) this.loadDidox();
     },
     async busy(msg, fn) { this.loading = true; this.busyMsg = msg; try { return await fn(); } finally { this.loading = false; } },
@@ -922,6 +1066,87 @@ function app() {
       }
     },
 
+    // ---------------- 📚 hisob qoidalari
+    async loadRules() {
+      const res = await this.api('/api/rules');
+      if (!res) return;
+      this.rules = res.rules.map(r => ({ ...r, _orig: { account: r.account, operation: r.operation, locked: r.locked } }));
+      this.rulesSummary = res.summary; this.rulesCanEdit = res.can_edit;
+    },
+    filteredRules() {
+      const q = this.rulesSearch.trim().toLowerCase();
+      return this.rules.filter(r => {
+        // filtr saqlangan holatga qaraydi — 🔒 bosilganda qator "💾" bosilguncha ko'z oldidan yo'qolmasin
+        if (this.rulesFilter === 'conflict' && !(r.conflict && !r._orig.locked)) return false;
+        if (this.rulesFilter === 'locked' && !r._orig.locked) return false;
+        if (['counterparty', 'keyword'].includes(this.rulesFilter) && r.kind !== this.rulesFilter) return false;
+        if (this.rulesFilter === 'ehf' && r.doc_kind !== 'ehf') return false;
+        return !q || [r.name, r.match, r.account, r.operation].some(v => (v || '').toLowerCase().includes(q));
+      });
+    },
+    ruleChanged(r) { return r.account !== r._orig.account || r.operation !== r._orig.operation || r.locked !== r._orig.locked; },
+    ruleSourceLabel(r) {
+      return ({ history: '🧠 1C tarixi', manual: '✍️ Buxgalter', correction: '💾 Tuzatishdan', import: '📤 Excel' })[r.source] || r.source;
+    },
+    accountSuggestions() {
+      const base = ['40.10', '43.10', '48.90', '50.10', '51.10', '60.10', '61.10', '64.10', '66.10', '67.10', '68.10', '69.90', '94.20', '94.30', '94.40', '95.10'];
+      return [...new Set([...base, ...this.rules.map(r => r.account), ...(this.data.vipiska?.account_choices || [])])].sort();
+    },
+    async learnRules() {
+      this.learning = true; this.learnResult = '';
+      try {
+        const res = await this.api('/api/rules/learn', { json: { months: this.learnMonths } });
+        if (!res) return;
+        const s = res.summary;
+        this.learnResult = '🧠 ' + s.documents + " ta 1C hujjati o'qildi: " + s.counterparties + ' ta kontragent va ' + s.keywords +
+          " ta kalit so'z qoidasi (" + s.added + ' yangi, ' + s.updated + ' yangilandi, ' + s.kept_locked + " ta qat'iy qoida o'zgarmadi)." +
+          (s.conflicts ? ' ⚠️ ' + s.conflicts + " ta ziddiyatli — ko'rib chiqing." : '');
+        this.rulesDirty = true;
+        await this.loadRules();
+      } finally { this.learning = false; }
+    },
+    async saveRule(r) {
+      const res = await this.api('/api/rules/' + r.id, { method: 'PUT', json: { account: r.account, operation: r.operation, locked: r.locked } });
+      if (!res) return;
+      Object.assign(r, res, { _orig: { account: res.account, operation: res.operation, locked: res.locked } });
+      this.rulesDirty = true; this.toast('💾 Qoida saqlandi', 'ok');
+      const s = await this.api('/api/rules'); if (s) this.rulesSummary = s.summary;
+    },
+    async deleteRule(r) {
+      if (!confirm((r.name || r.match) + " qoidasi o'chirilsinmi?")) return;
+      if (await this.api('/api/rules/' + r.id, { method: 'DELETE' })) { this.rulesDirty = true; await this.loadRules(); }
+    },
+    async addRule() {
+      const res = await this.api('/api/rules', { json: this.newRule });
+      if (!res) return;
+      this.newRule = { ...this.newRule, match: '', account: '' };
+      this.rulesDirty = true; this.toast("📚 Qoida qo'shildi", 'ok'); await this.loadRules();
+    },
+    async exportRules() {
+      try {
+        const r = await fetch('/api/rules/export', { headers: this.headers() });
+        if (!r.ok) { this.toast("⚠️ Yuklab bo'lmadi", 'error'); return; }
+        const url = URL.createObjectURL(await r.blob());
+        const a = document.createElement('a'); a.href = url; a.download = 'hisob_qoidalari.xlsx'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      } catch (e) { this.toast("⚠️ Server bilan aloqa yo'q", 'error'); }
+    },
+    async importRules(file) {
+      if (!file) return;
+      const fd = new FormData(); fd.append('file', file);
+      const res = await this.api('/api/rules/import', { method: 'POST', body: fd });
+      if (!res) return;
+      this.importErrors = res.errors;
+      this.toast('📤 ' + res.saved + ' ta qoida yuklandi' + (res.errors.length ? ', ' + res.errors.length + ' ta xato' : ''), res.errors.length ? 'error' : 'ok');
+      this.rulesDirty = true; await this.loadRules();
+    },
+    async remember(r) {
+      const res = await this.api('/api/rows/' + r.id + '/remember', { json: { mode: this.mode } });
+      if (!res) return;
+      this.setSnap(res);
+      this.toast('💾 Eslab qolindi: ' + (res.rule.name || res.rule.match) + ' → ' + res.rule.account + " (qat'iy qoida)", 'ok');
+    },
+
     // ---------------- chat
     chips() {
       const base = ["🏦 Vipiskani dublikatga tekshir", "🧠 Oldingi 1C tarixidan schyotlarni mosla", "✅ Yangi vipiskalarni 1C ga kirit", "📊 Kunlik pul oqimi tahlili"];
@@ -933,7 +1158,7 @@ function app() {
       this.chat.push({ role: 'user', html: this.md(text) });
       this.chatBusy = true; this.scrollChat();
       try {
-        const res = await this.api('/api/chat', { json: { message: text, mode: this.mode } });
+        const res = await this.api('/api/chat', { json: { message: text, mode: this.mode === 'didox' ? 'didox' : 'vipiska' } });
         if (res) {
           this.chat.push({ role: 'model', html: this.md(res.reply), cards: res.cards });
           if (res.engine_label) this.status.ai.label = res.engine_label;
@@ -1038,6 +1263,12 @@ function app() {
         firm_deactivated: '🏢 Firma o\'chirildi', user_created: '👤 Foydalanuvchi qo\'shildi: ' + (d.username || ''),
         user_updated: '👤 ' + (d.username || '') + ': ' + (d.fields || []).join(', '), ai_settings_updated: '🤖 AI sozlamalari',
         vipiska_uploaded: '📥 Vipiska: ' + (d.file || '') + ' (' + (d.rows ?? '?') + ' qator)',
+        rules_learned: '🧠 1C tarixidan o\'rganildi: ' + (d.documents ?? 0) + ' hujjat, ' + ((d.added ?? 0) + (d.updated ?? 0)) + ' qoida',
+        rule_saved: '📚 Qoida: ' + (d.match || '') + ' → ' + (d.account || '') + (d.locked ? ' 🔒' : ''),
+        rule_updated: '📚 Qoida o\'zgartirildi: ' + (d.match || '') + ' → ' + (d.account || '') + (d.locked ? ' 🔒' : ''),
+        rule_deleted: '🗑 Qoida o\'chirildi: ' + (d.match || ''),
+        rule_remembered: '💾 Eslab qolindi: ' + (d.name || d.match || '') + ' → ' + (d.account || ''),
+        rules_imported: '📤 Qoidalar Excel\'dan: ' + (d.saved ?? 0) + ' ta' + (d.errors ? ', xato ' + d.errors : ''),
         posted_to_1c: '✅ 1C ga qoralama: ' + (d.ok ?? 0) + ' ta' + (d.failed ? ', bloklandi ' + d.failed : '') + (d.forced ? ' · ⚠️ majburan: ' + (d.reason || '') : ''),
       };
       return map[a.action] || a.action;

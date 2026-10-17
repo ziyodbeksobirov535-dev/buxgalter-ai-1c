@@ -13,7 +13,7 @@ from datetime import date
 import httpx
 
 from services_1c import E_PURCHASE, FIELDS, ODataError, OneCService
-from services_vipiska import finalize_row
+from services_vipiska import apply_rule, finalize_row
 
 DIDOX_LIST_PATH = "/v1/documents"  # ?owner=0 (kiruvchi) &doctype=002 (hisob-faktura)
 
@@ -74,7 +74,7 @@ async def fetch_invoices(settings: dict) -> tuple[list[dict], str]:
     return [_map_invoice(d) for d in docs], "live"
 
 
-async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None) -> dict:
+async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None, rules=None) -> dict:
     d = date.fromisoformat(inv["date"])
     rid = "e-" + hashlib.sha1(f"{inv['id']}|{inv['number']}".encode()).hexdigest()[:10]
     row = {"id": rid, "kind": "ehf", "entity": E_PURCHASE, "date": inv["date"], "number": inv["number"],
@@ -100,27 +100,34 @@ async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None
         row["learned"] = await onec.learn_history(E_PURCHASE, row["counterparty_key"])
     learned = row["learned"]
     match_code = await onec.account_code((dup["match"] or {}).get("account_key"))
+    locked = rules.locked(inv["seller_inn"], "", "ehf", "") if rules else None
+    stored = rules.learned(inv["seller_inn"], "", "ehf", "") if rules else None
+    row["operation"] = (learned or {}).get("operation") or row["doc_kind"]
     if dup["status"] == "duplicate" and match_code:
         row["account"], row["account_source"] = match_code, "onec"
-    elif prev and prev.get("account_source") == "manual":
+    elif prev and prev.get("account_source") == "manual" and not (locked and locked.rule["account"] == prev["account"]):
         row["account"], row["account_source"] = prev["account"], "manual"
+    elif locked:
+        apply_rule(row, locked)
     elif learned and learned.get("account_code"):
         row["account"], row["account_source"] = learned["account_code"], "history"
+    elif stored:
+        apply_rule(row, stored)
     else:
         row["account"], row["account_source"] = "60.10", "rules"
-    row["operation"] = (learned or {}).get("operation") or row["doc_kind"]
     if prev and prev.get("posted"):
         row.update(posted=True, posted_ref=prev["posted_ref"], posted_number=prev["posted_number"], status="posted")
     finalize_row(row)
     return row
 
 
-async def analyze_invoices(invoices: list[dict], onec: OneCService, previous: list[dict] | None = None) -> list[dict]:
+async def analyze_invoices(invoices: list[dict], onec: OneCService, previous: list[dict] | None = None,
+                           rules=None) -> list[dict]:
     prev = {p["id"]: p for p in previous or []}
 
     async def one(inv):
         rid = "e-" + hashlib.sha1(f"{inv['id']}|{inv['number']}".encode()).hexdigest()[:10]
-        return await analyze_invoice(inv, onec, prev.get(rid))
+        return await analyze_invoice(inv, onec, prev.get(rid), rules)
     return list(await asyncio.gather(*(one(i) for i in invoices)))
 
 
@@ -133,7 +140,9 @@ async def build_purchase_payload(row: dict, onec: OneCService) -> dict:
     acc_key = acc_key or await onec.account_key(row["account"])
     if not acc_key:
         raise ODataError(f"{row['account']} schyoti 1C da topilmadi")
-    contract_key = learned.get("contract_key")
+    rule = row.get("rule") or {}
+    contract_key = learned.get("contract_key") or (rule.get("contract_key") if rule.get("account") == row["account"]
+                                                   else None) or None
     if not contract_key:
         c = await onec.find_contract(row["counterparty_key"], "chiqim")
         contract_key = c["Ref_Key"] if c else None
