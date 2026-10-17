@@ -265,6 +265,9 @@ async def post(session: Session, mode: str, ids: list[str], force_ids: list[str]
                force_reason: str = "") -> dict:
     """Qoralama yozish. force_ids — buxgalter "baribir yozish"ni alohida tasdiqlagan qatorlar
     (faqat "farq bor" yoki "raqamsiz mos kelgan" qatorlar; to'liq dublikat hech qachon yozilmaydi)."""
+    # FAQAT TAHLIL: real (demo bo'lmagan) 1C ga hozircha hech narsa yozilmaydi — egasining talabi
+    if onec_for(session).mode == "live":
+        raise ODataError("🔒 Faqat tahlil rejimi: real 1C ga yozish hozircha o'chirilgan (hech narsa o'zgartirilmadi)")
     if session.analyzed_with.get(mode) != onec_fingerprint(session.firm_id):
         raise ODataError("1C sozlamalari tahlildan keyin o'zgargan — avval 🔄 \"1C da qayta tekshirish\" ni bosing")
     if mode == "vipiska" and session.statement and session.statement.is_sample and onec_for(session).mode == "live":

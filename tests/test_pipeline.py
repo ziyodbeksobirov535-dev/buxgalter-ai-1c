@@ -82,7 +82,7 @@ def test_sample_never_posts_to_live_1c(monkeypatch):
     snap = run(core.load_sample(s))
     assert snap["is_sample"] and snap["kpis"]["ready"] == 0
     assert all(any("Test" in b for b in r["blockers"]) for r in snap["rows"])
-    with pytest.raises(ODataError, match="Test"):
+    with pytest.raises(ODataError, match="Test|Faqat tahlil"):
         run(core.post(s, "vipiska", [r["id"] for r in snap["rows"]]))
 
 
