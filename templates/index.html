@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="uz" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BUXGALTER AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: {
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        colors: { brand: { 50:'#eef6ff',100:'#d9eaff',500:'#2563eb',600:'#1d4ed8',700:'#1e40af',900:'#0b1f4d' } }
+      } }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    body { -webkit-font-smoothing: antialiased; }
+    .thin-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: rgba(100,116,139,.35); border-radius: 6px; }
+    .md p { margin: .25rem 0; }
+    .md ul { margin: .25rem 0 .25rem 1rem; list-style: disc; }
+    .md li { margin: .1rem 0; }
+    .md code { font-size: .8em; padding: 0 .25rem; border-radius: .25rem; background: rgba(100,116,139,.18); }
+    .num { font-variant-numeric: tabular-nums; }
+    @keyframes pulse-dot { 0%,100% { opacity: .3 } 50% { opacity: 1 } }
+    .typing span { animation: pulse-dot 1.2s infinite; }
+    .typing span:nth-child(2) { animation-delay: .2s } .typing span:nth-child(3) { animation-delay: .4s }
+  </style>
+</head>
+<body class="h-full bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100 font-sans">
+<div x-data="app()" x-init="init()" class="flex flex-col h-[100dvh]" x-cloak>
+
+  <!-- ===================== TOP BAR ===================== -->
+  <header class="shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+      <div class="flex items-center gap-2 mr-2">
+        <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-brand-500 to-emerald-500 grid place-items-center text-lg shadow-sm">🏦</div>
+        <div class="leading-tight">
+          <div class="font-bold tracking-tight">BUXGALTER AI</div>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">1C:Buxgalteriya (O'zbekiston 3.0)</div>
+        </div>
+      </div>
+
+      <!-- Rejim tablari -->
+      <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-sm order-3 lg:order-none w-full lg:w-auto">
+        <button @click="switchMode('vipiska')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
+                :class="mode==='vipiska' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
+          🏦 Bank Vipiskasi (Sinov)</button>
+        <button @click="switchMode('didox')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
+                :class="mode==='didox' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
+          📑 Didox EHF vs 1C</button>
+      </div>
+
+      <!-- Holat belgilari -->
+      <div class="hidden md:flex items-center gap-1.5 text-xs">
+        <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode==='demo')"
+              :title="status.onec.error || ''" x-text="onecBadge()"></span>
+        <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)"
+              :title="status.ai.label" x-text="aiBadge()"></span>
+        <span class="px-2 py-1 rounded-full border border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800">🛡️ Dublikat Himoyasi: Yoqilgan</span>
+      </div>
+
+      <div class="ml-auto flex items-center gap-1.5">
+        <template x-if="mode==='vipiska'">
+          <div class="flex items-center gap-1.5">
+            <button @click="$refs.file.click()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">📥 <span class="hidden sm:inline">Vipiska/Excel Yuklash</span><span class="sm:hidden">Yuklash</span></button>
+            <button @click="loadSample()" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-3 py-1.5">🧪 <span class="hidden sm:inline">Test Vipiska Namunasini Yuklash</span><span class="sm:hidden">Test</span></button>
+          </div>
+        </template>
+        <template x-if="mode==='didox'">
+          <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">🔄 Didox'dan yuklash</button>
+        </template>
+        <button @click="openSettings()" title="Sozlamalar" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5">⚙️<span class="hidden xl:inline"> Sozlamalar</span></button>
+        <button @click="toggleTheme()" :title="dark ? 'Yorug\' rejim' : 'To\'q rejim'" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5" x-text="dark ? '☀️' : '🌙'"></button>
+      </div>
+      <input type="file" x-ref="file" class="hidden" accept=".xlsx,.xlsm,.csv,.txt" @change="upload($event.target.files[0]); $event.target.value=''">
+    </div>
+    <!-- mobil holat belgilari -->
+    <div class="md:hidden flex gap-1.5 overflow-x-auto thin-scroll px-4 pb-2 text-[11px] whitespace-nowrap">
+      <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode==='demo')" x-text="onecBadge()"></span>
+      <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)" x-text="aiBadge()"></span>
+      <span class="px-2 py-0.5 rounded-full border border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800">🛡️ Dublikat Himoyasi: Yoqilgan</span>
+    </div>
+  </header>
+
+  <!-- ===================== MAIN SPLIT ===================== -->
+  <main class="flex-1 flex min-h-0">
+
+    <!-- ---------- CHAP PANEL (70%) ---------- -->
+    <section class="flex-col min-w-0 lg:w-[70%] w-full" :class="mobileTab==='table' ? 'flex' : 'hidden lg:flex'"
+             @dragover.prevent="drag=true" @dragleave.prevent="drag=false" @drop.prevent="drag=false; mode==='vipiska' && upload($event.dataTransfer.files[0])">
+      <div class="flex-1 overflow-y-auto thin-scroll p-4 space-y-4 relative">
+
+        <!-- KPI -->
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+          <div class="kpi rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+            <div class="text-xs text-slate-500 dark:text-slate-400">📄 Jami qatorlar</div>
+            <div class="mt-1 text-2xl font-bold num" x-text="kpis.total ?? 0"></div>
+            <div class="mt-1 text-xs text-slate-500 truncate" x-text="snap?.source || 'Fayl yuklanmagan'"></div>
+          </div>
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/60 p-4">
+            <div class="text-xs text-amber-700 dark:text-amber-400">🟡 Yangi (Kiritishga tayyor)</div>
+            <div class="mt-1 text-2xl font-bold num" x-text="kpis.ready ?? 0"></div>
+            <div class="mt-1 text-xs text-slate-500 num" x-text="fmt(kpis.ready_sum || 0) + ' so\'m'"></div>
+          </div>
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 p-4">
+            <div class="text-xs text-emerald-700 dark:text-emerald-400">🛡️ Dublikat (Bloklandi - 1C da bor)</div>
+            <div class="mt-1 text-2xl font-bold num" x-text="kpis.duplicates ?? 0"></div>
+            <div class="mt-1 text-xs text-slate-500">
+              <span x-show="kpis.discrepancies" class="text-rose-600 dark:text-rose-400" x-text="'🔴 Farq: ' + kpis.discrepancies"></span>
+              <span x-show="kpis.posted" class="text-brand-600 dark:text-sky-400 ml-1" x-text="'✅ Yozildi: ' + kpis.posted"></span>
+              <span x-show="!kpis.discrepancies && !kpis.posted">Ikki marta kiritish imkonsiz</span>
+            </div>
+          </div>
+          <div class="rounded-2xl bg-white dark:bg-slate-900 border border-violet-200 dark:border-violet-900/60 p-4">
+            <div class="text-xs text-violet-700 dark:text-violet-400">🧠 Tarixdan aniqlangan schyotlar (<span x-text="(kpis.learned_pct ?? 0) + '%'"></span>)</div>
+            <div class="mt-1 text-2xl font-bold num"><span x-text="kpis.learned ?? 0"></span><span class="text-base text-slate-400" x-text="' / ' + (kpis.learned_base ?? 0)"></span></div>
+            <div class="mt-2 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+              <div class="h-full bg-violet-500 transition-all" :style="`width:${kpis.learned_pct || 0}%`"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bo'sh holat -->
+        <template x-if="!rows.length && !loading">
+          <div class="rounded-2xl border-2 border-dashed p-8 text-center bg-white dark:bg-slate-900"
+               :class="drag ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-300 dark:border-slate-700'">
+            <div class="text-4xl" x-text="mode==='vipiska' ? '🏦' : '📑'"></div>
+            <h2 class="mt-3 text-lg font-semibold" x-text="mode==='vipiska' ? 'Bank vipiskasini yuklang' : 'Didox EHF larini 1C bilan solishtiring'"></h2>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400 max-w-xl mx-auto" x-show="mode==='vipiska'">
+              Excel (.xlsx), CSV yoki 1CClientBankExchange (.txt). Har bir qator 1C da dublikatga tekshiriladi,
+              schyotlar oldingi 1C yozuvlaridan o'rganiladi, yangilari faqat qoralama sifatida kiritiladi.</p>
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400 max-w-xl mx-auto" x-show="mode==='didox'">
+              Kiruvchi elektron hisob-fakturalar 1C dagi "Поступление товаров и услуг" hujjatlari bilan solishtiriladi.</p>
+            <div class="mt-5 flex flex-wrap justify-center gap-2">
+              <template x-if="mode==='vipiska'">
+                <div class="flex flex-wrap justify-center gap-2">
+                  <button @click="$refs.file.click()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">📥 Vipiska/Excel Yuklash</button>
+                  <button @click="loadSample()" class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2">🧪 Test Vipiska Namunasini Yuklash</button>
+                  <button @click="downloadSample()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-4 py-2">📥 Test Vipiska faylini yuklab olish</button>
+                </div>
+              </template>
+              <template x-if="mode==='didox'">
+                <button @click="loadDidox()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">🔄 Didox'dan yuklash va tekshirish</button>
+              </template>
+            </div>
+            <p class="mt-4 text-xs text-slate-400" x-show="mode==='vipiska'">Faylni shu yerga sudrab tashlashingiz ham mumkin</p>
+          </div>
+        </template>
+
+        <!-- Yuklanmoqda -->
+        <div x-show="loading" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center">
+          <div class="inline-block h-6 w-6 rounded-full border-2 border-brand-500 border-t-transparent animate-spin"></div>
+          <div class="mt-2 text-sm text-slate-500" x-text="busyMsg"></div>
+        </div>
+
+        <!-- Ogohlantirishlar -->
+        <template x-for="w in (snap?.warnings || [])" :key="w">
+          <div class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-sm px-3 py-2" x-text="'⚠️ ' + w"></div>
+        </template>
+
+        <!-- Jadval -->
+        <div x-show="rows.length && !loading" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 text-sm">
+            <span class="font-semibold" x-text="mode==='vipiska' ? 'Vipiska qatorlari' : 'Didox EHF hujjatlari'"></span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500" x-text="snap?.onec_mode==='demo' ? '1C: Demo baza' : '1C: OData'"></span>
+            <div class="ml-auto flex items-center gap-2">
+              <button x-show="mode==='vipiska'" @click="downloadSample()" class="text-xs text-brand-600 dark:text-sky-400 hover:underline">📥 Test Vipiska faylini yuklab olish</button>
+              <button @click="recheck()" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">🔄 1C da qayta tekshirish</button>
+            </div>
+          </div>
+
+          <!-- Desktop jadval -->
+          <div class="hidden md:block overflow-x-auto thin-scroll">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 text-left">
+                <tr>
+                  <th class="px-2 py-2 w-8"><input type="checkbox" class="rounded" :checked="allSelected()" :disabled="!selectableRows().length" @change="toggleAll($event.target.checked)" title="Barcha yangi qatorlarni tanlash"></th>
+                  <th class="px-2 py-2 whitespace-nowrap">Sana & №</th>
+                  <th class="px-2 py-2">Kontragent & STIR</th>
+                  <th class="px-2 py-2">Turi</th>
+                  <th class="px-2 py-2 text-right whitespace-nowrap">Summa (UZS)</th>
+                  <th class="px-2 py-2 hidden 2xl:table-cell">To'lov maqsadi</th>
+                  <th class="px-2 py-2 min-w-[120px]">🧠 AI & 1C Tarix Schyoti</th>
+                  <th class="px-2 py-2">Holati</th>
+                  <th class="px-2 py-2 text-right">Amal</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                <template x-for="r in rows" :key="r.id">
+                  <tr :class="rowClass(r)">
+                    <td class="px-2 py-2.5 align-top">
+                      <input type="checkbox" class="rounded disabled:opacity-30" :disabled="!r.selectable" :checked="isSel(r.id)" @change="toggleSel(r.id)"
+                             :title="r.selectable ? 'Tanlash' : 'Bloklangan: ' + (r.blockers[0] || r.status_label)">
+                    </td>
+                    <td class="px-2 py-2.5 align-top whitespace-nowrap">
+                      <div class="font-medium num" x-text="fmtDate(r.date)"></div>
+                      <div class="text-xs text-slate-500" x-text="'№ ' + r.number"></div>
+                    </td>
+                    <td class="px-2 py-2.5 align-top max-w-[210px]">
+                      <div class="font-medium truncate" :title="r.counterparty_name" x-text="r.counterparty_name"></div>
+                      <div class="text-xs text-slate-500 num" x-text="'STIR ' + (r.counterparty_inn || '—')"></div>
+                      <div class="2xl:hidden mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1" :title="r.purpose" x-text="'💬 ' + r.purpose"></div>
+                      <div x-show="r.blockers.length" class="text-xs text-rose-600 dark:text-rose-400" x-text="'⚠️ ' + (r.blockers[0] || '')"></div>
+                    </td>
+                    <td class="px-2 py-2.5 align-top whitespace-nowrap">
+                      <span class="text-xs font-medium px-2 py-0.5 rounded-full" :class="r.direction==='kirim' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'"
+                            x-text="r.kind==='ehf' ? '📑 EHF (Xarid)' : (r.direction==='kirim' ? '⬇️ Kirim' : '⬆️ Chiqim')"></span>
+                    </td>
+                    <td class="px-2 py-2.5 align-top text-right font-semibold num whitespace-nowrap" x-text="fmt(r.amount)"></td>
+                    <td class="px-2 py-2.5 align-top max-w-[240px] hidden 2xl:table-cell"><div class="text-xs text-slate-600 dark:text-slate-300 line-clamp-2" :title="r.purpose" x-text="r.purpose"></div></td>
+                    <td class="px-2 py-2.5 align-top">
+                      <select class="text-sm rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 border px-2 py-1 disabled:opacity-60"
+                              :disabled="r.posted || r.status==='duplicate'" @change="changeAccount(r, $event.target.value)">
+                        <template x-for="a in (snap?.account_choices || [])" :key="a">
+                          <option :value="a" :selected="a===r.account" x-text="a"></option>
+                        </template>
+                      </select>
+                      <div class="mt-1 text-[11px] leading-tight" :class="r.account_source==='history' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                    </td>
+                    <td class="px-2 py-2.5 align-top min-w-[150px] max-w-[190px]">
+                      <span class="inline-block text-xs font-medium px-2 py-1 rounded-lg leading-tight" :class="statusClass(r.status)" x-text="r.status_label"></span>
+                      <div x-show="r.diffs && r.diffs.length" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400" x-text="(r.diffs || []).join('; ')"></div>
+                      <div x-show="r.posted_number" class="mt-1 text-[11px] text-brand-600 dark:text-sky-400" x-text="'1C: ' + r.posted_number + ' (qoralama)'"></div>
+                    </td>
+                    <td class="px-2 py-2.5 align-top">
+                      <div class="flex flex-col items-end gap-1 whitespace-nowrap">
+                      <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">👁 Tekshirish</button>
+                      <button x-show="r.selectable" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Mobil kartalar -->
+          <div class="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+            <template x-for="r in rows" :key="r.id">
+              <div class="p-3" :class="rowClass(r)">
+                <div class="flex items-start gap-2">
+                  <input type="checkbox" class="mt-1 rounded disabled:opacity-30" :disabled="!r.selectable" :checked="isSel(r.id)" @change="toggleSel(r.id)">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="font-medium truncate" x-text="r.counterparty_name"></div>
+                      <div class="font-semibold num whitespace-nowrap" :class="r.direction==='kirim' ? 'text-emerald-600' : 'text-rose-600'" x-text="(r.direction==='kirim' ? '+' : '−') + fmt(r.amount)"></div>
+                    </div>
+                    <div class="text-xs text-slate-500 num" x-text="fmtDate(r.date) + ' · № ' + r.number + ' · STIR ' + (r.counterparty_inn || '—')"></div>
+                    <div class="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-2" x-text="r.purpose"></div>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                      <span class="text-[11px] font-medium px-2 py-0.5 rounded-lg" :class="statusClass(r.status)" x-text="r.status_label"></span>
+                      <select class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate'" @change="changeAccount(r, $event.target.value)">
+                        <template x-for="a in (snap?.account_choices || [])" :key="a"><option :value="a" :selected="a===r.account" x-text="a"></option></template>
+                      </select>
+                    </div>
+                    <div class="mt-1 text-[11px]" :class="r.account_source==='history' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                    <div x-show="r.diffs && r.diffs.length" class="text-[11px] text-rose-600" x-text="(r.diffs || []).join('; ')"></div>
+                    <div x-show="r.blockers.length" class="text-[11px] text-rose-600" x-text="'⚠️ ' + (r.blockers[0] || '')"></div>
+                    <div class="mt-2 flex gap-2">
+                      <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1">👁 Tekshirish</button>
+                      <button x-show="r.selectable" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ommaviy xavfsiz amal paneli -->
+      <div x-show="rows.length" class="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-3">
+        <div class="text-xs text-slate-500 dark:text-slate-400">
+          <span x-text="'Tanlangan: ' + selCount() + ' ta · ' + fmt(selSum()) + ' so\'m'"></span>
+          <span class="hidden sm:inline"> · 🛡️ Dublikat va farqli qatorlarni tanlab bo'lmaydi</span>
+        </div>
+        <button @click="askPost(selectedIds())" :disabled="!selCount() || posting"
+                class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
+                x-text="posting ? '⏳ 1C ga yozilmoqda…' : '✅ Faqat yangi (dublikat bo\'lmagan) ' + selCount() + ' ta hujjatni 1C ga Qoralama kiritish'"></button>
+      </div>
+    </section>
+
+    <!-- ---------- O'NG PANEL (30%): AI COPILOT ---------- -->
+    <aside class="flex-col min-w-0 lg:w-[30%] w-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" :class="mobileTab==='chat' ? 'flex' : 'hidden lg:flex'">
+      <div class="shrink-0 px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+        <div class="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 grid place-items-center">🤖</div>
+        <div class="leading-tight min-w-0">
+          <div class="font-semibold text-sm">AI Buxgalter Copilot</div>
+          <div class="text-[11px] text-slate-500 truncate" x-text="status.ai.label || '…'"></div>
+        </div>
+        <button @click="chat = [chat[0]]" class="ml-auto text-xs text-slate-400 hover:text-slate-600" title="Chatni tozalash">🧹</button>
+      </div>
+
+      <div x-ref="chatBox" class="flex-1 overflow-y-auto thin-scroll px-3 py-3 space-y-3">
+        <template x-for="(m, i) in chat" :key="i">
+          <div :class="m.role==='user' ? 'flex justify-end' : 'flex justify-start'">
+            <div class="max-w-[92%] rounded-2xl px-3 py-2 text-sm"
+                 :class="m.role==='user' ? 'bg-brand-600 text-white rounded-br-md' : 'bg-slate-100 dark:bg-slate-800 rounded-bl-md'">
+              <div class="md" x-html="m.html"></div>
+              <!-- Kartalar -->
+              <template x-for="(c, j) in (m.cards || [])" :key="j">
+                <div class="mt-2">
+                  <template x-if="c.type==='confirm_post'">
+                    <div class="rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-900 p-3">
+                      <div class="text-xs font-semibold text-emerald-700 dark:text-emerald-400">✅ 1C ga qoralama kiritishni tasdiqlang</div>
+                      <ul class="mt-2 space-y-1 text-xs">
+                        <template x-for="it in c.items" :key="it.number">
+                          <li class="flex justify-between gap-2">
+                            <span class="truncate" x-text="'№' + it.number + ' ' + it.counterparty"></span>
+                            <span class="num whitespace-nowrap" x-text="fmt(it.amount) + ' → ' + it.account"></span>
+                          </li>
+                        </template>
+                      </ul>
+                      <div class="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs flex justify-between font-semibold">
+                        <span x-text="c.count + ' ta hujjat'"></span><span class="num" x-text="fmt(c.total) + ' so\'m'"></span>
+                      </div>
+                      <div x-show="!c.done" class="mt-2 flex gap-2">
+                        <button @click="confirmCard(c)" :disabled="posting" class="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-1.5">✅ Tasdiqlash va kiritish</button>
+                        <button @click="c.done = 'Bekor qilindi'" class="rounded-lg border border-slate-300 dark:border-slate-700 text-xs px-3 py-1.5">Bekor qilish</button>
+                      </div>
+                      <div x-show="c.done" class="mt-2 text-xs text-slate-500" x-text="c.done"></div>
+                    </div>
+                  </template>
+                  <template x-if="c.type==='cash_flow'">
+                    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 space-y-2">
+                      <div class="text-xs font-semibold">📊 Kunlik pul oqimi</div>
+                      <template x-for="d in c.days" :key="d.date">
+                        <div class="text-[11px]">
+                          <div class="flex justify-between"><span class="num" x-text="fmtDate(d.date)"></span><span class="num font-medium" :class="d.net>=0 ? 'text-emerald-600' : 'text-rose-600'" x-text="(d.net>=0?'+':'') + fmt(d.net)"></span></div>
+                          <div class="flex gap-0.5 h-1.5 mt-0.5">
+                            <div class="bg-emerald-500 rounded" :style="`width:${bar(c, d.kirim)}%`"></div>
+                            <div class="bg-rose-500 rounded" :style="`width:${bar(c, d.chiqim)}%`"></div>
+                          </div>
+                        </div>
+                      </template>
+                      <div class="pt-2 border-t border-slate-200 dark:border-slate-700 text-[11px] grid grid-cols-3 gap-1 num">
+                        <div><div class="text-slate-500">Kirim</div><div class="font-semibold text-emerald-600" x-text="fmtShort(c.total_kirim)"></div></div>
+                        <div><div class="text-slate-500">Chiqim</div><div class="font-semibold text-rose-600" x-text="fmtShort(c.total_chiqim)"></div></div>
+                        <div><div class="text-slate-500">Sof</div><div class="font-semibold" x-text="fmtShort(c.net)"></div></div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+        <div x-show="chatBusy" class="flex justify-start">
+          <div class="rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2 typing text-lg leading-none"><span>•</span><span>•</span><span>•</span></div>
+        </div>
+      </div>
+
+      <div class="shrink-0 border-t border-slate-200 dark:border-slate-800 p-3 space-y-2">
+        <div class="flex gap-1.5 overflow-x-auto thin-scroll pb-1 lg:flex-wrap">
+          <template x-for="chip in chips()" :key="chip">
+            <button @click="send(chip)" :disabled="chatBusy" class="shrink-0 text-xs rounded-full border border-slate-300 dark:border-slate-700 px-2.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap" x-text="chip"></button>
+          </template>
+        </div>
+        <form @submit.prevent="send(chatInput)" class="flex gap-2">
+          <input x-model="chatInput" maxlength="4000" placeholder="Savol yozing… (masalan: 304567890 tarixi)" class="flex-1 min-w-0 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+          <button :disabled="chatBusy || !chatInput.trim()" class="rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white px-3"><i data-lucide="send" class="h-4 w-4"></i></button>
+        </form>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Mobil pastki tablar -->
+  <nav class="lg:hidden shrink-0 grid grid-cols-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm" style="padding-bottom: env(safe-area-inset-bottom)">
+    <button @click="mobileTab='table'" class="py-2.5 font-medium" :class="mobileTab==='table' ? 'text-brand-600 dark:text-sky-400' : 'text-slate-500'" x-text="'📋 Jadval' + (kpis.ready ? ' (' + kpis.ready + ')' : '')"></button>
+    <button @click="mobileTab='chat'" class="py-2.5 font-medium" :class="mobileTab==='chat' ? 'text-brand-600 dark:text-sky-400' : 'text-slate-500'">🤖 AI Copilot</button>
+  </nav>
+
+  <!-- ===================== TASDIQLASH MODALI ===================== -->
+  <div x-show="confirmBox" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 grid place-items-center p-4" @keydown.escape.window="confirmBox=null">
+    <div @click.outside="confirmBox=null" class="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-xl">
+      <h3 class="font-semibold">✅ 1C ga qoralama kiritish</h3>
+      <p class="mt-2 text-sm text-slate-600 dark:text-slate-300" x-text="confirmBox?.text"></p>
+      <ul class="mt-3 text-xs text-slate-500 space-y-1">
+        <li>🛡️ Har bir hujjat yozishdan oldin 1C da qayta dublikatga tekshiriladi</li>
+        <li>📝 Hujjatlar <b>Posted = false</b> (qoralama) holatida yaratiladi — o'tkazishni 1C da o'zingiz qilasiz</li>
+      </ul>
+      <div class="mt-5 flex justify-end gap-2">
+        <button @click="confirmBox=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Bekor qilish</button>
+        <button @click="doPost(confirmBox.ids); confirmBox=null" class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2">Ha, kiritish</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== TEKSHIRISH MODALI ===================== -->
+  <div x-show="inspect" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="inspect=null">
+    <div @click.outside="inspect=null" class="w-full sm:max-w-2xl max-h-[90dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
+      <template x-if="inspect">
+        <div class="p-5 space-y-4 text-sm">
+          <div class="flex items-start gap-3">
+            <div class="min-w-0">
+              <div class="text-xs text-slate-500" x-text="inspect.row.kind==='ehf' ? 'Didox EHF' : (inspect.row.direction==='kirim' ? 'Bank kirim' : 'Bank chiqim')"></div>
+              <h3 class="font-semibold text-base" x-text="inspect.row.counterparty_name"></h3>
+              <div class="text-xs text-slate-500 num" x-text="'№ ' + inspect.row.number + ' · ' + fmtDate(inspect.row.date) + ' · STIR ' + inspect.row.counterparty_inn"></div>
+            </div>
+            <div class="ml-auto text-right">
+              <div class="text-lg font-bold num" x-text="fmt(inspect.row.amount)"></div>
+              <span class="inline-block mt-1 text-xs font-medium px-2 py-1 rounded-lg" :class="statusClass(inspect.row.status)" x-text="inspect.row.status_label"></span>
+            </div>
+          </div>
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs" x-text="inspect.row.purpose"></div>
+
+          <div>
+            <div class="font-semibold mb-1">🛡️ Dublikat tekshiruvi</div>
+            <div class="text-xs text-slate-600 dark:text-slate-300" x-text="inspect.row.status_reason"></div>
+            <template x-if="inspect.row.match">
+              <div class="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-xs grid grid-cols-2 gap-1 num">
+                <div class="text-slate-500">1C hujjati</div><div x-text="inspect.row.match.number + (inspect.row.match.posted ? ' (o\'tkazilgan)' : ' (qoralama)')"></div>
+                <div class="text-slate-500">Kiruvchi №/sana</div><div x-text="inspect.row.match.in_number + ' · ' + fmtDate(inspect.row.match.in_date)"></div>
+                <div class="text-slate-500">Summa (1C)</div><div x-text="fmt(inspect.row.match.amount)"></div>
+                <div class="text-slate-500">Hujjat turi</div><div class="truncate" x-text="inspect.entity.replace('Document_', '')"></div>
+              </div>
+            </template>
+            <template x-for="d in (inspect.row.diffs || [])" :key="d"><div class="mt-1 text-xs text-rose-600" x-text="'🔴 ' + d"></div></template>
+          </div>
+
+          <div x-show="inspect.row.learned">
+            <div class="font-semibold mb-1">🧠 1C tarixidan o'rganilgan</div>
+            <template x-if="inspect.row.learned">
+              <div class="text-xs space-y-1">
+                <div class="grid grid-cols-2 gap-1">
+                  <div class="text-slate-500">Asos</div><div x-text="inspect.row.learned.basis + ' (ishonch ' + inspect.row.learned.confidence + ')'"></div>
+                  <div class="text-slate-500">ВидОперации</div><div><code x-text="inspect.row.learned.operation"></code></div>
+                  <div class="text-slate-500">Schyot</div><div class="font-semibold" x-text="inspect.row.learned.account_code"></div>
+                  <div class="text-slate-500">Shartnoma</div><div x-text="inspect.learned_names.contract || '—'"></div>
+                  <div class="text-slate-500">ДДС moddasi</div><div x-text="inspect.learned_names.cash_flow || '—'"></div>
+                </div>
+                <div class="mt-2 text-slate-500">Oxirgi hujjatlar:</div>
+                <template x-for="s in inspect.row.learned.samples" :key="s.number + s.date">
+                  <div class="flex justify-between num"><span x-text="'№' + s.number + ' · ' + fmtDate(s.date)"></span><span x-text="fmt(s.amount) + ' · ' + s.operation"></span></div>
+                </template>
+              </div>
+            </template>
+          </div>
+
+          <template x-for="b in inspect.row.blockers" :key="b"><div class="text-xs text-rose-600" x-text="'⚠️ ' + b"></div></template>
+          <div x-show="inspect.payload_error" class="text-xs text-rose-600" x-text="'⚠️ ' + inspect.payload_error"></div>
+
+          <details x-show="inspect.payload" class="rounded-xl border border-slate-200 dark:border-slate-700">
+            <summary class="cursor-pointer px-3 py-2 text-xs font-medium">📦 1C ga yuboriladigan OData so'rovi (POST <span x-text="inspect.entity"></span>)</summary>
+            <pre class="px-3 pb-3 text-[11px] overflow-x-auto thin-scroll" x-text="JSON.stringify(inspect.payload, null, 2)"></pre>
+          </details>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button @click="inspect=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Yopish</button>
+            <button x-show="inspect.row.selectable" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ===================== SOZLAMALAR MODALI ===================== -->
+  <div x-show="settingsOpen" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="settingsOpen=false">
+    <div @click.outside="settingsOpen=false" class="w-full sm:max-w-xl max-h-[90dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-5 space-y-5 text-sm">
+      <div class="flex items-center"><h3 class="font-semibold text-base">⚙️ Sozlamalar</h3><button @click="settingsOpen=false" class="ml-auto text-slate-400">✕</button></div>
+
+      <section class="space-y-2">
+        <div class="font-semibold">🤖 AI dvigateli</div>
+        <select x-model="settings.ai_provider" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <option value="gemini">Google Gemini (bepul) — tavsiya etiladi</option>
+          <option value="openai">OpenAI (zaxira)</option>
+          <option value="claude">Anthropic Claude (zaxira)</option>
+          <option value="mock">Demo AI (kalitsiz)</option>
+        </select>
+        <div x-show="settings.ai_provider==='gemini'" class="space-y-2">
+          <div class="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+            🎁 Bepul Gemini API kalitini 30 soniyada oling:
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" @click="openExternal($event)" class="font-semibold underline">aistudio.google.com/app/apikey</a>
+            → "Create API key" → nusxa oling va shu yerga qo'ying.
+          </div>
+          <label class="block text-xs text-slate-500">Gemini API kaliti</label>
+          <input type="password" x-model="settings.gemini_api_key" autocomplete="off" placeholder="AIza…" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <label class="block text-xs text-slate-500">Model</label>
+          <input x-model="settings.gemini_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+        </div>
+        <div x-show="settings.ai_provider==='openai'" class="grid grid-cols-2 gap-2">
+          <input type="password" x-model="settings.openai_api_key" placeholder="OpenAI API kaliti" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <input x-model="settings.openai_model" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+        </div>
+        <div x-show="settings.ai_provider==='claude'" class="grid grid-cols-2 gap-2">
+          <input type="password" x-model="settings.anthropic_api_key" placeholder="Anthropic API kaliti" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <input x-model="settings.anthropic_model" class="col-span-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+        </div>
+      </section>
+
+      <section class="space-y-2">
+        <div class="font-semibold">🗄️ 1C OData ulanishi</div>
+        <label class="flex items-center gap-2"><input type="checkbox" x-model="settings.onec_demo_mode" class="rounded"> Demo 1C bazasi (sinov uchun, real 1C ga tegmaydi)</label>
+        <div x-show="!settings.onec_demo_mode" class="space-y-2">
+          <input x-model="settings.onec_base_url" placeholder="http://server/buh_uz  (…/odata/standard.odata)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <div class="grid grid-cols-2 gap-2">
+            <input x-model="settings.onec_user" placeholder="1C foydalanuvchi" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input type="password" x-model="settings.onec_password" placeholder="Parol" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <input x-model="settings.onec_org_inn" placeholder="Tashkilot STIR (bir nechta tashkilot bo'lsa)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <p class="text-xs text-slate-500">Maslahat: 1C uchun alohida, faqat kerakli huquqlarga ega foydalanuvchi yarating.</p>
+        </div>
+        <button @click="testOneC()" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5">🔌 Saqlash va 1C ulanishini tekshirish</button>
+        <div x-show="onecTest" class="text-xs whitespace-pre-line" x-text="onecTest"></div>
+      </section>
+
+      <section class="space-y-2">
+        <div class="font-semibold">📑 Didox</div>
+        <label class="flex items-center gap-2"><input type="checkbox" x-model="settings.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
+        <div x-show="!settings.didox_demo_mode" class="space-y-2">
+          <input x-model="settings.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <input type="password" x-model="settings.didox_user_key" placeholder="Didox user-key" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <input type="password" x-model="settings.didox_partner_token" placeholder="Partner token (ixtiyoriy)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+        </div>
+      </section>
+
+      <section x-show="!isTg" class="space-y-2">
+        <div class="font-semibold">🔐 Masofadan kirish tokeni</div>
+        <p class="text-xs text-slate-500">Server tashqi manzil (tunnel) orqali ochilganda kerak — .env dagi APP_ACCESS_TOKEN. Faqat shu brauzerda saqlanadi.</p>
+        <input type="password" x-model="accessToken" @change="saveToken()" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+      </section>
+
+      <div class="flex justify-end gap-2 pt-1">
+        <button @click="settingsOpen=false" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">Bekor qilish</button>
+        <button @click="saveSettings()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toastlar -->
+  <div class="fixed z-50 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 space-y-2 w-[92%] max-w-md pointer-events-none">
+    <template x-for="t in toasts" :key="t.id">
+      <div x-transition class="rounded-xl px-4 py-2.5 text-sm shadow-lg pointer-events-auto"
+           :class="t.type==='error' ? 'bg-rose-600 text-white' : (t.type==='ok' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-white')" x-text="t.text"></div>
+    </template>
+  </div>
+</div>
+
+<script>
+const WELCOME = "Salom! Men **AI Buxgalter Copilot**man 👋\n\n- 🏦 Vipiskani 1C bilan dublikatga tekshiraman\n- 🧠 Schyotlarni oldingi 1C yozuvlaridan o'rganaman\n- ✅ Yangilarini faqat **qoralama** sifatida, sizning tasdig'ingiz bilan kiritaman\n\nPastdagi tugmalardan birini bosing yoki savol yozing.";
+
+function app() {
+  return {
+    mode: 'vipiska', dark: false, mobileTab: 'table', drag: false,
+    data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
+    status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
+    chat: [], chatInput: '', chatBusy: false, toasts: [],
+    settingsOpen: false, settings: {}, onecTest: '', inspect: null, confirmBox: null,
+    tg: window.Telegram && window.Telegram.WebApp, isTg: false, sid: '', accessToken: '',
+
+    get snap() { return this.data[this.mode]; },
+    get rows() { return (this.snap && this.snap.rows) || []; },
+    get kpis() { return (this.snap && this.snap.kpis) || {}; },
+
+    // ---------------- init
+    async init() {
+      this.isTg = !!(this.tg && this.tg.initData);
+      if (this.isTg) { this.tg.ready(); this.tg.expand(); }
+      let saved = null;
+      try { saved = localStorage.getItem('bx_theme'); this.accessToken = localStorage.getItem('bx_token') || '';
+            this.sid = localStorage.getItem('bx_sid') || ''; } catch (e) {}
+      if (!this.sid) { this.sid = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2)).replace(/-/g, '');
+                       try { localStorage.setItem('bx_sid', this.sid); } catch (e) {} }
+      this.dark = saved ? saved === 'dark' : (this.isTg ? this.tg.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+      this.applyTheme();
+      this.chat = [{ role: 'model', html: this.md(WELCOME) }];
+      if (window.lucide) lucide.createIcons();
+      await this.loadStatus();
+      const [v, d] = await Promise.all([this.api('/api/session?mode=vipiska'), this.api('/api/session?mode=didox')]);
+      if (v) this.setSnap(v); if (d && d.rows.length) this.setSnap(d);
+    },
+
+    // ---------------- API
+    headers(extra = {}) {
+      const h = { 'X-Session-Id': this.sid, ...extra };
+      if (this.isTg) h['X-Telegram-Init-Data'] = this.tg.initData;
+      if (this.accessToken) h['Authorization'] = 'Bearer ' + this.accessToken;
+      return h;
+    },
+    async api(path, opts = {}) {
+      const o = { ...opts, headers: this.headers(opts.headers || {}) };
+      if (opts.json !== undefined) { o.method = o.method || 'POST'; o.body = JSON.stringify(opts.json); o.headers['Content-Type'] = 'application/json'; delete o.json; }
+      try {
+        const r = await fetch(path, o);
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          if (r.status === 401 && !this.isTg) this.toast("🔐 " + (body.detail || 'Kirish tokeni kerak') + " — ⚙️ Sozlamalarda kiriting", 'error');
+          else this.toast('⚠️ ' + (body.detail || ('Xato ' + r.status)), 'error');
+          return null;
+        }
+        return body;
+      } catch (e) { this.toast('⚠️ Server bilan aloqa yo\'q', 'error'); return null; }
+    },
+    async loadStatus() { const s = await this.api('/api/status'); if (s) this.status = s; },
+
+    setSnap(s) {
+      this.data[s.mode] = s;
+      const prev = new Set(this.selected[s.mode]);
+      const selectable = s.rows.filter(r => r.selectable).map(r => r.id);
+      // birinchi yuklashda barcha yangi qatorlar tanlanadi; keyin foydalanuvchi tanlovi saqlanadi
+      this.selected[s.mode] = prev.size ? selectable.filter(id => prev.has(id)) : selectable;
+      if (!this.selected[s.mode].length) this.selected[s.mode] = selectable;
+    },
+
+    // ---------------- vipiska / didox
+    switchMode(m) {
+      this.mode = m;
+      if (m === 'didox' && !this.data.didox?.rows?.length) this.loadDidox();
+    },
+    async busy(msg, fn) { this.loading = true; this.busyMsg = msg; try { return await fn(); } finally { this.loading = false; } },
+    async upload(file) {
+      if (!file) return;
+      this.mode = 'vipiska'; this.mobileTab = 'table';
+      const fd = new FormData(); fd.append('file', file);
+      const s = await this.busy("📥 " + file.name + " o'qilmoqda, 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/upload', { method: 'POST', body: fd }));
+      if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("✅ " + s.rows.length + " ta qator tahlil qilindi", 'ok'); }
+    },
+    async loadSample() {
+      this.mode = 'vipiska'; this.mobileTab = 'table';
+      const s = await this.busy("🧪 Test vipiska 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/sample', { method: 'POST' }));
+      if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("🧪 Test vipiska yuklandi: " + s.kpis.duplicates + " dublikat bloklandi", 'ok'); }
+    },
+    async loadDidox() {
+      this.mode = 'didox';
+      const s = await this.busy("📑 Didox EHF lar 1C bilan solishtirilmoqda…", () => this.api('/api/didox/load', { method: 'POST' }));
+      if (s) { this.selected.didox = []; this.setSnap(s); }
+    },
+    async recheck() {
+      const s = this.mode === 'didox'
+        ? await this.busy('🔄 1C qayta tekshirilmoqda…', () => this.api('/api/didox/load', { method: 'POST' }))
+        : await this.busy('🔄 1C qayta tekshirilmoqda…', () => this.api('/api/vipiska/recheck', { method: 'POST' }));
+      if (s) { this.setSnap(s); this.toast('🔄 1C bilan qayta solishtirildi', 'ok'); }
+    },
+    downloadSample() {
+      const url = location.origin + '/api/sample';
+      if (this.isTg && this.tg.downloadFile) { try { this.tg.downloadFile({ url, file_name: 'sample_bank_vipiska.xlsx' }); return; } catch (e) {} }
+      if (this.isTg) { this.tg.openLink(url); return; }
+      const a = document.createElement('a'); a.href = url; a.download = 'sample_bank_vipiska.xlsx'; a.click();
+    },
+    async changeAccount(r, account) {
+      const res = await this.api('/api/rows/' + r.id + '/account', { json: { mode: this.mode, account } });
+      if (res) { Object.assign(r, res.row); this.snap.kpis = res.kpis; }
+    },
+    async openInspect(r) {
+      const res = await this.api('/api/rows/' + r.id + '/inspect?mode=' + this.mode);
+      if (res) this.inspect = res;
+    },
+
+    // ---------------- tanlash
+    selectableRows() { return this.rows.filter(r => r.selectable); },
+    isSel(id) { return this.selected[this.mode].includes(id); },
+    toggleSel(id) { const s = this.selected[this.mode]; const i = s.indexOf(id); i >= 0 ? s.splice(i, 1) : s.push(id); },
+    toggleAll(on) { this.selected[this.mode] = on ? this.selectableRows().map(r => r.id) : []; },
+    allSelected() { const s = this.selectableRows(); return s.length > 0 && s.every(r => this.isSel(r.id)); },
+    selectedIds() { const ok = new Set(this.selectableRows().map(r => r.id)); return this.selected[this.mode].filter(id => ok.has(id)); },
+    selCount() { return this.selectedIds().length; },
+    selSum() { const ids = new Set(this.selectedIds()); return this.rows.filter(r => ids.has(r.id)).reduce((a, r) => a + r.amount, 0); },
+
+    // ---------------- 1C ga yozish
+    askPost(ids) {
+      if (!ids.length) return;
+      const rows = this.rows.filter(r => ids.includes(r.id));
+      const sum = rows.reduce((a, r) => a + r.amount, 0);
+      this.confirmBox = { ids, text: ids.length + " ta yangi hujjat (" + this.fmt(sum) + " so'm) 1C ga qoralama sifatida kiritiladi." };
+    },
+    async doPost(ids, mode = this.mode) {
+      if (this.posting) return null;
+      this.posting = true;
+      try {
+        const res = await this.api('/api/post', { json: { mode, ids } });
+        if (!res) return null;
+        this.setSnap(res);
+        const msg = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? ", ⛔ " + res.failed + " ta bloklandi" : '');
+        this.toast(msg, res.ok ? 'ok' : 'error');
+        if (this.isTg && this.tg.HapticFeedback) this.tg.HapticFeedback.notificationOccurred(res.ok ? 'success' : 'warning');
+        return res;
+      } finally { this.posting = false; }
+    },
+    async confirmCard(c) {
+      const res = await this.doPost(c.ids, c.mode);
+      if (res) {
+        c.done = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? " · ⛔ " + res.failed + " ta bloklandi" : '') + ". 1C da tekshirib o'tkazing.";
+        this.chat = [...this.chat];
+      }
+    },
+
+    // ---------------- chat
+    chips() {
+      const base = ["🏦 Vipiskani dublikatga tekshir", "🧠 Oldingi 1C tarixidan schyotlarni mosla", "✅ Yangi vipiskalarni 1C ga kirit", "📊 Kunlik pul oqimi tahlili"];
+      return this.mode === 'didox' ? ["📑 Didox EHF ni 1C bilan solishtir", "✅ Yangi Didox EHF larni 1C ga kirit", ...base.slice(0, 2)] : base;
+    },
+    async send(text) {
+      text = (text || '').trim(); if (!text || this.chatBusy) return;
+      this.chatInput = '';
+      this.chat.push({ role: 'user', html: this.md(text) });
+      this.chatBusy = true; this.scrollChat();
+      try {
+        const res = await this.api('/api/chat', { json: { message: text, mode: this.mode } });
+        if (res) {
+          this.chat.push({ role: 'model', html: this.md(res.reply), cards: res.cards });
+          if (res.engine_label) this.status.ai.label = res.engine_label;
+          for (const m of res.refresh) { const s = await this.api('/api/session?mode=' + m); if (s) this.setSnap(s); }
+        }
+      } finally { this.chatBusy = false; this.scrollChat(); }
+    },
+    scrollChat() { this.$nextTick(() => { const b = this.$refs.chatBox; if (b) b.scrollTop = b.scrollHeight; }); },
+
+    // ---------------- sozlamalar
+    async openSettings() { const s = await this.api('/api/settings'); if (s) { this.settings = s; this.onecTest = ''; this.settingsOpen = true; } },
+    async saveSettings(close = true) {
+      const res = await this.api('/api/settings', { json: this.settings });
+      if (res) { this.settings = res.settings; this.status.onec = res.onec; this.status.ai = res.ai; if (close) { this.settingsOpen = false; this.toast('💾 Sozlamalar saqlandi', 'ok'); } }
+      return res;
+    },
+    async testOneC() {
+      const res = await this.saveSettings(false); if (!res) return;
+      if (!res.onec.ok) { this.onecTest = '🔴 ' + (res.onec.error || 'Ulanib bo\'lmadi'); return; }
+      const meta = await this.api('/api/1c/metadata');
+      this.onecTest = '🟢 1C ga ulanildi (' + res.onec.label + ')' + (meta ? (meta.ok ? '\n🟢 Barcha kerakli OData obyektlari nashr qilingan' : '\n🟡 Nashr qilinmagan: ' + meta.missing.join(', ') + '\n' + meta.hint) : '');
+    },
+    saveToken() { try { localStorage.setItem('bx_token', this.accessToken); } catch (e) {} this.loadStatus(); },
+    openExternal(ev) { if (this.isTg) { ev.preventDefault(); this.tg.openLink(ev.currentTarget.href); } },
+
+    // ---------------- ko'rinish
+    toggleTheme() { this.dark = !this.dark; this.applyTheme(); try { localStorage.setItem('bx_theme', this.dark ? 'dark' : 'light'); } catch (e) {} },
+    applyTheme() { document.documentElement.classList.toggle('dark', this.dark); },
+    onecBadge() {
+      const o = this.status.onec || {};
+      if (o.ok === undefined) return '⏳ 1C OData';
+      if (!o.ok) return '🔴 1C OData: ulanmagan';
+      return (o.mode === 'demo' ? '🟡 1C OData (Demo baza)' : '🟢 1C OData');
+    },
+    aiBadge() { const a = this.status.ai || {}; return a.ok ? (a.provider === 'gemini' ? '🟢 Gemini AI (Bepul)' : '🟢 ' + a.label) : '🟡 Demo AI (kalit yo\'q)'; },
+    badgeClass(ok, warn) {
+      if (ok && !warn) return 'border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800';
+      if (ok === false && !warn) return 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800';
+      return 'border-amber-300/70 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800';
+    },
+    statusClass(s) {
+      return { duplicate: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+               new: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+               discrepancy: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
+               posted: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300' }[s] || '';
+    },
+    rowClass(r) {
+      if (r.status === 'duplicate') return 'bg-slate-50/70 dark:bg-slate-800/30 text-slate-400 dark:text-slate-500';
+      if (r.status === 'discrepancy') return 'bg-rose-50/50 dark:bg-rose-950/20';
+      if (r.status === 'posted') return 'bg-sky-50/50 dark:bg-sky-950/20';
+      return '';
+    },
+    fmt(v) { return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v || 0); },
+    fmtShort(v) { const a = Math.abs(v); const s = v < 0 ? '−' : ''; return a >= 1e6 ? s + (a / 1e6).toFixed(1) + ' mln' : s + this.fmt(a); },
+    fmtDate(d) { return d && d.length >= 10 ? d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : (d || ''); },
+    bar(c, v) { const m = Math.max(...c.days.map(d => Math.max(d.kirim, d.chiqim)), 1); return Math.max(0, Math.round(48 * v / m)); },
+    toast(text, type = 'info') { const id = Date.now() + Math.random(); this.toasts.push({ id, text, type }); setTimeout(() => this.toasts = this.toasts.filter(t => t.id !== id), 4200); },
+    md(t) {
+      const esc = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/(^|[\s(])_(.+?)_(?=$|[\s.,!?)])/g, '$1<i>$2</i>');
+      let html = '', inList = false;
+      for (const raw of String(t || '').split('\n')) {
+        const line = raw.trimEnd();
+        const li = line.match(/^\s*[-*•]\s+(.*)$/);
+        if (li) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + inline(li[1]) + '</li>'; continue; }
+        if (inList) { html += '</ul>'; inList = false; }
+        if (!line.trim()) continue;
+        const h = line.match(/^#{1,4}\s+(.*)$/);
+        html += '<p>' + (h ? '<b>' + inline(h[1]) + '</b>' : inline(line)) + '</p>';
+      }
+      return html + (inList ? '</ul>' : '');
+    },
+  };
+}
+</script>
+</body>
+</html>
