@@ -308,7 +308,8 @@ def _mode(mode: str) -> str:
 def _with_context(ctx: FirmCtx, snap: dict) -> dict:
     """Vipiska boshqa firmaniki bo'lsa — foydalanuvchi kira oladigan mos firmalarni taklif qilish."""
     owner = snap.get("statement_owner") or {}
-    matches = db.find_firms_by_owner_data(owner.get("inn", ""), owner.get("account", "")) if owner else []
+    matches = db.find_firms_by_owner_data(owner.get("inn", ""), owner.get("account", ""), owner.get("name", "")) \
+        if owner else []
     snap["owner_firms"] = [{"id": f["id"], "name": f["name"], "inn": f["inn"]} for f in matches
                            if f["id"] != ctx.firm_id and db.user_can_access(ctx.user, f["id"])]
     snap["can_post"] = ctx.can_post

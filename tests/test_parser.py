@@ -88,3 +88,57 @@ def test_currency_account_is_flagged():
     st = parse_statement("kb.txt", usd.encode("cp1251"))
     assert st.currency_code == "840"
     assert "valyuta" in st.warnings[0].lower()
+
+
+# ---------------------------------------------------------------- "Выписка лицевых счетов" (bank eksporti) formati
+BANK_FORMAT = [
+    [None, None, None, None, "Выписка лицевых счетов"],
+    [None, "№ счёта 20208000100000000777", None, None, "Ответисполнитель Test"],
+    [None, 'Наименование счёта ООО "TEST FIRMA"'],
+    [None, "Остаток:", "Начало дня", 1000.0],
+    ["№\nпп", "Дата\nдокумента", "Дата\nобработки", "№ док", "Наименование счёта", "ИНН", "№ счёта", "МФО",
+     "Обороты по\nдебету", "Обороты по\nкредиту", "Назначение платежа"],
+    [1, "15.10.2026", "16.10.2026", "16", "Ўзбекистон Республикаси Молия вазирлиги", "201122919",
+     "23402000300100001010", "00014", 945000, 0, "~1000000000000000000000000~1"],
+    [2, "16.10.2026", "16.10.2026", "101", '"ALFA TEST" MCHJ', "300000011", "20208000100000000011", "00083",
+     100000000, 0, "00098 оплата за кабель"],
+    [3, "16.10.2026", "16.10.2026", "1001", 'ООО "BETA TEST"', "300000021", "20208000100000000021", "00421",
+     0, 6269303.56, "Перечисляется оплата"],
+    [4, "16.10.2026", "16.10.2026", "90000001", 'ООО "TEST FIRMA"', "300000777", "16401000100000000777", "01158",
+     100000, 0, "За документ №101 S=100 000 00"],
+    [5, None, None, None, "Итого за весь период", None, None, None, 101045000, 6269303.56, "Входящее сальдо: 1 000"],
+    [None, "Выписка лицевых счетов за 16.10.2026 по 18.10.2026"],
+]
+
+
+def test_bank_export_format_columns():
+    st = _rows_from_table(BANK_FORMAT)
+    assert [r.number for r in st.rows] == ["16", "101", "1001", "90000001"]  # "№ док", tartib raqami emas
+    assert st.rows[1].counterparty_name == '"ALFA TEST" MCHJ'           # "Наименование счёта" — nomi
+    assert st.rows[1].account_no == "20208000100000000011"                   # "№ счёта" — hisob raqami
+    assert st.own_account == "20208000100000000777" and st.own_name == 'ООО "TEST FIRMA"'
+    assert st.warnings == []  # "Итого" va sarlavha qatorlari — ogohlantirishsiz
+
+
+def test_tax_and_bank_fee_defaults():
+    from services_vipiska import BankRow, rule_account, special_kind
+    from datetime import date
+    tax = BankRow(date(2026, 10, 15), "16", "chiqim", 945000.0, "Ўзбекистон Республикаси Молия вазирлиги",
+                  "201122919", purpose="~1000000000000000000000000~1")
+    dsi = BankRow(date(2026, 10, 15), "18", "chiqim", 7875.0, "Яшнобод тумани ДСИ", "200000001", purpose="101 ...")
+    fee = BankRow(date(2026, 10, 16), "90000001", "chiqim", 100000.0, 'ООО "TEST FIRMA"', "300000777",
+                  account_no="16401000100000000777", purpose="За документ №101 S=100 000 00")
+    assert rule_account(tax) == "64.10" and rule_account(dsi) == "64.10"
+    assert special_kind(fee, "300000777")[0] == "bank_fee" and rule_account(fee) == "94.20"
+    own = BankRow(date(2026, 10, 16), "7", "chiqim", 5.0, "O'zimiz", "300000777", account_no="20208000999999999001",
+                  purpose="O'z hisobimizga o'tkazma")
+    assert special_kind(own, "300000777")[0] == "transfer"
+
+
+def test_processing_date_is_kept_separately():
+    st = _rows_from_table(BANK_FORMAT)
+    tax = st.rows[0]  # hujjat 15.10, bank o'tkazgan 16.10
+    assert str(tax.date) == "2026-10-15" and str(tax.posted_date) == "2026-10-16"
+    only_posted = _rows_from_table([["Дата проводки", "№ док", "Дебет", "Кредит", "Наименование", "ИНН", "Назначение"],
+                                    ["16.10.2026", "5", 10, 0, "A", "301234567", "x"]])
+    assert str(only_posted.rows[0].date) == "2026-10-16"  # yagona sana ustuni bo'lsa ham o'qiladi

@@ -42,6 +42,7 @@ class BankRow:
     account_no: str = ""
     purpose: str = ""
     id: str = ""
+    posted_date: date | None = None  # bank o'tkazgan sana ("Дата обработки"); bo'lmasa — date
 
     def key(self) -> str:
         raw = f"{self.date}|{self.number}|{self.direction}|{self.amount:.2f}|{self.counterparty_inn}"
@@ -53,6 +54,7 @@ class Statement:
     rows: list[BankRow]
     own_account: str = ""
     own_inn: str = ""  # vipiska egasi (tashkilot) STIR'i — fayl sarlavhasidan yoki hujjatlardan
+    own_name: str = ""  # vipiska egasi nomi (masalan "Наименование счёта ООО ...")
     source: str = ""
     warnings: list[str] = field(default_factory=list)
     is_sample: bool = False  # namuna (test) vipiska — jonli 1C ga hech qachon yozilmaydi
@@ -144,18 +146,25 @@ def clean_account(v) -> tuple[str, bool]:
     return clean_code(v), False
 
 
+SEQ_HEADER = re.compile(r"^(№|n|#)?\s*(пп|п/п|п\.п\.?|t/r|т/р|tr)$")
+
+
 def classify_header(h) -> str | None:
-    s = str(h or "").strip().lower()
+    s = " ".join(str(h or "").lower().split())  # "Обороты по\nдебету" -> "обороты по дебету"
     if not s:
         return None
+    if SEQ_HEADER.match(s):
+        return "seq"  # tartib raqami ("№ пп") — hujjat raqami emas
     rules = [
         ("purpose", ("maqsad", "назначен", "purpose", "izoh")),
         ("inn", ("stir", "inn", "инн")),
         ("mfo", ("mfo", "мфо", "бик")),
         ("debit", ("debet", "дебет", "chiqim", "расход", "списан")),
         ("credit", ("kredit", "кредит", "kirim", "приход", "поступ")),
+        ("name", ("наимен", "nomi")),  # "Наименование счёта" — bu kontragent NOMI, hisob raqami emas
         ("account", ("hisob", "счет", "счёт", "account")),
-        ("name", ("kontragent", "контрагент", "наимен", "korrespondent", "корреспондент", "nomi", "получател", "плательщ")),
+        ("name", ("kontragent", "контрагент", "korrespondent", "корреспондент", "получател", "плательщ")),
+        ("date_posted", ("дата обработ", "дата провод", "дата исполн", "o'tkazilgan sana", "дата операц")),
         ("date", ("sana", "дата", "date")),
         ("number", ("hujjat", "№", "номер", "nomer", "док", "doc")),
         ("amount", ("summa", "сумма")),
@@ -176,6 +185,8 @@ def _rows_from_table(table: list[list]) -> Statement:
             kind = classify_header(cell)
             if kind and kind not in m:
                 m[kind] = j
+        if "date" not in m and "date_posted" in m:
+            m["date"] = m["date_posted"]  # yagona sana ustuni — o'tkazilgan sana
         if "date" in m and ({"debit", "credit"} <= m.keys() or "amount" in m) and len(m) >= 4:
             header_idx, mapping = i, m
             break
@@ -191,6 +202,9 @@ def _rows_from_table(table: list[list]) -> Statement:
         m = re.search(r"(?:STIR|ИНН|INN)\D{0,6}(\d{9})\b", text, re.IGNORECASE)
         if m and not st.own_inn:
             st.own_inn = m.group(1)
+        m = re.search(r"(?:наименование сч[её]та|наименование клиента|mijoz|hisob nomi)[:\s]+(.+)", text, re.IGNORECASE)
+        if m and not st.own_name:
+            st.own_name = m.group(1).strip()
 
     def cell(row, kind):
         j = mapping.get(kind)
@@ -202,9 +216,11 @@ def _rows_from_table(table: list[list]) -> Statement:
     for offset, row in enumerate(table[header_idx + 1:], start=header_idx + 2):
         if not any(c not in (None, "") for c in row):
             continue
-        first = str(row[0] or "").strip().lower()
-        if first.startswith(("jami", "итого", "всего", "оборот")):
+        if any(str(c or "").strip().lower().startswith(("jami", "итого", "всего", "оборот"))
+               for j, c in enumerate(row) if j != mapping.get("purpose")):
             break
+        if all(cell(row, k) in (None, "", 0) for k in ("debit", "credit", "amount")):
+            continue  # summa yo'q — tranzaksiya emas (sarlavha, izoh, qoldiq qatori)
         raw_date = cell(row, "date")
         d = parse_date(raw_date)
         if not d:
@@ -245,8 +261,10 @@ def _rows_from_table(table: list[list]) -> Statement:
         if lost:
             st.warnings.append(f"{offset}-qator: hisob raqami Excel'da SON formatida — oxirgi raqamlari yo'qolgan, "
                                "e'tiborga olinmadi. Vipiskani hisob raqami 'Matn' formatida bo'lgan holda eksport qiling.")
+        posted = parse_date(cell(row, "date_posted")) if "date_posted" in mapping else None
         st.rows.append(BankRow(
-            date=d, number=str(num or "").strip(), direction=direction, amount=amount,
+            date=d, posted_date=posted if posted and posted != d else None,
+            number=str(num or "").strip(), direction=direction, amount=amount,
             counterparty_name=str(cell(row, "name") or "").strip(), counterparty_inn=clean_code(cell(row, "inn")),
             mfo=clean_code(cell(row, "mfo")), account_no=account_no,
             purpose=str(cell(row, "purpose") or "").strip()))
@@ -375,12 +393,25 @@ def parse_statement(filename: str, content: bytes) -> Statement:
 
 
 # ---------------------------------------------------------------- tahlil
-def rule_account(direction: str, purpose: str) -> str:
-    low = (purpose or "").lower()
+TAX_INNS = {"201122919"}  # Moliya vazirligi huzuridagi G'aznachilik (soliq to'lovlari)
+TAX_NAME = re.compile(r"молия вазирлиги|moliya vazirligi|ғазна|газна|g'azna|gazna|казначейств|\bдси\b|\bdsi\b|"
+                      r"солиқ|soliq|налогов", re.IGNORECASE)
+BANK_FEE = re.compile(r"за документ|комисс|komissiya|за обслуживан|xizmat haqi|за услуги банка|bank xizmat",
+                      re.IGNORECASE)
+
+
+def rule_account(r: BankRow) -> str:
+    """1C tarixi va qoidalar bo'lmasa — standart taxmin."""
+    low = (r.purpose or "").lower()
+    if r.direction == "chiqim":
+        if r.counterparty_inn in TAX_INNS or TAX_NAME.search(r.counterparty_name or ""):
+            return "64.10"
+        if (r.account_no or "").startswith("164") or BANK_FEE.search(low):
+            return "94.20"
     for kw, acc, kw_dir in PURPOSE_KEYWORDS:
-        if kw in low and kw_dir == direction:
+        if kw in low and kw_dir == r.direction:
             return acc
-    return "60.10" if direction == "chiqim" else "40.10"
+    return "60.10" if r.direction == "chiqim" else "40.10"
 
 
 def operation_for(account: str, direction: str) -> str:
@@ -396,6 +427,9 @@ SALARY_WORDS = ("ish haqi", "ish xaqi", "иш ҳақи", "зарплат", "за
 
 def special_kind(r: BankRow, org_inn: str) -> tuple[str | None, str | None]:
     """Avtomatik yozilmaydigan maxsus operatsiyalar: (turi, to'siq matni)."""
+    if org_inn and r.counterparty_inn == org_inn and (
+            (r.account_no or "").startswith("164") or BANK_FEE.search(r.purpose or "")):
+        return "bank_fee", None  # bank o'z xizmat haqini yechgan (qatorda firmaning o'z STIR'i turadi)
     if org_inn and r.counterparty_inn == org_inn:
         return "transfer", ("🔁 O'z hisoblaringiz orasidagi o'tkazma — 1C da \"Перевод на другой счет\" sifatida "
                             "qo'lda kiriting (avtomatik kiritish qo'llab-quvvatlanmaydi)")
@@ -439,7 +473,8 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
                            in_file_duplicate: bool = False, extra_blockers: list[str] | tuple = (),
                            org_inn: str = "", rules=None) -> dict:
     entity = E_BANK_OUT if r.direction == "chiqim" else E_BANK_IN
-    row = {**asdict(r), "date": r.date.isoformat(), "kind": "bank", "entity": entity, "blockers": list(extra_blockers),
+    row = {**asdict(r), "date": r.date.isoformat(), "posted_date": (r.posted_date or r.date).isoformat(),
+           "kind": "bank", "entity": entity, "blockers": list(extra_blockers),
            "posted": False, "posted_ref": None, "posted_number": None, "error": None, "learned": None}
     kind, blocker = special_kind(r, org_inn)
     row["special"] = kind
@@ -448,6 +483,9 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     row["counterparty_1c_name"] = kontr.get("Description") if kontr else None
     if blocker:
         row["blockers"].append(blocker)
+    elif not kontr and kind == "bank_fee":
+        row["blockers"].append("🏦 Bank xizmat haqi — firmaning o'zi 1C \"Контрагенты\" da yo'q; 1C da bankni kontragent "
+                               "qilib (Прочее списание, 94.20) kiriting")
     elif not kontr:
         row["blockers"].append("Kontragent 1C da topilmadi (STIR bo'yicha) — avval katalogga qo'shing")
 
@@ -455,7 +493,8 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         dup = {"status": "duplicate", "kind": "infile", "reason": "Shu tranzaksiya faylda ikki marta uchraydi",
                "match": None, "diffs": []}
     else:
-        dup = await onec.check_duplicate(entity, r.number, r.date, r.amount, row["counterparty_key"])
+        dup = await onec.check_duplicate(entity, r.number, r.date, r.amount, row["counterparty_key"],
+                                         posted=r.posted_date)
     row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"],
                dup_kind=dup.get("kind"))
 
@@ -480,7 +519,7 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     elif stored:
         apply_rule(row, stored)
     else:
-        row["account"] = rule_account(r.direction, r.purpose)
+        row["account"] = rule_account(r)
         row["account_source"] = "rules"
         row["operation"] = operation_for(row["account"], r.direction)
     if prev and prev.get("posted"):
@@ -606,7 +645,7 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
     cfi = learned.get("cash_flow_key") if learned.get("account_code") == row["account"] else None
     cfi = cfi or (rule.get("cash_flow_key") if rule_fits else None) or None
     payload = {
-        "Date": f"{row['date']}T12:00:00",
+        "Date": f"{row.get('posted_date') or row['date']}T12:00:00",  # bank o'tkazgan kun
         "Организация_Key": org["Ref_Key"],
         "СчетОрганизации_Key": org_acc["Ref_Key"],
         FIELDS["operation"]: row["operation"],
@@ -649,7 +688,8 @@ async def advance_key(row: dict, onec: OneCService) -> str | None:
 
 async def recheck_bank(row: dict, onec: OneCService) -> dict:
     return await onec.check_duplicate(row["entity"], row["number"], date.fromisoformat(row["date"]), row["amount"],
-                                      row.get("counterparty_key"))
+                                      row.get("counterparty_key"),
+                                      posted=date.fromisoformat(row["posted_date"]) if row.get("posted_date") else None)
 
 
 def set_account(row: dict, account: str) -> None:

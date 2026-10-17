@@ -31,6 +31,12 @@ kompyuterning o'zidan mumkin. Keyin brauzerda **🧪 Test Vipiska Namunasini Yuk
 (`sample_bank_vipiska.xlsx`) server ishga tushganda avtomatik yaratiladi va **📥 Test Vipiska faylini yuklab olish**
 tugmasi orqali ham olish mumkin.
 
+**Bank eksport formatlari:** O'zbekiston banklarining "Выписка лицевых счетов" Excel eksporti sinovdan o'tgan —
+"№ пп" (tartib raqami) e'tiborsiz qoldiriladi, hujjat raqami "№ док" dan olinadi; "Дата документа" va
+"Дата обработки" alohida o'qiladi (1C hujjati bank o'tkazgan sana bilan, kiruvchi sana — hujjat sanasi);
+soliq to'lovlari (G'aznachilik, DSI) 64.10, bank xizmat haqi ("За документ №…") 94.20 deb taniladi;
+vipiska egasi (sarlavhadagi hisob nomi) bo'yicha to'g'ri firma taklif qilinadi.
+
 ### Namuna vipiska — sinov stsenariysi (8 qator)
 
 | # | Holat | Nima tekshiriladi |
@@ -193,7 +199,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-83 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+86 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel) va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

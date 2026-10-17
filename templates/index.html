@@ -243,6 +243,7 @@
                     <td class="px-2 py-2.5 align-top whitespace-nowrap">
                       <div class="font-medium num" x-text="fmtDate(r.date)"></div>
                       <div class="text-xs text-slate-500" x-text="'№ ' + r.number"></div>
+                      <div x-show="r.posted_date && r.posted_date !== r.date" class="text-[11px] text-slate-400" title="Bank o'tkazgan sana — 1C hujjati shu sana bilan" x-text="'o\'tkazildi ' + fmtDate(r.posted_date)"></div>
                     </td>
                     <td class="px-2 py-2.5 align-top max-w-[210px]">
                       <div class="font-medium truncate" :title="r.counterparty_name" x-text="r.counterparty_name"></div>

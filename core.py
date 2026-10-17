@@ -53,8 +53,11 @@ def save_session(session: Session) -> None:
     st = session.statement
     data = {
         "statement": None if st is None else {
-            "rows": [{**asdict(r), "date": r.date.isoformat()} for r in st.rows], "own_account": st.own_account,
-            "source": st.source, "warnings": st.warnings, "is_sample": st.is_sample, "own_inn": st.own_inn},
+            "rows": [{**asdict(r), "date": r.date.isoformat(),
+                      "posted_date": r.posted_date.isoformat() if r.posted_date else None} for r in st.rows],
+            "own_account": st.own_account,
+            "source": st.source, "warnings": st.warnings, "is_sample": st.is_sample, "own_inn": st.own_inn,
+            "own_name": st.own_name},
         "vipiska": session.vipiska, "didox": session.didox, "didox_source": session.didox_source,
         "analyzed_with": session.analyzed_with,
     }
@@ -76,10 +79,12 @@ def _load_session(sid: str, firm_id: int) -> Session:
         data = json.loads(path.read_text("utf-8"))
         st = data.get("statement")
         if st:
-            rows = [BankRow(**{**r, "date": date.fromisoformat(r["date"])}) for r in st["rows"]]
+            rows = [BankRow(**{**r, "date": date.fromisoformat(r["date"]),
+                               "posted_date": date.fromisoformat(r["posted_date"]) if r.get("posted_date") else None})
+                    for r in st["rows"]]
             session.statement = Statement(rows=rows, own_account=st["own_account"], source=st["source"],
                                           warnings=st["warnings"], is_sample=st.get("is_sample", False),
-                                          own_inn=st.get("own_inn", ""))
+                                          own_inn=st.get("own_inn", ""), own_name=st.get("own_name", ""))
         session.vipiska = data.get("vipiska", [])
         session.didox = data.get("didox", [])
         session.didox_source = data.get("didox_source", "")
@@ -196,7 +201,7 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     st = session.statement if mode == "vipiska" else None
     return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices,
             "onec_mode": onec_for(session).mode, "stale": stale, "firm_id": session.firm_id,
-            "statement_owner": {"inn": st.own_inn, "account": st.own_account} if st else None,
+            "statement_owner": {"inn": st.own_inn, "account": st.own_account, "name": st.own_name} if st else None,
             "is_sample": bool(mode == "vipiska" and session.statement and session.statement.is_sample),
             "warnings": session.statement.warnings if (mode == "vipiska" and session.statement) else []}
 

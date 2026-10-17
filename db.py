@@ -585,12 +585,20 @@ def user_can_access(user: dict, firm_id: int) -> bool:
     return user["role"] == "owner" or firm_id in (user.get("firm_ids") or [])
 
 
-def find_firms_by_owner_data(inn: str = "", account: str = "") -> list[dict]:
-    """Vipiskadagi STIR yoki hisob raqami bo'yicha qaysi firmaga tegishli ekanini topish."""
-    out = []
+def _firm_name_key(name: str) -> str:
+    """'ООО "ALFA SAVDO"', 'Alfa Savdo MChJ' -> 'alfa savdo' (tashkiliy shakl va qo'shtirnoqsiz)."""
+    import re
+    s = re.sub(r"[\"'«»“”„`]", " ", (name or "").lower())
+    s = re.sub(r"\b(ооо|оoo|ooo|mchj|мчж|mas'uliyati cheklangan jamiyat|ао|ап|ачж|xk|чп|чф|ип|llc|ltd)\b", " ", s)
+    return " ".join(s.split())
+
+
+def find_firms_by_owner_data(inn: str = "", account: str = "", name: str = "") -> list[dict]:
+    """Vipiskadagi STIR, hisob raqami yoki egasi nomi bo'yicha qaysi firmaga tegishli ekanini topish."""
+    out, key = [], _firm_name_key(name)
     for f in list_firms():
         accounts = set(filter(None, f["bank_accounts"].split(",")))
-        if (inn and f["inn"] == inn) or (account and account in accounts):
+        if (inn and f["inn"] == inn) or (account and account in accounts) or (key and _firm_name_key(f["name"]) == key):
             out.append(f)
     return out
 

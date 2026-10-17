@@ -82,6 +82,7 @@ OPERATION_BY_ACCOUNT = {
 # (kalit so'z, schyot, yo'nalish). "QQS bilan" kabi iboralar soliq to'lovi EMAS — shuning uchun aniq iboralar.
 PURPOSE_KEYWORDS = [
     ("komissiya", "94.20", "chiqim"), ("комиссия", "94.20", "chiqim"), ("bank xizmat", "94.20", "chiqim"),
+    ("за документ", "94.20", "chiqim"),
     ("soliq", "64.10", "chiqim"), ("налог", "64.10", "chiqim"), ("qqs bo'yicha", "64.10", "chiqim"),
     ("ндс по", "64.10", "chiqim"), ("jshds", "64.10", "chiqim"), ("byudjet", "64.10", "chiqim"),
     ("бюджет", "64.10", "chiqim"),
@@ -566,7 +567,7 @@ class OneCService:
 
     # ---- Dublikat tekshiruvi
     async def check_duplicate(self, entity: str, number: str, doc_date: date, amount: float,
-                              kontr_key: str | None) -> dict:
+                              kontr_key: str | None, posted: date | None = None) -> dict:
         """Natija: status = duplicate | discrepancy | new (+ sabab, 1C dagi hujjat, farqlar).
 
         kind: exact  — raqam+sana+summa+kontragent to'liq mos (hech qachon qayta yozilmaydi)
@@ -600,7 +601,7 @@ class OneCService:
                         "match": self._doc_brief(c), "diffs": diffs}
 
         # Raqamsiz kiritilgan bo'lishi mumkin: Sana + Summa + Kontragent
-        start = datetime.combine(doc_date, datetime.min.time())
+        start = datetime.combine(posted or doc_date, datetime.min.time())  # 1C hujjat sanasi = bank o'tkazgan kun
         same_day = await self._q(entity, base + [
             Cond(FIELDS["amount"], "eq", float(amount)),
             Cond("Date", "ge", DT(start)), Cond("Date", "le", DT(start + timedelta(days=1, seconds=-1)))], top=5)
