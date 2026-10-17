@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 import config
@@ -43,6 +44,9 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="BUXGALTER AI", version="1.0.0", lifespan=lifespan)
+# Begona domen nomi bilan kelgan so'rovlarni rad etish: zararli sayt DNS rebinding orqali 127.0.0.1 dagi
+# serverga murojaat qilib, sozlamalarni o'zgartira olmasligi uchun.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.ALLOWED_HOSTS)
 
 # ---------------------------------------------------------------- kirish nazorati
 _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
@@ -184,13 +188,17 @@ async def inspect_row(row_id: str, mode: str = "vipiska", session: core.Session 
 class PostIn(BaseModel):
     mode: str = "vipiska"
     ids: list[str] = Field(default_factory=list, max_length=500)
+    force_ids: list[str] = Field(default_factory=list, max_length=50)
+    force_reason: str = Field("", max_length=300)
 
 
 @app.post("/api/post")
 async def post_to_1c(body: PostIn, session: core.Session = Depends(access)):
-    if not body.ids:
+    if not body.ids and not body.force_ids:
         raise HTTPException(400, "Hech qanday qator tanlanmagan")
-    return await core.post(session, _mode(body.mode), body.ids)
+    if body.force_ids and len(body.force_reason.strip()) < 5:
+        raise HTTPException(400, "Majburan yozish uchun sababini yozing (kamida 5 belgi)")
+    return await core.post(session, _mode(body.mode), body.ids, body.force_ids, body.force_reason.strip())
 
 
 # ---------------------------------------------------------------- AI chat

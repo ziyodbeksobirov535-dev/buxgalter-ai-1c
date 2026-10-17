@@ -163,6 +163,8 @@ def seed_1c() -> dict[str, list[dict]]:
                                     "СчетУчетаРасчетовСКонтрагентом_Key": acc_key,
                                     "СтатьяДвиженияДенежныхСредств_Key": cfi_key}],
             "Комментарий": "Buxgalter tomonidan kiritilgan",
+            "ВалютаДокумента_Key": gid("currency", "UZS"), "СчетБанк_Key": gid("acc", "5110"),
+            "Ответственный_Key": gid("user", "bosh-buxgalter"),
         })
 
     # --- Buxgalterning oldingi yozuvlari (tarixdan o'rganish uchun) — avgust-sentyabr 2026

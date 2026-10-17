@@ -8,6 +8,7 @@ import json
 import os
 import threading
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -49,6 +50,11 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 APP_ACCESS_TOKEN = os.getenv("APP_ACCESS_TOKEN", "").strip()
 ALLOWED_TELEGRAM_IDS = {int(x) for x in os.getenv("ALLOWED_TELEGRAM_IDS", "").replace(" ", "").split(",") if x.isdigit()}
 HOST = os.getenv("HOST", "127.0.0.1")
+# Qaysi Host nomlari bilan kelgan so'rovlar qabul qilinadi (DNS rebinding hujumidan himoya).
+# WEBAPP_URL domeni avtomatik qo'shiladi; qo'shimchalarini vergul bilan: ALLOWED_HOSTS=192.168.1.10,buh.local
+_extra_hosts = {h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()}
+_webapp_host = urlparse(WEBAPP_URL).hostname if WEBAPP_URL else None
+ALLOWED_HOSTS = sorted({"127.0.0.1", "localhost", *_extra_hosts} | ({_webapp_host} if _webapp_host else set()))
 PORT = int(os.getenv("PORT", "8000"))
 
 _lock = threading.Lock()
@@ -76,8 +82,22 @@ def get_settings() -> dict:
     return s
 
 
+# Maxfiy qiymat qaysi manzil/loginga tegishli: manzil yoki login o'zgarsa va yangi parol berilmasa, eski parol
+# o'chiriladi. Aks holda saqlangan 1C paroli boshqa (masalan, begona) serverga yuborilib ketishi mumkin.
+SECRET_BOUND_TO = {
+    "onec_password": ("onec_base_url", "onec_user"),
+    "didox_user_key": ("didox_base_url",),
+    "didox_partner_token": ("didox_base_url",),
+}
+
+
+def _norm(v: object) -> str:
+    return str(v or "").strip().rstrip("/").lower()
+
+
 def save_settings(updates: dict) -> dict:
     with _lock:
+        before = get_settings()
         stored = {}
         if SETTINGS_FILE.exists():
             try:
@@ -90,6 +110,11 @@ def save_settings(updates: dict) -> dict:
             if key in SECRET_KEYS and (value is None or value == MASK):
                 continue  # maskalangan qiymat qaytdi — eski kalitni saqlab qolamiz
             stored[key] = _to_bool(value) if key in BOOL_KEYS else (str(value).strip() if value is not None else "")
+        for secret, deps in SECRET_BOUND_TO.items():
+            target_changed = any(k in updates and _norm(updates[k]) != _norm(before[k]) for k in deps)
+            new_secret_given = updates.get(secret) not in (None, MASK)
+            if target_changed and not new_secret_given:
+                stored[secret] = ""
         SETTINGS_FILE.write_text(json.dumps(stored, ensure_ascii=False, indent=2), "utf-8")
         try:
             os.chmod(SETTINGS_FILE, 0o600)

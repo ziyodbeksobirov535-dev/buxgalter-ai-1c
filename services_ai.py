@@ -82,6 +82,7 @@ class ToolContext:
         self.cards: list[dict] = []
         self.refresh: set[str] = set()
         self.used: list[str] = []
+        self.notes: list[str] = []
 
     async def run(self, name: str, args: dict) -> dict:
         self.used.append(name)
@@ -97,6 +98,9 @@ class ToolContext:
     async def t_analyze_and_deduplicate_vipiska(self) -> dict:
         note = None
         if not self.session.statement:
+            if core.get_onec().mode == "live":
+                return {"xato": "Vipiska yuklanmagan. 📥 Bank vipiskasini yuklang — jonli 1C rejimida test (namuna) "
+                                "fayl avtomatik ishlatilmaydi."}
             snap = await core.load_sample(self.session)
             note = "Vipiska yuklanmagan edi — namunaviy test vipiskasi (sample_bank_vipiska.xlsx) yuklandi."
         else:
@@ -141,6 +145,8 @@ class ToolContext:
 
     async def t_cash_flow_summary(self) -> dict:
         if not self.session.vipiska:
+            if core.get_onec().mode == "live":
+                return {"xato": "Vipiska yuklanmagan — avval bank vipiskasini yuklang."}
             await core.load_sample(self.session)
             self.refresh.add("vipiska")
         cf = core.cash_flow_of(self.session)
@@ -236,9 +242,14 @@ def mock_reply(calls: list[tuple[str, dict]], results: list[dict], mode: str) ->
 
 
 # ---------------------------------------------------------------- dvigatellar
+# Sozlamalardagi model o'chirilsa (Google eski modellarni muntazam yopadi — 404 NOT_FOUND), shu alias bilan
+# qayta uriniladi: u har doim eng so'nggi Flash modelga ishora qiladi.
+GEMINI_FALLBACK_MODEL = "gemini-flash-latest"
+
+
 async def _gemini(ctx: ToolContext, message: str, settings: dict) -> str:
     from google import genai
-    from google.genai import types
+    from google.genai import errors, types
 
     client = genai.Client(api_key=settings["gemini_api_key"])
     cfg = types.GenerateContentConfig(
@@ -248,8 +259,23 @@ async def _gemini(ctx: ToolContext, message: str, settings: dict) -> str:
     contents = [types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part.from_text(text=m["text"])])
                 for m in ctx.session.chat[-8:]]
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+    model = settings["gemini_model"]
+
+    async def generate():
+        nonlocal model
+        try:
+            return await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
+        except errors.ClientError as e:
+            if e.code != 404 or model == GEMINI_FALLBACK_MODEL:
+                raise
+            log.warning("Gemini modeli %s topilmadi — %s ishlatiladi", model, GEMINI_FALLBACK_MODEL)
+            ctx.notes.append(f"ℹ️ `{model}` modeli Google tomonidan yopilgan — `{GEMINI_FALLBACK_MODEL}` ishlatildi. "
+                             "⚙️ Sozlamalarda modelni yangilang.")
+            model = GEMINI_FALLBACK_MODEL
+            return await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
+
     for _ in range(5):
-        resp = await client.aio.models.generate_content(model=settings["gemini_model"], contents=contents, config=cfg)
+        resp = await generate()
         calls = resp.function_calls or []
         if not calls:
             return (resp.text or "").strip() or "…"
@@ -316,6 +342,8 @@ async def chat(session: core.Session, message: str, mode: str = "vipiska") -> di
         note = f"⚠️ {info['label']} javob bermadi ({type(e).__name__}: {str(e)[:160]}). Demo AI javobi:"
         engine, reply = "mock", ""
         ctx = ToolContext(session, mode)
+    if ctx.notes and engine != "mock":
+        reply = "\n".join(ctx.notes) + "\n\n" + reply
     if engine == "mock":
         calls = route_intent(message)
         results = [await ctx.run(n, a) for n, a in calls]

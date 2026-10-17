@@ -190,7 +190,11 @@ async def cb_post(c: CallbackQuery) -> None:
         return await c.answer("Kiritish uchun yangi qator yo'q", show_alert=True)
     await c.answer("1C ga yozilmoqda…")
     await c.message.edit_reply_markup(reply_markup=None)  # ikki marta bosishdan himoya
-    res = await core.post(session, mode, ids)
+    try:
+        res = await core.post(session, mode, ids)
+    except ODataError as e:
+        await c.message.answer(f"⚠️ {html.escape(str(e))}")
+        return
     lines = [f"<b>1C natijasi</b>: ✅ {res['ok']} ta qoralama yaratildi, ⛔ {res['failed']} ta o'tkazib yuborildi", ""]
     by_id = {r["id"]: r for r in res["rows"]}
     for r in res["results"]:

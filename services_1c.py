@@ -55,6 +55,12 @@ FIELDS = {
     "payment_lines": "РасшифровкаПлатежа",
 }
 
+# Tarixdagi hujjatdan ko'chiriladigan qo'shimcha rekvizitlar (konfiguratsiyada bo'lmasa — shunchaki o'tkazib yuboriladi)
+ACCOUNT_BOUND_FIELDS = ("Налог_Key", "ВидНалоговогоОбязательства", "СуммаВключаетНДС", "СтатьяДоходов_Key",
+                        "СтатьяРасходов_Key")  # faqat schyot tarixdagidek qolsa
+COMMON_HEADER_FIELDS = ("ВалютаДокумента_Key", "СчетБанк_Key", "СчетУчетаДенежныхСредств_Key", "Ответственный_Key",
+                        "Подразделение_Key", "ПодразделениеОрганизации_Key")  # tashkilot darajasida, har doim
+
 # Tarixda topilmasa — standart qoidalar (O'zbekiston BHMS 21 hisoblar rejasi)
 ACCOUNT_CHOICES = ["60.10", "40.10", "64.10", "94.20"]
 OPERATION_BY_ACCOUNT = {
@@ -533,9 +539,15 @@ class OneCService:
     # ---- Dublikat tekshiruvi
     async def check_duplicate(self, entity: str, number: str, doc_date: date, amount: float,
                               kontr_key: str | None) -> dict:
-        """Natija: status = duplicate | discrepancy | new (+ sabab, 1C dagi hujjat, farqlar)."""
+        """Natija: status = duplicate | discrepancy | new (+ sabab, 1C dagi hujjat, farqlar).
+
+        kind: exact  — raqam+sana+summa+kontragent to'liq mos (hech qachon qayta yozilmaydi)
+              weak   — 1C dagi hujjatda kiruvchi raqam yo'q, sana+summa+kontragent mos (buxgalter tasdig'i bilan
+                       "alohida to'lov" sifatida yozish mumkin)
+              number — shu raqamli hujjat bor, lekin summa/sana farqli
+              none   — mos hujjat yo'q"""
         if not kontr_key:
-            return {"status": "new", "reason": "Kontragent 1C da topilmadi — dublikat tekshiruvi faqat raqam bo'yicha",
+            return {"status": "new", "kind": "none", "reason": "Kontragent 1C da topilmadi — dublikat tekshiruvi faqat raqam bo'yicha",
                     "match": None, "diffs": []}
         base = [Cond("DeletionMark", "eq", False), Cond(FIELDS["counterparty"], "eq", Guid(kontr_key))]
         target_day = doc_date.isoformat()
@@ -547,7 +559,7 @@ class OneCService:
                     abs((date.fromisoformat(_day(c.get(FIELDS["in_date"]))) - doc_date).days) <= 31]
             for c in near:
                 if _day(c.get(FIELDS["in_date"])) == target_day and _same_amount(c.get(FIELDS["amount"]), amount):
-                    return {"status": "duplicate", "reason": "Raqam + Sana + Summa + Kontragent to'liq mos keldi",
+                    return {"status": "duplicate", "kind": "exact", "reason": "Raqam + Sana + Summa + Kontragent to'liq mos keldi",
                             "match": self._doc_brief(c), "diffs": []}
             if near:
                 c = near[0]
@@ -556,7 +568,7 @@ class OneCService:
                     diffs.append(f"Summa: faylda {_fmt_sum(amount)}, 1C da {_fmt_sum(c.get(FIELDS['amount']))}")
                 if _day(c.get(FIELDS["in_date"])) != target_day:
                     diffs.append(f"Sana: faylda {_fmt_date(target_day)}, 1C da {_fmt_date(c.get(FIELDS['in_date']))}")
-                return {"status": "discrepancy", "reason": "Shu raqamli hujjat 1C da bor, lekin rekvizitlar farq qiladi",
+                return {"status": "discrepancy", "kind": "number", "reason": "Shu raqamli hujjat 1C da bor, lekin rekvizitlar farq qiladi",
                         "match": self._doc_brief(c), "diffs": diffs}
 
         # Raqamsiz kiritilgan bo'lishi mumkin: Sana + Summa + Kontragent
@@ -565,9 +577,9 @@ class OneCService:
             Cond(FIELDS["amount"], "eq", float(amount)),
             Cond("Date", "ge", DT(start)), Cond("Date", "le", DT(start + timedelta(days=1, seconds=-1)))], top=5)
         if same_day:
-            return {"status": "duplicate", "reason": "Sana + Summa + Kontragent mos keldi (1C da kiruvchi raqamsiz)",
+            return {"status": "duplicate", "kind": "weak", "reason": "Sana + Summa + Kontragent mos keldi (1C da kiruvchi raqamsiz)",
                     "match": self._doc_brief(same_day[0]), "diffs": []}
-        return {"status": "new", "reason": "1C da mos hujjat topilmadi", "match": None, "diffs": []}
+        return {"status": "new", "kind": "none", "reason": "1C da mos hujjat topilmadi", "match": None, "diffs": []}
 
     @staticmethod
     def _doc_brief(d: dict) -> dict:
@@ -590,8 +602,7 @@ class OneCService:
         contract = doc.get(FIELDS["contract"])
         if _is_empty_key(contract):
             contract = line.get(FIELDS["contract"])
-        extra = {k: doc[k] for k in ("Налог_Key", "ВидНалоговогоОбязательства", "СуммаВключаетНДС")
-                 if k in doc and not _is_empty_key(doc[k])}
+        extra = {k: doc[k] for k in ACCOUNT_BOUND_FIELDS if k in doc and not _is_empty_key(doc[k])}
         goods = doc.get("Товары") or []
         if goods and goods[0].get("СтавкаНДС"):
             extra["СтавкаНДС"] = goods[0]["СтавкаНДС"]
@@ -634,6 +645,16 @@ class OneCService:
             "confidence": f"{hits}/{len(docs)}", "samples": samples,
             "badge": f"🧠 Oldingi 1C tarixidan o'rganildi ({code})" if code else "🧠 Oldingi 1C tarixidan o'rganildi",
         }
+
+    async def common_fields(self, entity: str) -> dict:
+        """Shu turdagi eng so'nggi o'tkazilgan hujjatdan tashkilot darajasidagi rekvizitlar (valyuta, pul schyoti,
+        mas'ul shaxs, bo'linma) — qoralama 1C da kamroq qo'lda to'ldirilishi uchun."""
+        async def f():
+            docs = await self._q(entity, [Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False)],
+                                 top=1, orderby="Date desc")
+            doc = docs[0] if docs else {}
+            return {k: doc[k] for k in COMMON_HEADER_FIELDS if k in doc and not _is_empty_key(doc[k])}
+        return dict(await self._cached(("common", entity), f))
 
     # ---- Qoralama yaratish
     async def create_draft(self, entity: str, payload: dict) -> dict:

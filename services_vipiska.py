@@ -54,24 +54,58 @@ class Statement:
     own_account: str = ""
     source: str = ""
     warnings: list[str] = field(default_factory=list)
+    is_sample: bool = False  # namuna (test) vipiska — jonli 1C ga hech qachon yozilmaydi
+
+    @property
+    def currency_code(self) -> str:
+        """O'zbekiston hisob raqamida 6–8-xonalar valyuta kodi: 000 = so'm, 840 = USD, 978 = EUR …"""
+        return self.own_account[5:8] if len(self.own_account) == 20 else ""
 
 
 # ---------------------------------------------------------------- qiymatlarni normallashtirish
-def parse_amount(v) -> float:
+def parse_amount(v) -> float | None:
+    """Summani o'qish. None — o'qib bo'lmadi (qator ogohlantirish bilan o'tkazib yuboriladi).
+
+    O'nlik ajratuvchi — oxirgi "." yoki "," va undan keyin 1–2 xona (tiyin). Undan keyin 3 xona bo'lsa,
+    bu minglik ajratuvchi: "1.250.000" = 1 250 000, "1,250" = 1 250, "1.250.000,50" = 1 250 000.50.
+    """
     if v is None or v == "":
         return 0.0
+    if isinstance(v, bool):
+        return None
     if isinstance(v, (int, float)):
         return round(float(v), 2)
-    s = str(v).replace("\xa0", "").replace(" ", "").replace("'", "")
-    if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".") if s.rfind(",") > s.rfind(".") else s.replace(",", "")
-    elif "," in s:
-        s = s.replace(",", ".")
-    s = re.sub(r"[^0-9.\-]", "", s)
+    s = str(v).strip()
+    neg = s.startswith("-") or s.endswith("-") or (s.startswith("(") and s.endswith(")"))
+    s = re.sub(r"[^0-9.,]", "", s)
+    if not re.search(r"\d", s):
+        return None
+    m = re.search(r"[.,](\d{1,2})$", s)
+    if m:
+        whole, frac = s[:m.start()], m.group(1)
+    else:
+        whole, frac = s, ""
+    whole = re.sub(r"[.,]", "", whole)
     try:
-        return round(float(s), 2) if s not in ("", "-", ".") else 0.0
+        value = float(f"{whole or '0'}.{frac or '0'}")
     except ValueError:
-        return 0.0
+        return None
+    return round(-value if neg else value, 2)
+
+
+_DIR_IN_EXACT = {"k", "к", "c", "cr", "кт", "+"}
+_DIR_OUT_EXACT = {"d", "д", "dr", "дт", "-"}
+_DIR_IN_WORDS = ("kirim", "kredit", "кредит", "приход", "поступ", "credit", "tushum")
+_DIR_OUT_WORDS = ("chiqim", "debet", "дебет", "расход", "спис", "debit", "to'lov")
+
+
+def parse_direction(v) -> str | None:
+    t = str(v or "").strip().lower()
+    if t in _DIR_IN_EXACT or any(w in t for w in _DIR_IN_WORDS):
+        return "kirim"
+    if t in _DIR_OUT_EXACT or any(w in t for w in _DIR_OUT_WORDS):
+        return "chiqim"
+    return None
 
 
 def parse_date(v) -> date | None:
@@ -93,12 +127,20 @@ def parse_date(v) -> date | None:
 
 
 def clean_code(v) -> str:
-    """STIR / MFO / hisob raqami: faqat raqamlar (Excel float formatini ham to'g'rilaydi)."""
+    """STIR / MFO: faqat raqamlar (Excel float formatini ham to'g'rilaydi)."""
     if v is None:
         return ""
     if isinstance(v, float) and v.is_integer():
         v = int(v)
     return re.sub(r"\D", "", str(v))
+
+
+def clean_account(v) -> tuple[str, bool]:
+    """Hisob raqami (20 xona). Excel'da SON sifatida saqlangan bo'lsa, 15 xonadan keyingi raqamlar allaqachon
+    yo'qolgan — bunday raqamni ishlatmaymiz. Natija: (raqam, aniqlik_yo'qolganmi)."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v) >= 1e15:
+        return "", True
+    return clean_code(v), False
 
 
 def classify_header(h) -> str | None:
@@ -150,35 +192,59 @@ def _rows_from_table(table: list[list]) -> Statement:
         j = mapping.get(kind)
         return row[j] if j is not None and j < len(row) else None
 
-    for row in table[header_idx + 1:]:
+    def text_of(row) -> str:
+        return " ".join(str(c) for c in row if c not in (None, ""))[:60]
+
+    for offset, row in enumerate(table[header_idx + 1:], start=header_idx + 2):
         if not any(c not in (None, "") for c in row):
             continue
         first = str(row[0] or "").strip().lower()
         if first.startswith(("jami", "итого", "всего", "оборот")):
             break
-        d = parse_date(cell(row, "date"))
+        raw_date = cell(row, "date")
+        d = parse_date(raw_date)
         if not d:
+            low = text_of(row).lower()
+            if not any(w in low for w in ("остаток", "qoldiq", "saldo", "сальдо")):
+                st.warnings.append(f"{offset}-qator: sana o'qilmadi ({raw_date!r}) — qator o'tkazib yuborildi: {text_of(row)}")
             continue
         if "debit" in mapping or "credit" in mapping:
             debit, credit = parse_amount(cell(row, "debit")), parse_amount(cell(row, "credit"))
-            if debit and credit:
-                st.warnings.append(f"{d}: bir qatorda ham debet, ham kredit — qator o'tkazib yuborildi")
+            if debit is None or credit is None:
+                st.warnings.append(f"{offset}-qator: summa o'qilmadi — qator o'tkazib yuborildi: {text_of(row)}")
                 continue
-            direction, amount = ("chiqim", debit) if debit else ("kirim", credit)
+            if debit and credit:
+                st.warnings.append(f"{offset}-qator: bir qatorda ham debet, ham kredit — qator o'tkazib yuborildi")
+                continue
+            direction, amount = ("chiqim", abs(debit)) if debit else ("kirim", abs(credit))
         else:
             amount = parse_amount(cell(row, "amount"))
-            dtext = str(cell(row, "direction") or "").lower()
-            direction = "chiqim" if any(x in dtext for x in ("d", "chiq", "спис", "расх")) else "kirim"
+            if amount is None:
+                st.warnings.append(f"{offset}-qator: summa o'qilmadi — qator o'tkazib yuborildi: {text_of(row)}")
+                continue
+            if "direction" in mapping:
+                direction = parse_direction(cell(row, "direction"))
+                if not direction:
+                    st.warnings.append(f"{offset}-qator: turi aniqlanmadi ({cell(row, 'direction')!r}) — "
+                                       "qator o'tkazib yuborildi")
+                    continue
+            else:
+                direction = "chiqim" if amount < 0 else "kirim"
             amount = abs(amount)
         if not amount:
+            st.warnings.append(f"{offset}-qator: summa 0 — qator o'tkazib yuborildi: {text_of(row)}")
             continue
         num = cell(row, "number")
         if isinstance(num, float) and num.is_integer():
             num = int(num)
+        account_no, lost = clean_account(cell(row, "account"))
+        if lost:
+            st.warnings.append(f"{offset}-qator: hisob raqami Excel'da SON formatida — oxirgi raqamlari yo'qolgan, "
+                               "e'tiborga olinmadi. Vipiskani hisob raqami 'Matn' formatida bo'lgan holda eksport qiling.")
         st.rows.append(BankRow(
             date=d, number=str(num or "").strip(), direction=direction, amount=amount,
             counterparty_name=str(cell(row, "name") or "").strip(), counterparty_inn=clean_code(cell(row, "inn")),
-            mfo=clean_code(cell(row, "mfo")), account_no=clean_code(cell(row, "account")),
+            mfo=clean_code(cell(row, "mfo")), account_no=account_no,
             purpose=str(cell(row, "purpose") or "").strip()))
     return st
 
@@ -213,8 +279,8 @@ def parse_csv(content: bytes) -> Statement:
     try:
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=";,\t")
     except csv.Error:
-        dialect = csv.excel
-        dialect.delimiter = ";"
+        class dialect(csv.excel):  # noqa: N801 — global csv.excel ni o'zgartirmaymiz
+            delimiter = ";"
     return _rows_from_table([list(r) for r in csv.reader(io.StringIO(text), dialect)])
 
 
@@ -233,12 +299,19 @@ def parse_1c_exchange(content: bytes) -> Statement:
         elif line.startswith("СекцияДокумент="):
             doc = {}
         elif line == "КонецДокумента" and doc is not None:
-            st.rows.append(_exchange_doc(doc, st.own_account))
+            row, n = _exchange_doc(doc, st.own_account), doc.get("Номер", "?")
+            if row is None:
+                st.warnings.append(f"№{n}: sana o'qilmadi ({doc.get('Дата')!r}) — hujjat o'tkazib yuborildi")
+            elif not row.amount:
+                st.warnings.append(f"№{n}: summa o'qilmadi yoki 0 ({doc.get('Сумма')!r}) — hujjat o'tkazib yuborildi")
+            else:
+                if not st.own_account and not (doc.get("ДатаСписано") or doc.get("ДатаПоступило")):
+                    st.warnings.append(f"№{n}: yo'nalish (kirim/chiqim) aniq emas — 'kirim' deb olindi, tekshiring")
+                st.rows.append(row)
             doc = None
         elif doc is not None:
             k, v = line.split("=", 1)
             doc[k.strip()] = v.strip()
-    st.rows = [r for r in st.rows if r]
     if not st.rows:
         raise StatementError("1CClientBankExchange faylida hujjat topilmadi")
     return st
@@ -257,7 +330,7 @@ def _exchange_doc(d: dict, own: str) -> BankRow | None:
         out = bool(d.get("ДатаСписано")) and not d.get("ДатаПоступило")
     side = "Получатель" if out else "Плательщик"
     return BankRow(
-        date=dt, number=d.get("Номер", ""), direction="chiqim" if out else "kirim", amount=parse_amount(d.get("Сумма")),
+        date=dt, number=d.get("Номер", ""), direction="chiqim" if out else "kirim", amount=abs(parse_amount(d.get("Сумма")) or 0),
         counterparty_name=d.get(f"{side}1") or d.get(side, ""), counterparty_inn=clean_code(d.get(f"{side}ИНН")),
         mfo=clean_code(d.get(f"{side}МФО") or d.get(f"{side}БИК")),
         account_no=clean_code(d.get(f"{side}Счет") or d.get(f"{side}РасчСчет")),
@@ -279,7 +352,11 @@ def parse_statement(filename: str, content: bytes) -> Statement:
     else:
         raise StatementError("Format noma'lum. .xlsx, .csv yoki 1CClientBankExchange .txt yuklang")
     if not st.rows:
-        raise StatementError("Vipiskada birorta ham tranzaksiya topilmadi")
+        detail = (" Sabablar: " + "; ".join(st.warnings[:5])) if st.warnings else ""
+        raise StatementError("Vipiskada birorta ham tranzaksiya topilmadi." + detail)
+    if st.currency_code and st.currency_code != "000":
+        st.warnings.insert(0, f"Hisob raqami valyuta hisobiga o'xshaydi (kod {st.currency_code}). Hozircha faqat so'm "
+                              "(UZS) hisoblari 1C ga yoziladi — qatorlar faqat ko'rish uchun.")
     seen: dict[str, int] = {}
     for r in st.rows:
         base = r.key()
@@ -305,24 +382,47 @@ def operation_for(account: str, direction: str) -> str:
     return ops[0] if direction == "chiqim" else ops[1]
 
 
+SALARY_WORDS = ("ish haqi", "ish xaqi", "иш ҳақи", "зарплат", "заработн", "oylik maosh", "plastik kartalarga",
+                "пластиковые карты")
+
+
+def special_kind(r: BankRow, org_inn: str) -> tuple[str | None, str | None]:
+    """Avtomatik yozilmaydigan maxsus operatsiyalar: (turi, to'siq matni)."""
+    if org_inn and r.counterparty_inn == org_inn:
+        return "transfer", ("🔁 O'z hisoblaringiz orasidagi o'tkazma — 1C da \"Перевод на другой счет\" sifatida "
+                            "qo'lda kiriting (avtomatik kiritish qo'llab-quvvatlanmaydi)")
+    low = (r.purpose or "").lower()
+    if r.direction == "chiqim" and any(w in low for w in SALARY_WORDS):
+        return "salary", ("💳 Ish haqi to'lovi — 1C da \"Перечисление заработной платы\" (vedomost bilan) orqali "
+                          "qo'lda kiriting")
+    return None, None
+
+
 async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = None,
-                           in_file_duplicate: bool = False) -> dict:
+                           in_file_duplicate: bool = False, extra_blockers: list[str] | tuple = (),
+                           org_inn: str = "") -> dict:
     entity = E_BANK_OUT if r.direction == "chiqim" else E_BANK_IN
-    row = {**asdict(r), "date": r.date.isoformat(), "kind": "bank", "entity": entity, "blockers": [],
+    row = {**asdict(r), "date": r.date.isoformat(), "kind": "bank", "entity": entity, "blockers": list(extra_blockers),
            "posted": False, "posted_ref": None, "posted_number": None, "error": None, "learned": None}
+    kind, blocker = special_kind(r, org_inn)
+    row["special"] = kind
     kontr = await onec.find_counterparty(r.counterparty_inn)
     row["counterparty_key"] = kontr["Ref_Key"] if kontr else None
     row["counterparty_1c_name"] = kontr.get("Description") if kontr else None
-    if not kontr:
+    if blocker:
+        row["blockers"].append(blocker)
+    elif not kontr:
         row["blockers"].append("Kontragent 1C da topilmadi (STIR bo'yicha) — avval katalogga qo'shing")
 
     if in_file_duplicate:
-        dup = {"status": "duplicate", "reason": "Shu tranzaksiya faylda ikki marta uchraydi", "match": None, "diffs": []}
+        dup = {"status": "duplicate", "kind": "infile", "reason": "Shu tranzaksiya faylda ikki marta uchraydi",
+               "match": None, "diffs": []}
     else:
         dup = await onec.check_duplicate(entity, r.number, r.date, r.amount, row["counterparty_key"])
-    row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"])
+    row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"],
+               dup_kind=dup.get("kind"))
 
-    if dup["status"] != "duplicate":
+    if dup["status"] != "duplicate" or dup.get("kind") == "weak":
         row["learned"] = await onec.learn_history(entity, row["counterparty_key"], r.purpose, direction=r.direction)
     learned = row["learned"]
     match_code = await onec.account_code((dup["match"] or {}).get("account_key"))
@@ -347,6 +447,9 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
 def finalize_row(row: dict) -> None:
     row["status_label"] = STATUS_LABELS.get(row["status"], row["status"])
     row["selectable"] = row["status"] == "new" and not row["blockers"] and not row["posted"]
+    # "Baribir yozish" faqat farqli yoki raqamsiz-mos (weak) qatorlar uchun — to'liq dublikat hech qachon
+    row["overridable"] = (not row["posted"] and not row["blockers"] and
+                          (row["status"] == "discrepancy" or (row["status"] == "duplicate" and row.get("dup_kind") == "weak")))
     if row["account_source"] == "history":
         row["account_badge"] = f"🧠 Oldingi 1C tarixidan o'rganildi ({row['account']})"
     elif row["account_source"] == "manual":
@@ -365,7 +468,14 @@ async def analyze_statement(st: Statement, onec: OneCService, previous: list[dic
         sig = (r.date, r.number, r.direction, round(r.amount, 2), r.counterparty_inn)
         flags.append(sig in seen)
         seen.add(sig)
-    return list(await asyncio.gather(*(analyze_bank_row(r, onec, prev.get(r.id), f)
+    extra = []
+    if st.is_sample and onec.mode == "live":
+        extra.append("🧪 Test (namuna) vipiska — haqiqiy 1C ga yozilmaydi")
+    if st.currency_code not in ("", "000"):
+        extra.append(f"💱 Valyuta hisobi (kod {st.currency_code}) — hozircha faqat so'm (UZS) hisoblari yoziladi")
+    org = await onec.organization()
+    org_inn = str((org or {}).get(FIELDS["inn"], "") or "")
+    return list(await asyncio.gather(*(analyze_bank_row(r, onec, prev.get(r.id), f, extra, org_inn)
                                        for r, f in zip(st.rows, flags))))
 
 
@@ -445,6 +555,8 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
     if learned.get("account_code") == row["account"]:
         for k, v in (learned.get("extra") or {}).items():
             payload.setdefault(k, v)
+    for k, v in (await onec.common_fields(row["entity"])).items():
+        payload.setdefault(k, v)
     payload[FIELDS["payment_lines"]][0] = {k: v for k, v in payload[FIELDS["payment_lines"]][0].items() if v is not None}
     return payload
 
@@ -469,15 +581,19 @@ def set_account(row: dict, account: str) -> None:
     finalize_row(row)
 
 
-async def post_rows(rows: list[dict], ids: list[str], onec: OneCService, builders: dict) -> list[dict]:
+async def post_rows(rows: list[dict], ids: list[str], onec: OneCService, builders: dict,
+                    force: set[str] | None = None, force_reason: str = "") -> list[dict]:
     """Tanlangan qatorlarni 1C ga QORALAMA sifatida yozadi. Har biridan oldin dublikat qayta tekshiriladi.
 
     builders: {"bank": (payload_builder, rechecker), "ehf": (...)}
+    force: buxgalter "baribir yozish"ni alohida tasdiqlagan qatorlar. Faqat "farq bor" yoki "raqamsiz mos kelgan"
+           (weak) qatorlar uchun ishlaydi; to'liq dublikat (exact) va to'siqli qatorlar HECH QACHON yozilmaydi.
     """
+    force = force or set()
     results = []
     by_id = {r["id"]: r for r in rows}
     onec.invalidate()
-    for rid in dict.fromkeys(ids):
+    for rid in dict.fromkeys([*ids, *force]):
         row = by_id.get(rid)
         if not row:
             results.append({"id": rid, "ok": False, "message": "Qator topilmadi"})
@@ -485,28 +601,37 @@ async def post_rows(rows: list[dict], ids: list[str], onec: OneCService, builder
         if row["posted"]:
             results.append({"id": rid, "ok": False, "message": "Allaqachon 1C ga yozilgan"})
             continue
-        if not row["selectable"]:
+        forced = rid in force and row.get("overridable")
+        if rid in force and not forced:
+            why = row["blockers"][0] if row["blockers"] else row["status_label"]
+            results.append({"id": rid, "ok": False, "message": f"Majburan yozib bo'lmaydi: {why}"})
+            continue
+        if not row["selectable"] and not forced:
             why = row["blockers"][0] if row["blockers"] else row["status_label"]
             results.append({"id": rid, "ok": False, "message": f"Bloklandi: {why}"})
             continue
         build, recheck = builders[row["kind"]]
         try:
             fresh = await recheck(row, onec)
-            if fresh["status"] != "new":
+            still_ok = fresh["status"] == "new" or (forced and fresh.get("kind") in ("weak", "number"))
+            if not still_ok:
                 row.update(status=fresh["status"], status_reason=fresh["reason"], match=fresh["match"],
-                           diffs=fresh["diffs"])
+                           diffs=fresh["diffs"], dup_kind=fresh.get("kind"))
                 finalize_row(row)
                 results.append({"id": rid, "ok": False, "message": f"Bloklandi: {row['status_label']}"})
                 continue
             payload = await build(row, onec)
+            if forced and fresh["status"] != "new":
+                note = f" MAJBURAN KIRITILDI ({fresh['reason']}). Buxgalter izohi: {force_reason or '—'}"
+                payload["Комментарий"] = (payload.get("Комментарий", "") + note)[:1000]
             created = await onec.create_draft(row["entity"], payload)
         except ODataError as e:
             row["error"] = str(e)
             results.append({"id": rid, "ok": False, "message": str(e)})
             continue
         row.update(posted=True, posted_ref=created["ref"], posted_number=created["number"], status="posted",
-                   error=None)
+                   error=None, forced=bool(forced and fresh["status"] != "new"))
         finalize_row(row)
-        results.append({"id": rid, "ok": True, "message": f"Qoralama yaratildi: {created['number']}",
-                        "number": created["number"]})
+        msg = f"Qoralama yaratildi: {created['number']}" + (" (majburan)" if row["forced"] else "")
+        results.append({"id": rid, "ok": True, "message": msg, "number": created["number"]})
     return results

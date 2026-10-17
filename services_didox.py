@@ -94,8 +94,9 @@ async def analyze_invoice(inv: dict, onec: OneCService, prev: dict | None = None
         if not nom:
             row["blockers"].append(f"Nomenklatura topilmadi: {it['name']} (IKPU {it.get('ikpu') or '—'})")
     dup = await onec.check_duplicate(E_PURCHASE, inv["number"], d, inv["total"], row["counterparty_key"])
-    row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"])
-    if dup["status"] != "duplicate":
+    row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"],
+               dup_kind=dup.get("kind"))
+    if dup["status"] != "duplicate" or dup.get("kind") == "weak":
         row["learned"] = await onec.learn_history(E_PURCHASE, row["counterparty_key"])
     learned = row["learned"]
     match_code = await onec.account_code((dup["match"] or {}).get("account_key"))
@@ -144,7 +145,9 @@ async def build_purchase_payload(row: dict, onec: OneCService) -> dict:
         lines.append({"LineNumber": str(i), "Номенклатура_Key": it["nomenclature_key"], "Количество": it["qty"],
                       "Цена": round(net / it["qty"], 2) if it["qty"] else net, "Сумма": total,
                       "СтавкаНДС": vat_rate, "СуммаНДС": round(total - net, 2)})
+    common = await onec.common_fields(E_PURCHASE)
     return {
+        **common,
         "Date": f"{row['date']}T12:00:00", "Организация_Key": org["Ref_Key"], FIELDS["operation"]: row["operation"],
         FIELDS["counterparty"]: row["counterparty_key"], FIELDS["contract"]: contract_key,
         FIELDS["amount"]: row["amount"], FIELDS["in_number"]: row["number"],

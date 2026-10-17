@@ -162,6 +162,13 @@
         </div>
 
         <!-- Ogohlantirishlar -->
+        <div x-show="snap?.stale" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
+          <span>⚠️ 1C sozlamalari tahlildan keyin o'zgargan — yozishdan oldin qayta tekshiring.</span>
+          <button @click="recheck()" class="ml-auto text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1">🔄 1C da qayta tekshirish</button>
+        </div>
+        <div x-show="snap?.is_sample && snap?.onec_mode==='live'" class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 text-sky-900 dark:text-sky-200 text-sm px-3 py-2">
+          🧪 Bu test (namuna) vipiska — haqiqiy 1C ga yozilmaydi. O'z vipiskangizni yuklang.
+        </div>
         <template x-for="w in (snap?.warnings || [])" :key="w">
           <div class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-sm px-3 py-2" x-text="'⚠️ ' + w"></div>
         </template>
@@ -228,7 +235,8 @@
                     <td class="px-2 py-2.5 align-top min-w-[150px] max-w-[190px]">
                       <span class="inline-block text-xs font-medium px-2 py-1 rounded-lg leading-tight" :class="statusClass(r.status)" x-text="r.status_label"></span>
                       <div x-show="r.diffs && r.diffs.length" class="mt-1 text-[11px] text-rose-600 dark:text-rose-400" x-text="(r.diffs || []).join('; ')"></div>
-                      <div x-show="r.posted_number" class="mt-1 text-[11px] text-brand-600 dark:text-sky-400" x-text="'1C: ' + r.posted_number + ' (qoralama)'"></div>
+                      <div x-show="r.posted_number" class="mt-1 text-[11px] text-brand-600 dark:text-sky-400" x-text="'1C: ' + r.posted_number + ' (qoralama' + (r.forced ? ', majburan' : '') + ')'"></div>
+                      <div x-show="r.overridable" class="mt-1 text-[11px] text-amber-600 dark:text-amber-400">👁 Tekshirish orqali baribir yozish mumkin</div>
                     </td>
                     <td class="px-2 py-2.5 align-top">
                       <div class="flex flex-col items-end gap-1 whitespace-nowrap">
@@ -264,6 +272,7 @@
                     <div class="mt-1 text-[11px]" :class="r.account_source==='history' ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
                     <div x-show="r.diffs && r.diffs.length" class="text-[11px] text-rose-600" x-text="(r.diffs || []).join('; ')"></div>
                     <div x-show="r.blockers.length" class="text-[11px] text-rose-600" x-text="'⚠️ ' + (r.blockers[0] || '')"></div>
+                    <div x-show="r.overridable" class="text-[11px] text-amber-600">👁 Tekshirish orqali baribir yozish mumkin</div>
                     <div class="mt-2 flex gap-2">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1">👁 Tekshirish</button>
                       <button x-show="r.selectable" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
@@ -453,9 +462,18 @@
             <pre class="px-3 pb-3 text-[11px] overflow-x-auto thin-scroll" x-text="JSON.stringify(inspect.payload, null, 2)"></pre>
           </details>
 
-          <div class="flex justify-end gap-2 pt-2">
+          <div x-show="inspect.row.overridable" class="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 space-y-2">
+            <div class="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠️ Bu 1C dagi hujjatdan boshqa, alohida operatsiyami?</div>
+            <p class="text-xs text-amber-900/80 dark:text-amber-200/80">Agar aniq bilsangiz, qatorni baribir qoralama sifatida yozish mumkin. Sabab 1C hujjatining izohiga yoziladi. To'liq mos dublikatni (raqam + sana + summa + kontragent) hech qachon yozib bo'lmaydi.</p>
+            <textarea x-model="forceReason" rows="2" maxlength="300" placeholder="Sabab: masalan, bir kunda ikkita alohida to'lov (hisob-faktura №…)" class="w-full rounded-lg border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs"></textarea>
+            <label class="flex items-center gap-2 text-xs"><input type="checkbox" x-model="forceAck" class="rounded"> 1C ni tekshirdim — bu dublikat emas</label>
+          </div>
+
+          <div class="flex flex-wrap justify-end gap-2 pt-2">
             <button @click="inspect=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Yopish</button>
             <button x-show="inspect.row.selectable" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
+            <button x-show="inspect.row.overridable" @click="doForce(inspect.row.id)" :disabled="!forceAck || forceReason.trim().length < 5 || posting"
+                    class="rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2">⚠️ Baribir 1C ga yozish</button>
           </div>
         </div>
       </template>
@@ -501,6 +519,7 @@
         <label class="flex items-center gap-2"><input type="checkbox" x-model="settings.onec_demo_mode" class="rounded"> Demo 1C bazasi (sinov uchun, real 1C ga tegmaydi)</label>
         <div x-show="!settings.onec_demo_mode" class="space-y-2">
           <input x-model="settings.onec_base_url" placeholder="http://server/buh_uz  (…/odata/standard.odata)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          <p class="text-xs text-slate-500">🔐 Manzil yoki login o'zgarsa, xavfsizlik uchun saqlangan parol o'chiriladi — parolni qayta kiriting.</p>
           <div class="grid grid-cols-2 gap-2">
             <input x-model="settings.onec_user" placeholder="1C foydalanuvchi" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
             <input type="password" x-model="settings.onec_password" placeholder="Parol" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
@@ -553,7 +572,7 @@ function app() {
     data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
-    settingsOpen: false, settings: {}, onecTest: '', inspect: null, confirmBox: null,
+    settingsOpen: false, settings: {}, onecTest: '', inspect: null, confirmBox: null, forceReason: '', forceAck: false,
     tg: window.Telegram && window.Telegram.WebApp, isTg: false, sid: '', accessToken: '',
 
     get snap() { return this.data[this.mode]; },
@@ -651,7 +670,7 @@ function app() {
     },
     async openInspect(r) {
       const res = await this.api('/api/rows/' + r.id + '/inspect?mode=' + this.mode);
-      if (res) this.inspect = res;
+      if (res) { this.forceReason = ''; this.forceAck = false; this.inspect = res; }
     },
 
     // ---------------- tanlash
@@ -671,11 +690,15 @@ function app() {
       const sum = rows.reduce((a, r) => a + r.amount, 0);
       this.confirmBox = { ids, text: ids.length + " ta yangi hujjat (" + this.fmt(sum) + " so'm) 1C ga qoralama sifatida kiritiladi." };
     },
-    async doPost(ids, mode = this.mode) {
+    async doForce(id) {
+      const res = await this.doPost([], this.mode, { force_ids: [id], force_reason: this.forceReason.trim() });
+      if (res) this.inspect = null;
+    },
+    async doPost(ids, mode = this.mode, extra = {}) {
       if (this.posting) return null;
       this.posting = true;
       try {
-        const res = await this.api('/api/post', { json: { mode, ids } });
+        const res = await this.api('/api/post', { json: { mode, ids, ...extra } });
         if (!res) return null;
         this.setSnap(res);
         const msg = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? ", ⛔ " + res.failed + " ta bloklandi" : '');

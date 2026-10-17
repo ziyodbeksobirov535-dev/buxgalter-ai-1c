@@ -131,8 +131,25 @@ templates/index.html Tailwind + Alpine.js + Lucide + telegram-web-app.js
 
 ---
 
+## 🧪 Avtomatik testlar
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
+```
+
+47 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
+bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi.
+Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
+
 ## ⚠️ Cheklovlar
-- Demo 1C bazasi xotirada saqlanadi — server qayta ishga tushganda qoralamalar o'chadi.
+- Demo 1C bazasi xotirada saqlanadi — server qayta ishga tushganda qoralamalar o'chadi (jadval holati esa
+  `data/sessions/` da saqlanadi).
+- O'z hisoblar orasidagi o'tkazma, ish haqi va valyuta hisoblari aniqlanadi, lekin avtomatik yozilmaydi —
+  1C da qo'lda kiritiladi.
+- "🔴 Farq bor" yoki "raqamsiz mos kelgan" qatorni 👁 Tekshirish oynasida sabab yozib, baribir yozish mumkin;
+  to'liq dublikat (raqam + sana + summa + kontragent) hech qachon yozilmaydi.
 - Didox partner API endpoint/maydon nomlari shartnomaga qarab farq qiladi — `services_didox.py`
   (`DIDOX_LIST_PATH`, `_map_invoice`) ni o'z hujjatlaringizga moslang.
 - Sessiyalar server xotirasida (bitta jarayon uchun mo'ljallangan).
