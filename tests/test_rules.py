@@ -32,6 +32,8 @@ def test_learn_from_history_builds_visible_table(client):
     assert res["documents"] == 30 and res["counterparties"] == 12 and res["keywords"] == 4 and res["added"] == 16
     rules = rules_by_match(client)
     orient = rules[("302345678", "chiqim", "bank")]
+    assert rules[("305678901", "kirim", "bank")]["advance_account"] == "63.10"   # xaridor: qarz 40.10, avans 63.10
+    assert rules[("304567890", "chiqim", "bank")]["advance_account"] == "43.10"  # yetkazib beruvchi: 60.10 / 43.10
     assert orient["account"] == "60.10" and (orient["hits"], orient["total"]) == (3, 4) and orient["conflict"]
     assert rules[("komissiya", "chiqim", "bank")]["account"] == "94.20"
 
@@ -85,19 +87,23 @@ def test_excel_roundtrip(client):
     from openpyxl import load_workbook
     wb = load_workbook(BytesIO(xlsx.content))
     ws = wb.active
+    header = [c.value for c in ws[1]]
+    col = {name: header.index(name) for name in ("Schyot", "Avans schyoti", "Qat'iy (ha/yo'q)")}
     for r in ws.iter_rows(min_row=2):
         if r[1].value == "302345678" and r[4].value == "Bank":   # ORIENT: ziddiyatni buxgalter hal qildi
-            r[5].value, r[7].value = "69.90", "ha"
-    ws.append(["Kalit so'z", "kommunal", "", "Chiqim", "Bank", "94.20", "", "ha"])
-    ws.append(["Kontragent", "12345", "Xato STIR", "Chiqim", "Bank", "60.10", "", "ha"])
+            r[col["Schyot"]].value, r[col["Qat'iy (ha/yo'q)"]].value = "69.90", "ha"
+    ws.append(["Kalit so'z", "kommunal", "", "Chiqim", "Bank", "94.20", "", "", "ha"])
+    ws.append(["Kontragent", "12345", "Xato STIR", "Chiqim", "Bank", "60.10", "43.10", "", "ha"])
+    ws.append(["Kontragent", "305678901", "Farg'ona", "Kirim", "Bank", "40.10", "63.10", "", "ha"])
     buf = BytesIO()
     wb.save(buf)
     res = client.post("/api/rules/import", headers=H, files={"file": ("q.xlsx", buf.getvalue())}).json()
-    assert res["saved"] == 17 and len(res["errors"]) == 1 and "9 xonali" in res["errors"][0]
+    assert res["saved"] == 18 and len(res["errors"]) == 1 and "9 xonali" in res["errors"][0]
     rules = rules_by_match(client)
     assert rules[("302345678", "chiqim", "bank")]["account"] == "69.90"
     assert rules[("302345678", "chiqim", "bank")]["locked"]
     assert rules[("kommunal", "chiqim", "bank")]["locked"]
+    assert rules[("305678901", "kirim", "bank")]["advance_account"] == "63.10"  # avans schyoti ham import qilindi
 
 
 def test_invalid_rules_rejected(client):

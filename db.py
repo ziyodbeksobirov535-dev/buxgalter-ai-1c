@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS account_rules (
     name TEXT NOT NULL DEFAULT '',       -- kontragent nomi (ko'rsatish uchun)
     direction TEXT NOT NULL DEFAULT '',  -- kirim | chiqim | '' (har ikkisi)
     doc_kind TEXT NOT NULL DEFAULT 'bank' CHECK (doc_kind IN ('bank', 'ehf')),
-    account TEXT NOT NULL,               -- masalan 60.10
+    account TEXT NOT NULL,               -- masalan 60.10 (qarz bo'yicha hisob-kitob schyoti)
+    advance_account TEXT NOT NULL DEFAULT '',  -- qarz bo'lmasa: avans schyoti (63.10 / 43.10)
     operation TEXT NOT NULL DEFAULT '',  -- ВидОперации (bo'sh — schyotdan aniqlanadi)
     contract_key TEXT NOT NULL DEFAULT '',
     cash_flow_key TEXT NOT NULL DEFAULT '',
@@ -220,6 +221,9 @@ def init() -> None:
     config.DATA_DIR.mkdir(exist_ok=True)
     with tx() as c:
         c.executescript(SCHEMA)
+        # eski bazalar uchun ustun qo'shish (migratsiya)
+        if "advance_account" not in [r[1] for r in c.execute("PRAGMA table_info(account_rules)")]:
+            c.execute("ALTER TABLE account_rules ADD COLUMN advance_account TEXT NOT NULL DEFAULT ''")
     _chmod600(DB_FILE)
     _fernet()
     migrate_legacy_settings()
@@ -613,7 +617,7 @@ def list_audit(limit: int = 100, firm_id: int | None = None) -> list[dict]:
 
 
 # ---------------------------------------------------------------- hisob qoidalari (qaysi kontragent qaysi schyotga)
-RULE_FIELDS = ("kind", "match", "name", "direction", "doc_kind", "account", "operation", "contract_key",
+RULE_FIELDS = ("kind", "match", "name", "direction", "doc_kind", "account", "advance_account", "operation", "contract_key",
                "cash_flow_key", "locked", "source", "hits", "total", "variants", "last_date")
 
 
@@ -646,8 +650,11 @@ def _norm_rule(data: dict) -> dict:
     digits = account.replace(".", "")
     if not (len(digits) == 4 and digits.isdigit()):
         raise DBError(f"Schyot formati: 60.10 ko'rinishida (berilgan: {account or '—'})")
+    adv = str(data.get("advance_account") or "").replace(" ", "").replace(".", "")
+    if adv and not (len(adv) == 4 and adv.isdigit()):
+        raise DBError(f"Avans schyoti formati: 63.10 ko'rinishida (berilgan: {data.get('advance_account')})")
     return {"kind": kind, "match": match, "direction": direction, "doc_kind": doc_kind,
-            "account": f"{digits[:2]}.{digits[2:]}"}
+            "account": f"{digits[:2]}.{digits[2:]}", "advance_account": f"{adv[:2]}.{adv[2:]}" if adv else ""}
 
 
 def list_rules(firm_id: int) -> list[dict]:
@@ -692,13 +699,16 @@ def update_rule(rule_id: int, firm_id: int, data: dict, by: str) -> dict:
     rule = get_rule(rule_id)
     if not rule or rule["firm_id"] != firm_id:
         raise DBError("Qoida topilmadi")
-    merged = {**rule, **{k: v for k, v in data.items() if k in ("account", "operation", "direction", "name")}}
-    _norm_rule(merged)
-    account = _norm_rule(merged)["account"]
+    merged = {**rule, **{k: v for k, v in data.items()
+                         if k in ("account", "advance_account", "operation", "direction", "name")}}
+    norm = _norm_rule(merged)
+    account, advance = norm["account"], norm["advance_account"]
     locked = bool(data.get("locked", rule["locked"]))
-    changed = account != rule["account"] or str(merged.get("operation") or "") != rule["operation"]
+    changed = (account != rule["account"] or advance != rule["advance_account"]
+               or str(merged.get("operation") or "") != rule["operation"])
     source = "manual" if changed or (locked and not rule["locked"]) else rule["source"]  # buxgalter tasdiqladi
     with tx() as c:
+        c.execute("UPDATE account_rules SET advance_account = ? WHERE id = ?", (advance, rule_id))
         c.execute("UPDATE account_rules SET account = ?, operation = ?, name = ?, locked = ?, source = ?, "
                   "contract_key = CASE WHEN account = ? THEN contract_key ELSE '' END, "
                   "cash_flow_key = CASE WHEN account = ? THEN cash_flow_key ELSE '' END, "
@@ -728,17 +738,17 @@ def upsert_learned_rules(firm_id: int, learned: list[dict]) -> dict:
                           "WHERE id = ?", (*common, row["id"]))
                 stats["kept_locked"] += 1
             elif row:
-                c.execute("UPDATE account_rules SET name = ?, account = ?, operation = ?, contract_key = ?, "
-                          "cash_flow_key = ?, source = 'history', hits = ?, total = ?, variants = ?, last_date = ?, "
-                          "updated_at = ?, updated_by = '1C tarixi' WHERE id = ?",
-                          (r["name"], r["account"], r["operation"], r["contract_key"], r["cash_flow_key"], *common,
-                           row["id"]))
+                c.execute("UPDATE account_rules SET name = ?, account = ?, advance_account = ?, operation = ?, "
+                          "contract_key = ?, cash_flow_key = ?, source = 'history', hits = ?, total = ?, variants = ?, "
+                          "last_date = ?, updated_at = ?, updated_by = '1C tarixi' WHERE id = ?",
+                          (r["name"], r["account"], r.get("advance_account", ""), r["operation"], r["contract_key"],
+                           r["cash_flow_key"], *common, row["id"]))
                 stats["updated"] += 1
             else:
-                c.execute("INSERT INTO account_rules (firm_id, kind, match, name, direction, doc_kind, account, operation, "
-                          "contract_key, cash_flow_key, locked, source, hits, total, variants, last_date, updated_at, "
-                          "updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,0,'history',?,?,?,?,?,'1C tarixi')",
+                c.execute("INSERT INTO account_rules (firm_id, kind, match, name, direction, doc_kind, account, "
+                          "advance_account, operation, contract_key, cash_flow_key, locked, source, hits, total, variants, "
+                          "last_date, updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,0,'history',?,?,?,?,?,'1C tarixi')",
                           (firm_id, r["kind"], r["match"], r["name"], r["direction"], r["doc_kind"], r["account"],
-                           r["operation"], r["contract_key"], r["cash_flow_key"], *common))
+                           r.get("advance_account", ""), r["operation"], r["contract_key"], r["cash_flow_key"], *common))
                 stats["added"] += 1
     return stats

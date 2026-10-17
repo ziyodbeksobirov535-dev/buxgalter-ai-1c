@@ -214,8 +214,14 @@ async def load_statement(session: Session, filename: str, content: bytes, is_sam
     st = parse_statement(filename, content)
     st.is_sample = is_sample
     async with session.lock:
+        previous = (session.statement, session.vipiska, dict(session.analyzed_with))
         session.statement = st
-        await _analyze_vipiska(session)
+        try:
+            await _analyze_vipiska(session)
+        except Exception:
+            # Tahlil xato bilan tugasa — oldingi holat saqlanadi (yarim yuklangan vipiska qolib ketmasin)
+            session.statement, session.vipiska, session.analyzed_with = previous
+            raise
     return snapshot(session, "vipiska")
 
 
@@ -298,7 +304,10 @@ async def preview_payload(session: Session, mode: str, row_id: str) -> dict:
                 payload = await build_bank_payload(row, onec, session.statement.own_account if session.statement else "")
             else:
                 payload = await build_purchase_payload(row, onec)
+            payload, dropped = await onec.filter_payload(row["entity"], {k: v for k, v in payload.items() if v is not None})
             payload["Posted"] = False
+            if dropped:
+                error = "ℹ️ Sizning 1C konfiguratsiyangizda yo'q, shuning uchun yuborilmaydi: " + ", ".join(dropped)
         except Exception as e:  # noqa: BLE001
             error = str(e)
     learned = row.get("learned") or {}

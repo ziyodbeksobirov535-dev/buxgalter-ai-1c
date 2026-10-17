@@ -148,7 +148,8 @@ async def learn_from_1c(onec: OneCService, months: int = 12) -> tuple[list[dict]
             variants = [{"account": c, "operation": o, "count": n} for (c, o), n in votes.most_common()]
             rules.append({
                 "kind": "counterparty", "match": inn, "name": name, "direction": direction, "doc_kind": doc_kind,
-                "account": code, "operation": op or "", "contract_key": _mode(p["contract_key"] for p in best),
+                "account": code, "advance_account": accounts.get(_mode(p["advance_key"] for p in best), "") or "",
+                "operation": op or "", "contract_key": _mode(p["contract_key"] for p in best),
                 "cash_flow_key": _mode(p["cash_flow_key"] for p in best), "hits": hits, "total": len(items),
                 "variants": variants, "last_date": max(str(d.get("Date", ""))[:10] for d, _p in items),
             })
@@ -171,7 +172,7 @@ async def learn_from_1c(onec: OneCService, months: int = 12) -> tuple[list[dict]
 
 
 # ---------------------------------------------------------------- Excel
-EXCEL_HEADERS = ["Turi", "STIR yoki kalit so'z", "Nomi", "Yo'nalish", "Hujjat", "Schyot", "ВидОперации",
+EXCEL_HEADERS = ["Turi", "STIR yoki kalit so'z", "Nomi", "Yo'nalish", "Hujjat", "Schyot", "Avans schyoti", "ВидОперации",
                  "Qat'iy (ha/yo'q)", "Ishonch", "Variantlar", "Manba", "Oxirgi sana"]
 _SOURCE_LABELS = {"history": "1C tarixi", "manual": "Buxgalter", "correction": "Tuzatishdan", "import": "Excel"}
 
@@ -190,17 +191,19 @@ def export_xlsx(rules: list[dict], firm_name: str) -> bytes:
     for r in rules:
         ws.append([
             "Kontragent" if r["kind"] == "counterparty" else "Kalit so'z", r["match"], r["name"],
-            DIRECTION_LABELS[r["direction"]], DOC_KIND_LABELS[r["doc_kind"]], r["account"], r["operation"],
+            DIRECTION_LABELS[r["direction"]], DOC_KIND_LABELS[r["doc_kind"]], r["account"], r["advance_account"], r["operation"],
             "ha" if r["locked"] else "yo'q", f"{r['hits']}/{r['total']}" if r["total"] else "",
             "; ".join(f"{v['account']}×{v['count']}" for v in r["variants"]), _SOURCE_LABELS.get(r["source"], r["source"]),
             r["last_date"]])
         ws.cell(row=ws.max_row, column=2).number_format = "@"
-    for col, width in zip("ABCDEFGHIJKL", (12, 18, 40, 11, 12, 9, 34, 15, 9, 22, 12, 12)):
+    for col, width in zip("ABCDEFGHIJKLM", (12, 18, 40, 11, 12, 9, 13, 34, 15, 9, 22, 12, 12)):
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A2"
     info = wb.create_sheet("Yo'riqnoma")
     for line in [f"Firma: {firm_name}", "",
-                 "Tahrirlash mumkin: Schyot, ВидОперации, Qat'iy (ha/yo'q). Yangi qator ham qo'shish mumkin.",
+                 "Tahrirlash mumkin: Schyot, Avans schyoti, ВидОперации, Qat'iy (ha/yo'q). Yangi qator ham qo'shish mumkin.",
+                 "Schyot — qarz bo'yicha (40.10 / 60.10); Avans schyoti — qarz bo'lmasa (63.10 / 43.10). 1C to'lovni "
+                 "o'tkazishda avval qarzni yopadi, ortganini avansga o'tkazadi.",
                  "Turi: Kontragent (STIR 9 xona) yoki Kalit so'z (to'lov maqsadida qidiriladi).",
                  "Yo'nalish: Kirim / Chiqim / Har ikkisi.  Hujjat: Bank yoki EHF (xarid).",
                  "Qat'iy = ha — bu qoida 1C tarixidan ustun turadi.",
@@ -232,7 +235,8 @@ def parse_import_xlsx(content: bytes) -> tuple[list[dict], list[str]]:
                     return i
         return None
     idx = {"kind": col("turi"), "match": col("stir", "kalit"), "name": col("nomi"), "direction": col("yo'nalish", "yonalish"),
-           "doc_kind": col("hujjat"), "account": col("schyot", "счет"), "operation": col("видоперации", "vid"),
+           "doc_kind": col("hujjat"), "account": col("schyot", "счет"), "advance_account": col("avans"),
+           "operation": col("видоперации", "vid"),
            "locked": col("qat'iy", "qatiy")}
     if idx["kind"] is None or idx["match"] is None or idx["account"] is None:
         raise ValueError("Ustunlar topilmadi: kamida 'Turi', 'STIR yoki kalit so'z', 'Schyot' bo'lishi kerak "
@@ -256,7 +260,11 @@ def parse_import_xlsx(content: bytes) -> tuple[list[dict], list[str]]:
         account = get("account")
         if isinstance(account, float):
             account = f"{account:.2f}"
+        advance = get("advance_account")
+        if isinstance(advance, float):
+            advance = f"{advance:.2f}"
         out.append({"_row": n, "kind": kind, "match": str(match or ""), "name": str(get("name") or ""),
                     "direction": direction, "doc_kind": doc_kind, "account": str(account or ""),
+                    "advance_account": str(advance or ""),
                     "operation": str(get("operation") or ""), "locked": locked})
     return out, errors

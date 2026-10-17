@@ -131,3 +131,16 @@ def test_parallel_posts_of_same_rows_create_each_draft_once(monkeypatch):
     drafts = [d for e in ("Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета")
               for d in slow.t.db[e] if d.get("Комментарий", "").startswith("BUXGALTER AI")]
     assert len(drafts) == 4
+
+
+def test_failed_analysis_keeps_previous_statement(monkeypatch):
+    s = core.get_session("keep", DEMO_FIRM)
+    run(core.load_sample(s))
+    before = (s.statement.source, len(s.vipiska))
+
+    async def boom(*a, **kw):
+        raise ODataError("1C 404: «Catalog_Организации» OData tarkibida nashr qilinmagan")
+    monkeypatch.setattr(core, "analyze_statement", boom)
+    with pytest.raises(ODataError):
+        run(core.load_statement(s, "boshqa.csv", "Sana;Hujjat №;Debet;Kredit;Kontragent;STIR;Maqsad\n16.10.2026;1;5;;A;301234567;x\n".encode()))
+    assert (s.statement.source, len(s.vipiska)) == before  # yarim yuklangan vipiska qolmadi

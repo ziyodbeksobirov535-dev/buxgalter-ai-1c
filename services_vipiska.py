@@ -15,7 +15,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 
-from services_1c import (E_BANK_IN, E_BANK_OUT, E_COUNTERPARTY, FIELDS, OPERATION_BY_ACCOUNT,
+from services_1c import (ADVANCE_FOR, REPAYMENT_AUTO, E_BANK_IN, E_BANK_OUT, E_COUNTERPARTY, FIELDS, OPERATION_BY_ACCOUNT,
                          PURPOSE_KEYWORDS, ODataError, OneCService, fmt_account)
 
 STATUS_LABELS = {
@@ -407,7 +407,32 @@ def special_kind(r: BankRow, org_inn: str) -> tuple[str | None, str | None]:
 
 
 def rule_brief(rule: dict) -> dict:
-    return {k: rule[k] for k in ("id", "kind", "match", "account", "operation", "contract_key", "cash_flow_key", "locked")}
+    return {k: rule.get(k) for k in ("id", "kind", "match", "account", "advance_account", "operation", "contract_key",
+                                     "cash_flow_key", "locked")}
+
+
+def advance_for(row: dict) -> str:
+    """Qarz bo'lmasa ishlatiladigan avans schyoti: qoida → 1C tarixi → standart juftlik (40.10→63.10, 60.10→43.10)."""
+    acc = row.get("account") or ""
+    rule, learned = row.get("rule") or {}, row.get("learned") or {}
+    if row.get("account_source") in ("rule", "keyword") and rule.get("account") == acc and rule.get("advance_account"):
+        return rule["advance_account"]
+    if learned.get("account_code") == acc and learned.get("advance_code"):
+        return learned["advance_code"]
+    if rule.get("account") == acc and rule.get("advance_account"):
+        return rule["advance_account"]
+    return ADVANCE_FOR.get(acc, "")
+
+
+def settlement_note(row: dict) -> str:
+    acc, adv = row.get("account"), row.get("advance_account")
+    if not adv:
+        return ""
+    if row.get("kind") == "ehf":
+        return f"💡 1C o'tkazishda: oldin berilgan avans ({adv}) bo'lsa — avtomatik hisobga olinadi, qolgani {acc} qarzi"
+    if row.get("direction") == "kirim":
+        return f"💡 1C o'tkazishda: avval {acc} dagi xaridor qarzi yopiladi, ortgani {adv} (olingan avans)"
+    return f"💡 1C o'tkazishda: avval {acc} dagi qarzimiz yopiladi, ortgani {adv} (berilgan avans)"
 
 
 async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = None,
@@ -476,6 +501,8 @@ def apply_rule(row: dict, hit) -> None:
 
 def finalize_row(row: dict) -> None:
     row["status_label"] = STATUS_LABELS.get(row["status"], row["status"])
+    row["advance_account"] = advance_for(row)
+    row["settlement_note"] = settlement_note(row)
     row["selectable"] = row["status"] == "new" and not row["blockers"] and not row["posted"]
     # "Baribir yozish" faqat farqli yoki raqamsiz-mos (weak) qatorlar uchun — to'liq dublikat hech qachon
     row["overridable"] = (not row["posted"] and not row["blockers"] and
@@ -595,6 +622,9 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
         FIELDS["payment_lines"]: [{
             "LineNumber": "1", FIELDS["contract"]: contract_key, "СуммаПлатежа": row["amount"],
             FIELDS["settlement_account"]: acc_key, FIELDS["cash_flow_item"]: cfi,
+            # qarz bo'lsa — acc_key yopiladi, ortgani avansga; taqsimotni 1C o'tkazishda o'zi qiladi
+            FIELDS["advance_account"]: await advance_key(row, onec),
+            FIELDS["repayment"]: (learned.get("repayment") or REPAYMENT_AUTO) if row.get("advance_account") else None,
         }],
         "Комментарий": f"BUXGALTER AI: vipiskadan qoralama (№{row['number']}, {row['date']}). Tekshirib o'tkazing.",
     }
@@ -605,6 +635,16 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
         payload.setdefault(k, v)
     payload[FIELDS["payment_lines"]][0] = {k: v for k, v in payload[FIELDS["payment_lines"]][0].items() if v is not None}
     return payload
+
+
+async def advance_key(row: dict, onec: OneCService) -> str | None:
+    adv = row.get("advance_account")
+    if not adv:
+        return None
+    learned = row.get("learned") or {}
+    if learned.get("advance_code") == adv and learned.get("advance_key"):
+        return learned["advance_key"]
+    return await onec.account_key(adv)  # 1C hisoblar rejasida topilmasa — None (1C o'z standartini qo'yadi)
 
 
 async def recheck_bank(row: dict, onec: OneCService) -> dict:

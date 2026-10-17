@@ -191,6 +191,10 @@
         <div x-show="noFirms" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm">
           <div class="text-3xl">🏢</div><p class="mt-2">Sizga hali hech qanday firma biriktirilmagan — "Egasi"ga murojaat qiling.</p>
         </div>
+        <div x-show="status.onec && status.onec.ok === false && status.onec.error && mode !== 'rules'" class="rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-sm px-3 py-2"
+             x-text="'🔴 ' + (status.onec?.error || '')"></div>
+        <div x-show="status.onec?.warning && mode !== 'rules'" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs px-3 py-2"
+             x-text="'🟡 ' + (status.onec?.warning || '')"></div>
         <div x-show="snap?.stale" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
           <span>⚠️ 1C sozlamalari tahlildan keyin o'zgargan — yozishdan oldin qayta tekshiring.</span>
           <button @click="recheck()" class="ml-auto text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1">🔄 1C da qayta tekshirish</button>
@@ -260,6 +264,8 @@
                         </template>
                       </select>
                       <div class="mt-1 text-[11px] leading-tight" :class="['history','rule','keyword'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                      <div x-show="r.advance_account && r.status !== 'duplicate'" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400"
+                           :title="r.settlement_note" x-text="'↳ qarz yo\'q bo\'lsa: ' + r.advance_account + ' (avans)'"></div>
                       <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)"
                               class="mt-1 text-[11px] rounded-md border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 hover:bg-violet-50 dark:hover:bg-violet-900/30">💾 Shu kontragent uchun eslab qol</button>
                     </td>
@@ -301,6 +307,7 @@
                       </select>
                     </div>
                     <div class="mt-1 text-[11px]" :class="['history','rule','keyword'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                    <div x-show="r.advance_account && r.status !== 'duplicate'" class="text-[11px] text-slate-500" x-text="'↳ qarz yo\'q bo\'lsa: ' + r.advance_account + ' (avans)'"></div>
                     <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)" class="mt-1 text-[11px] rounded-md border border-violet-300 text-violet-700 px-1.5 py-0.5">💾 Eslab qol</button>
                     <div x-show="r.diffs && r.diffs.length" class="text-[11px] text-rose-600" x-text="(r.diffs || []).join('; ')"></div>
                     <div x-show="r.blockers.length" class="text-[11px] text-rose-600" x-text="'⚠️ ' + (r.blockers[0] || '')"></div>
@@ -378,7 +385,7 @@
               <thead class="text-xs text-slate-500 dark:text-slate-400 text-left bg-slate-50 dark:bg-slate-800/60">
                 <tr>
                   <th class="px-2 py-2">Kontragent / kalit so'z</th><th class="px-2 py-2">Yo'nalish</th>
-                  <th class="px-2 py-2">Schyot</th><th class="px-2 py-2">ВидОперации</th>
+                  <th class="px-2 py-2">Schyot</th><th class="px-2 py-2" title="Qarz bo'lmasa (oldindan to'lov) ishlatiladigan schyot">Avans</th><th class="px-2 py-2">ВидОперации</th>
                   <th class="px-2 py-2 whitespace-nowrap">1C tarixi</th><th class="px-2 py-2">Manba</th>
                   <th class="px-2 py-2 text-center" title="Qat'iy qoida — 1C tarixidan ustun">🔒</th><th class="px-2 py-2"></th>
                 </tr>
@@ -394,6 +401,9 @@
                     <td class="px-2 py-2 align-top text-xs whitespace-nowrap" x-text="{kirim: '⬇️ Kirim', chiqim: '⬆️ Chiqim', '': 'Har ikkisi'}[r.direction]"></td>
                     <td class="px-2 py-2 align-top">
                       <input x-model="r.account" list="acc-list" :disabled="!rulesCanEdit" maxlength="5" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
+                    </td>
+                    <td class="px-2 py-2 align-top">
+                      <input x-model="r.advance_account" list="acc-list" :disabled="!rulesCanEdit" maxlength="5" placeholder="—" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
                     </td>
                     <td class="px-2 py-2 align-top">
                       <input x-model="r.operation" :disabled="!rulesCanEdit" placeholder="(schyotdan)" class="w-44 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs disabled:opacity-70">
@@ -428,7 +438,7 @@
 
           <form x-show="rulesCanEdit" @submit.prevent="addRule()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-3 space-y-2">
             <div class="text-sm font-semibold">➕ Yangi qoida</div>
-            <div class="grid grid-cols-2 xl:grid-cols-[150px_1fr_130px_110px_100px_auto] gap-2 text-sm">
+            <div class="grid grid-cols-2 xl:grid-cols-[150px_1fr_130px_110px_90px_90px_auto] gap-2 text-sm">
               <select x-model="newRule.kind" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
                 <option value="counterparty">🏢 Kontragent</option><option value="keyword">🔤 Kalit so'z</option>
               </select>
@@ -439,7 +449,8 @@
               <select x-model="newRule.doc_kind" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
                 <option value="bank">🏦 Bank</option><option value="ehf">📑 EHF</option>
               </select>
-              <input x-model="newRule.account" list="acc-list" required placeholder="60.10" maxlength="5" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
+              <input x-model="newRule.account" list="acc-list" required placeholder="60.10" maxlength="5" @change="newRule.advance_account = newRule.advance_account || ({'40.10': '63.10', '60.10': '43.10'})[newRule.account] || ''" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
+              <input x-model="newRule.advance_account" list="acc-list" placeholder="avans" title="Qarz bo'lmasa: 63.10 / 43.10" maxlength="5" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
               <button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-3 py-1.5">Qo'shish</button>
             </div>
             <label class="flex items-center gap-2 text-xs"><input type="checkbox" x-model="newRule.locked" class="rounded"> 🔒 Qat'iy qoida (1C tarixidan ustun)</label>
@@ -617,6 +628,11 @@
             </template>
           </div>
 
+          <div x-show="inspect.row.settlement_note" class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 p-3 text-xs space-y-1">
+            <div class="font-semibold">💡 1C da qanday yopiladi</div>
+            <div x-text="inspect.row.settlement_note"></div>
+            <div class="text-slate-500">Qoralamada "Способ погашения задолженности: Автоматически" — taqsimotni 1C hujjatni o'tkazganda kontragentning shu paytdagi qarziga qarab o'zi qiladi.</div>
+          </div>
           <template x-for="b in inspect.row.blockers" :key="b"><div class="text-xs text-rose-600" x-text="'⚠️ ' + b"></div></template>
           <div x-show="inspect.payload_error" class="text-xs text-rose-600" x-text="'⚠️ ' + inspect.payload_error"></div>
 
@@ -876,7 +892,7 @@ function app() {
     pwd: { old: '', new1: '', new2: '' },
     rules: [], rulesSummary: {}, rulesCanEdit: false, rulesFilter: 'all', rulesSearch: '', learnMonths: 12,
     learning: false, learnResult: '', importErrors: [], rulesDirty: false,
-    newRule: { kind: 'counterparty', match: '', direction: 'chiqim', doc_kind: 'bank', account: '', locked: true },
+    newRule: { kind: 'counterparty', match: '', direction: 'chiqim', doc_kind: 'bank', account: '', advance_account: '', locked: true },
 
     get canPost() { return !!(this.me && this.me.can_post); },
 
@@ -1070,7 +1086,7 @@ function app() {
     async loadRules() {
       const res = await this.api('/api/rules');
       if (!res) return;
-      this.rules = res.rules.map(r => ({ ...r, _orig: { account: r.account, operation: r.operation, locked: r.locked } }));
+      this.rules = res.rules.map(r => ({ ...r, _orig: { account: r.account, advance_account: r.advance_account, operation: r.operation, locked: r.locked } }));
       this.rulesSummary = res.summary; this.rulesCanEdit = res.can_edit;
     },
     filteredRules() {
@@ -1084,7 +1100,7 @@ function app() {
         return !q || [r.name, r.match, r.account, r.operation].some(v => (v || '').toLowerCase().includes(q));
       });
     },
-    ruleChanged(r) { return r.account !== r._orig.account || r.operation !== r._orig.operation || r.locked !== r._orig.locked; },
+    ruleChanged(r) { return r.account !== r._orig.account || r.advance_account !== r._orig.advance_account || r.operation !== r._orig.operation || r.locked !== r._orig.locked; },
     ruleSourceLabel(r) {
       return ({ history: '🧠 1C tarixi', manual: '✍️ Buxgalter', correction: '💾 Tuzatishdan', import: '📤 Excel' })[r.source] || r.source;
     },
@@ -1106,9 +1122,9 @@ function app() {
       } finally { this.learning = false; }
     },
     async saveRule(r) {
-      const res = await this.api('/api/rules/' + r.id, { method: 'PUT', json: { account: r.account, operation: r.operation, locked: r.locked } });
+      const res = await this.api('/api/rules/' + r.id, { method: 'PUT', json: { account: r.account, advance_account: r.advance_account, operation: r.operation, locked: r.locked } });
       if (!res) return;
-      Object.assign(r, res, { _orig: { account: res.account, operation: res.operation, locked: res.locked } });
+      Object.assign(r, res, { _orig: { account: res.account, advance_account: res.advance_account, operation: res.operation, locked: res.locked } });
       this.rulesDirty = true; this.toast('💾 Qoida saqlandi', 'ok');
       const s = await this.api('/api/rules'); if (s) this.rulesSummary = s.summary;
     },
@@ -1119,7 +1135,7 @@ function app() {
     async addRule() {
       const res = await this.api('/api/rules', { json: this.newRule });
       if (!res) return;
-      this.newRule = { ...this.newRule, match: '', account: '' };
+      this.newRule = { ...this.newRule, match: '', account: '', advance_account: '' };
       this.rulesDirty = true; this.toast("📚 Qoida qo'shildi", 'ok'); await this.loadRules();
     },
     async exportRules() {
@@ -1282,7 +1298,7 @@ function app() {
     onecBadge() {
       const o = this.status.onec || {};
       if (o.ok === undefined) return '⏳ 1C OData';
-      if (!o.ok) return '🔴 1C OData: ulanmagan';
+      if (!o.ok) return '🔴 ' + (o.label && o.label !== '1C OData' ? o.label : '1C OData: ulanmagan');
       return (o.mode === 'demo' ? '🟡 1C OData (Demo baza)' : '🟢 1C OData');
     },
     aiBadge() { const a = this.status.ai || {}; return a.ok ? (a.provider === 'gemini' ? '🟢 Gemini AI (Bepul)' : '🟢 ' + a.label) : '🟡 Demo AI (kalit yo\'q)'; },

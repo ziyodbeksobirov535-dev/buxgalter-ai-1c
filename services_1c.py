@@ -18,6 +18,7 @@ import asyncio
 import copy
 import json
 import re
+import urllib.parse
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -53,6 +54,8 @@ FIELDS = {
     "cash_flow_item": "СтатьяДвиженияДенежныхСредств_Key",
     "purpose": "НазначениеПлатежа",
     "payment_lines": "РасшифровкаПлатежа",
+    "advance_account": "СчетУчетаРасчетовПоАвансам_Key",  # qarz bo'lmasa — avans schyoti (63.10 / 43.10)
+    "repayment": "СпособПогашенияЗадолженности",          # "Автоматически": 1C o'zi qarz/avansga taqsimlaydi
 }
 
 # Tarixdagi hujjatdan ko'chiriladigan qo'shimcha rekvizitlar (konfiguratsiyada bo'lmasa — shunchaki o'tkazib yuboriladi)
@@ -60,6 +63,11 @@ ACCOUNT_BOUND_FIELDS = ("Налог_Key", "ВидНалоговогоОбяза�
                         "СтатьяРасходов_Key")  # faqat schyot tarixdagidek qolsa
 COMMON_HEADER_FIELDS = ("ВалютаДокумента_Key", "СчетБанк_Key", "СчетУчетаДенежныхСредств_Key", "Ответственный_Key",
                         "Подразделение_Key", "ПодразделениеОрганизации_Key")  # tashkilot darajasida, har doim
+
+# Hisob-kitob schyoti -> avans schyoti (O'zbekiston BHMS 21). 1C to'lovni o'tkazishda avval kontragentning qarzini
+# (40.10 / 60.10) yopadi, ortgan summani avansga (63.10 — olingan, 43.10 — berilgan) o'tkazadi.
+ADVANCE_FOR = {"40.10": "63.10", "60.10": "43.10"}
+REPAYMENT_AUTO = "Автоматически"
 
 # Tarixda topilmasa — standart qoidalar (O'zbekiston BHMS 21 hisoblar rejasi)
 ACCOUNT_CHOICES = ["60.10", "40.10", "64.10", "94.20"]
@@ -256,6 +264,11 @@ class HttpOData:
                                "Dastur sozlamalar o'zgarmaguncha 1C ga qayta urinmaydi (bloklanishdan himoya).")
             raise ODataError(self.auth_error)
         if status == 404:
+            entity = urllib.parse.unquote(r.request.url.path).rstrip("/").rsplit("/", 1)[-1].split("(")[0]
+            if entity.startswith(("Catalog_", "Document_", "ChartOfAccounts_", "AccumulationRegister_",
+                                  "AccountingRegister_", "InformationRegister_")):
+                raise ODataError(f"1C 404: «{entity}» OData tarkibida nashr qilinmagan — 1C da \"Настройка "
+                                 "стандартного интерфейса OData\" orqali shu obyektni nashrga qo'shing")
             raise ODataError("1C 404: manzil topilmadi — baza manzilini yoki OData nashr qilinganini tekshiring")
         if r.is_redirect:
             raise ODataError(f"1C {status}: kutilmagan yo'naltirish → {r.headers.get('location', '')[:200]}")
@@ -440,6 +453,15 @@ class OneCService:
     async def status(self) -> dict:
         try:
             await self.t.ping()
+            if self.mode == "live":
+                meta = await self._cached(("metadata",), self.check_metadata)
+                if meta["published"] == 0:
+                    return {"ok": False, "mode": self.mode, "label": "1C OData: obyektlar nashr qilinmagan",
+                            "error": "1C ga ulanildi (login to'g'ri), lekin OData tarkibida birorta ham obyekt "
+                                     "nashr qilinmagan. " + meta["hint"]}
+                if meta["missing"]:
+                    return {"ok": True, "mode": self.mode, "label": f"1C OData ({len(meta['missing'])} obyekt yetishmaydi)",
+                            "warning": "Nashr qilinmagan: " + ", ".join(meta["missing"]), "missing": meta["missing"]}
             return {"ok": True, "mode": self.mode,
                     "label": "1C OData (Demo baza)" if self.mode == "demo" else "1C OData"}
         except ODataError as e:
@@ -448,9 +470,11 @@ class OneCService:
     async def check_metadata(self) -> dict:
         text = await self.t.metadata_text()
         missing = [e for e in REQUIRED_ENTITIES if f'"{e}"' not in text]
-        return {"ok": not missing, "missing": missing,
-                "hint": "1C Konfigurator → Администрирование → Публикация на веб-сервере / "
-                        "\"Настройка стандартного интерфейса OData\" orqali yetishmayotgan obyektlarni yoqing."
+        return {"ok": not missing, "missing": missing, "published": text.count("<EntitySet ") or text.count("EntitySet Name="),
+                "hint": ("1C da (administrator huquqi bilan): Администрирование → Общие настройки → Интеграция с "
+                         "другими программами → \"Настройка стандартного интерфейса OData\" (yoki Все функции → "
+                         "Обработки → \"Настройка стандартного интерфейса OData\") → kerakli obyektlarni belgilab "
+                         "\"Сохранить\". Bulutli 1C da buni uzcloud qo'llab-quvvatlashi ham qila oladi.")
                 if missing else ""}
 
     # ---- Ref_Key resolution
@@ -610,9 +634,14 @@ class OneCService:
         goods = doc.get("Товары") or []
         if goods and goods[0].get("СтавкаНДС"):
             extra["СтавкаНДС"] = goods[0]["СтавкаНДС"]
+        adv = doc.get(FIELDS["advance_account"])
+        if _is_empty_key(adv):
+            adv = line.get(FIELDS["advance_account"])
+        repayment = line.get(FIELDS["repayment"]) or doc.get(FIELDS["repayment"]) or ""
         return {"operation": doc.get(FIELDS["operation"]), "account_key": None if _is_empty_key(acc) else acc,
                 "contract_key": None if _is_empty_key(contract) else contract,
-                "cash_flow_key": None if _is_empty_key(cfi) else cfi, "extra": extra}
+                "cash_flow_key": None if _is_empty_key(cfi) else cfi, "extra": extra,
+                "advance_key": None if _is_empty_key(adv) else adv, "repayment": repayment}
 
     async def learn_history(self, entity: str, kontr_key: str | None, purpose: str = "", top: int = 5,
                             direction: str = "") -> dict | None:
@@ -640,9 +669,14 @@ class OneCService:
         (op, acc_key), hits = votes.most_common(1)[0]
         best = next(p for p in patterns if (p["operation"], p["account_key"]) == (op, acc_key))
         code = await self.account_code(acc_key)
+        adv_keys = Counter(p["advance_key"] for p in patterns
+                           if p["advance_key"] and (p["operation"], p["account_key"]) == (op, acc_key))
+        adv_code = await self.account_code(adv_keys.most_common(1)[0][0]) if adv_keys else None
         samples = [{"number": d.get(FIELDS["in_number"]) or d.get("Number"), "date": _day(d.get("Date")),
                     "amount": d.get(FIELDS["amount"]), "operation": p["operation"]} for d, p in zip(docs, patterns)]
         return {
+            "advance_key": adv_keys.most_common(1)[0][0] if adv_keys else None, "advance_code": adv_code,
+            "repayment": best["repayment"],
             "source": "history", "basis": basis, "operation": op, "account_key": acc_key, "account_code": code,
             "contract_key": best["contract_key"] if basis == "kontragent" else None,
             "cash_flow_key": best["cash_flow_key"], "extra": best["extra"],
@@ -660,9 +694,59 @@ class OneCService:
             return {k: doc[k] for k in COMMON_HEADER_FIELDS if k in doc and not _is_empty_key(doc[k])}
         return dict(await self._cached(("common", entity), f))
 
+    async def entity_props(self, entity: str) -> dict | None:
+        """$metadata bo'yicha hujjat rekvizitlari: {"header": {...}, "tables": {jadval: {...}}}.
+        Demo yoki $metadata o'qilmasa — None (filtrlanmaydi)."""
+        if self.mode != "live":
+            return None
+
+        async def f():
+            import xml.etree.ElementTree as ET
+            try:
+                root = ET.fromstring(await self.t.metadata_text())
+            except (ODataError, ET.ParseError):
+                return None
+            types = {el.get("Name"): el for el in root.iter() if el.tag.endswith(("EntityType", "ComplexType"))}
+            et = types.get(entity)
+            if et is None:
+                return None
+            header, tables = set(), {}
+            for prop in et:
+                if not prop.tag.endswith("Property"):
+                    continue
+                name, typ = prop.get("Name"), prop.get("Type") or ""
+                header.add(name)
+                if typ.startswith("Collection("):
+                    row_type = types.get(typ[len("Collection("):-1].split(".")[-1])
+                    tables[name] = {p.get("Name") for p in (row_type if row_type is not None else [])
+                                    if p.tag.endswith("Property")}
+            return {"header": header, "tables": tables}
+        return await self._cached(("props", entity), f)
+
+    async def filter_payload(self, entity: str, payload: dict) -> tuple[dict, list[str]]:
+        """Konfiguratsiyada yo'q rekvizitlarni olib tashlash (aks holda 1C butun hujjatni rad etadi)."""
+        props = await self.entity_props(entity)
+        if not props:
+            return payload, []
+        out, dropped = {}, []
+        for k, v in payload.items():
+            if k not in props["header"]:
+                dropped.append(k)
+            elif isinstance(v, list) and k in props["tables"]:
+                cols = props["tables"][k]
+                rows = []
+                for row in v:
+                    dropped += [f"{k}.{c}" for c in row if c not in cols]
+                    rows.append({c: x for c, x in row.items() if c in cols})
+                out[k] = rows
+            else:
+                out[k] = v
+        return out, sorted(set(dropped))
+
     # ---- Qoralama yaratish
     async def create_draft(self, entity: str, payload: dict) -> dict:
         body = {k: v for k, v in payload.items() if v is not None}
+        body, _dropped = await self.filter_payload(entity, body)
         body["Posted"] = False  # HECH QACHON avtomatik o'tkazilmaydi
         body["DeletionMark"] = False
         created = await self.t.create(entity, body)

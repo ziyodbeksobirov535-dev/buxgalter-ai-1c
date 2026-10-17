@@ -105,6 +105,16 @@ Yuqoridagi **📚 Hisob qoidalari** bo'limi (har bir firma uchun alohida):
 - Har bir vipiska qatorida **"nega bu schyot?"** ko'rinadi: 🔒 Qat'iy qoida / 🧠 1C tarixi (3/3) / 🔤 Kalit so'z / 🤖 Standart.
 
 **Ustuvorlik:** 🔒 qat'iy qoida → 🧠 kontragentning 1C tarixi → 🔤 kalit so'z → 🤖 standart taxmin.
+
+**Qarz yoki avans (40.10 / 63.10, 60.10 / 43.10).** Har bir qoida ikki schyotni saqlaydi: qarz bo'yicha
+hisob-kitob schyoti va qarz bo'lmasa ishlatiladigan avans schyoti. Masalan, xaridordan pul tushsa: faktura oldin
+berilgan bo'lsa 40.10 dagi qarz yopiladi, oldindan to'lov bo'lsa 63.10 (olingan avans). Qoralamada
+"Способ погашения задолженности: Автоматически" turadi — taqsimotni 1C hujjatni o'tkazganda kontragentning shu
+paytdagi qarziga qarab o'zi qiladi. Ikkala schyot ham kontragentning 1C tarixidan o'rganiladi.
+
+**Real 1C uchun:** qoralama yuborishdan oldin rekvizitlar 1C ning `$metadata` iga solishtiriladi — konfiguratsiyada
+yo'q maydonlar yuborilmaydi (👁 Tekshirish oynasida ro'yxati ko'rinadi). Hozircha real firmalar uchun **faqat tahlil
+rejimi** yoqilgan — 1C ga hech narsa yozilmaydi.
 Qoidalarni Egasi va Buxgalter tahrirlaydi, Kuzatuvchi faqat ko'radi; har o'zgarish jurnalga yoziladi.
 
 ## 🗄️ Real 1C ga ulanish (OData)
@@ -183,7 +193,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-79 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+83 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel) va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

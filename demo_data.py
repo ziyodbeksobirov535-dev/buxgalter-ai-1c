@@ -38,6 +38,8 @@ ACCOUNTS = {  # 1C Hisoblar rejasi kodi -> nomi (O'zbekiston BHMS 21)
     "6410": "Byudjetga to'lovlar bo'yicha qarz",
     "9420": "Ma'muriy xarajatlar",
     "6990": "Boshqa majburiyatlar",
+    "6310": "Xaridorlardan olingan avanslar",
+    "4310": "Mol yetkazib beruvchilarga berilgan avanslar",
     "5110": "Hisob-kitob schyoti",
 }
 
@@ -143,6 +145,7 @@ def seed_1c() -> dict[str, list[dict]]:
             "ВидДоговора": kind, "DeletionMark": False})
 
     counter = {"n": 100}
+    ADVANCE_DEMO = {"4010": gid("acc", "6310"), "6010": gid("acc", "4310")}
 
     def bank_doc(inn: str, direction: str, d: date | str, number: str, amount: float, purpose: str,
                  posted: bool = True) -> None:
@@ -162,6 +165,8 @@ def seed_1c() -> dict[str, list[dict]]:
             "СтатьяДвиженияДенежныхСредств_Key": cfi_key,
             "РасшифровкаПлатежа": [{"LineNumber": "1", "ДоговорКонтрагента_Key": contract_key, "СуммаПлатежа": amount,
                                     "СчетУчетаРасчетовСКонтрагентом_Key": acc_key,
+                                    "СчетУчетаРасчетовПоАвансам_Key": ADVANCE_DEMO.get(acc_code, ""),
+                                    "СпособПогашенияЗадолженности": "Автоматически",
                                     "СтатьяДвиженияДенежныхСредств_Key": cfi_key}],
             "Комментарий": "Buxgalter tomonidan kiritilgan",
             "ВалютаДокумента_Key": gid("currency", "UZS"), "СчетБанк_Key": gid("acc", "5110"),

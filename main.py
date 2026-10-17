@@ -28,6 +28,8 @@ from services_vipiska import StatementError
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("buxgalter")
 TEMPLATES = config.BASE_DIR / "templates"
+# Sahifa har safar serverdan olinsin — yangilanishdan keyin brauzer eski (xatoli) nusxani ko'rsatmasin
+NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
 
 
 @asynccontextmanager
@@ -86,12 +88,12 @@ async def _didox_error(_r, e):
 # ---------------------------------------------------------------- sahifalar
 @app.get("/", include_in_schema=False)
 async def index():
-    return FileResponse(TEMPLATES / "index.html")
+    return FileResponse(TEMPLATES / "index.html", headers=NO_CACHE)
 
 
 @app.get("/login", include_in_schema=False)
 async def login_page():
-    return FileResponse(TEMPLATES / "login.html")
+    return FileResponse(TEMPLATES / "login.html", headers=NO_CACHE)
 
 
 @app.get("/api/sample")

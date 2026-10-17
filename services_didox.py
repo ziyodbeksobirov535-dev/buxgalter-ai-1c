@@ -13,7 +13,7 @@ from datetime import date
 import httpx
 
 from services_1c import E_PURCHASE, FIELDS, ODataError, OneCService
-from services_vipiska import apply_rule, finalize_row
+from services_vipiska import advance_key, apply_rule, finalize_row
 
 DIDOX_LIST_PATH = "/v1/documents"  # ?owner=0 (kiruvchi) &doctype=002 (hisob-faktura)
 
@@ -161,7 +161,10 @@ async def build_purchase_payload(row: dict, onec: OneCService) -> dict:
         FIELDS["counterparty"]: row["counterparty_key"], FIELDS["contract"]: contract_key,
         FIELDS["amount"]: row["amount"], FIELDS["in_number"]: row["number"],
         FIELDS["in_date"]: f"{row['date']}T00:00:00", FIELDS["settlement_account"]: acc_key,
-        "СуммаВключаетНДС": True, ("Услуги" if row.get("doc_kind") == "Услуги" else "Товары"): lines,
+        "СуммаВключаетНДС": True,
+        FIELDS["advance_account"]: await advance_key(row, onec),
+        "СпособЗачетаАвансов": "Автоматически" if row.get("advance_account") else None,  # berilgan avans hisobga olinsin
+        ("Услуги" if row.get("doc_kind") == "Услуги" else "Товары"): lines,
         "Комментарий": f"BUXGALTER AI: Didox EHF №{row['number']} dan qoralama. Tekshirib o'tkazing.",
     }
 
