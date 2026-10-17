@@ -176,6 +176,19 @@ async def change_password(body: PasswordIn, request: Request, response: Response
     return {"ok": True}
 
 
+class TgFirmIn(BaseModel):
+    firm_id: int
+
+
+@app.post("/api/auth/tg-firm")
+async def telegram_firm(body: TgFirmIn, user: dict = Depends(current_user)):
+    """Mini App'da firma almashsa — bot ham shu firma bilan ishlasin (fayl yuborilganda adashmaslik uchun)."""
+    if not db.user_can_access(user, body.firm_id):
+        raise HTTPException(403, "Bu firmaga kirish huquqingiz yo'q")
+    db.set_telegram_firm(user["id"], body.firm_id)
+    return {"ok": True}
+
+
 @app.post("/api/auth/telegram-code")
 async def telegram_code(user: dict = Depends(current_user)):
     if not config.TELEGRAM_BOT_TOKEN:
@@ -365,6 +378,9 @@ async def inspect_row(row_id: str, mode: str = "vipiska", ctx: FirmCtx = Depends
 
 class PostIn(BaseModel):
     mode: str = "vipiska"
+    # Qatorlar qaysi firmaning jadvalidan olingan. So'rov boshqa firmaga ketsa (firma almashgan, eski oyna,
+    # kechikkan javob) — rad etiladi: bir firmaning to'lovlari boshqa firmaning 1C siga tushmasligi uchun.
+    expected_firm_id: int | None = None
     ids: list[str] = Field(default_factory=list, max_length=500)
     force_ids: list[str] = Field(default_factory=list, max_length=50)
     force_reason: str = Field("", max_length=300)
@@ -373,6 +389,8 @@ class PostIn(BaseModel):
 @app.post("/api/post")
 async def post_to_1c(body: PostIn, ctx: FirmCtx = Depends(firm_ctx)):
     ctx.require_post()
+    if body.expected_firm_id is not None and body.expected_firm_id != ctx.firm_id:
+        raise HTTPException(409, "Firma almashgan — qatorlar boshqa firmaga tegishli. Sahifani yangilang.")
     if not body.ids and not body.force_ids:
         raise HTTPException(400, "Hech qanday qator tanlanmagan")
     if body.force_ids and len(body.force_reason.strip()) < 5:

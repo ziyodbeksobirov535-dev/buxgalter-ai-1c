@@ -135,7 +135,8 @@ class ToolContext:
         blocked = [r for r in rows if (not wanted or r["id"] in wanted) and not r["selectable"] and not r["posted"]]
         if chosen:
             self.cards.append({
-                "type": "confirm_post", "mode": mode, "ids": [r["id"] for r in chosen], "count": len(chosen),
+                "type": "confirm_post", "mode": mode, "firm_id": self.session.firm_id,
+                "ids": [r["id"] for r in chosen], "count": len(chosen),
                 "total": round(sum(r["amount"] for r in chosen), 2),
                 "items": [{"number": r["number"], "counterparty": r["counterparty_name"], "amount": r["amount"],
                            "account": r["account"], "direction": r["direction"]} for r in chosen]})

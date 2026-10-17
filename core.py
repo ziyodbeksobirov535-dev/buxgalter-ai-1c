@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import secrets
 from dataclasses import asdict, dataclass, field
 from datetime import date
 
@@ -28,7 +29,8 @@ class Session:
     didox: list[dict] = field(default_factory=list)
     didox_source: str = ""
     chat: list[dict] = field(default_factory=list)
-    pending: dict | None = None  # Telegram: AI tasdiqlash kartasidagi qatorlar
+    # Telegram tugmalari uchun: token -> aniq qatorlar to'plami (tugma faqat o'zi ko'rsatgan qatorlarni yozadi)
+    batches: dict = field(default_factory=dict)
     analyzed_with: dict = field(default_factory=dict)  # rejim -> qaysi 1C sozlamalari bilan tahlil qilingan
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -141,6 +143,15 @@ def firm_blockers(session: Session, st: Statement) -> list[str]:
     if st.own_inn and firm["inn"] and st.own_inn != firm["inn"]:
         out.append(f"🏢 Vipiska STIR {st.own_inn} ga tegishli, \"{firm['name']}\" firmasi STIR {firm['inn']}")
     return out
+
+
+def remember_batch(session: Session, mode: str, ids: list[str]) -> str:
+    """Tugmaga bog'lanadigan bir martalik token: qaysi qatorlar (va sessiya orqali — qaysi firma)."""
+    token = secrets.token_hex(4)
+    session.batches[token] = {"mode": mode, "ids": list(ids)}
+    while len(session.batches) > 20:
+        session.batches.pop(next(iter(session.batches)))
+    return token
 
 
 def rows_of(session: Session, mode: str) -> list[dict]:

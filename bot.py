@@ -126,11 +126,18 @@ def summary_text(snap: dict, firm: dict, title: str = "🏦 Vipiska tahlili") ->
     return "\n".join(lines)[:4000]
 
 
-def result_keyboard(snap: dict, user: dict, mode: str = "vipiska") -> InlineKeyboardMarkup:
+def post_button(session: core.Session, mode: str, ids: list[str], text: str) -> InlineKeyboardButton:
+    """Tugma aniq firma + aniq qatorlarga bog'lanadi. Firma almashsa yoki yangi vipiska yuklansa ham,
+    eski tugma faqat o'zi ko'rsatgan qatorlarni o'z firmasiga yozadi (yoki eskirgan deb rad etiladi)."""
+    token = core.remember_batch(session, mode, ids)
+    return InlineKeyboardButton(text=text, callback_data=f"post:{session.firm_id}:{token}")
+
+
+def result_keyboard(snap: dict, user: dict, session: core.Session, mode: str = "vipiska") -> InlineKeyboardMarkup:
     rows = []
-    ready = snap["kpis"]["ready"]
-    if ready and user["role"] in auth.CAN_POST:
-        rows.append([InlineKeyboardButton(text=f"✅ Yangilarini 1C ga kiritish ({ready})", callback_data=f"post:{mode}")])
+    ready_ids = [r["id"] for r in snap["rows"] if r["selectable"]]
+    if ready_ids and user["role"] in auth.CAN_POST:
+        rows.append([post_button(session, mode, ready_ids, f"✅ Yangilarini 1C ga kiritish ({len(ready_ids)})")])
     btn = webapp_button("📱 Web App'da ko'rish")
     if btn:
         rows.append([btn])
@@ -251,7 +258,7 @@ async def cb_sample(c: CallbackQuery) -> None:
         snap = await core.load_sample(session)
     except (StatementError, ODataError) as e:
         return await c.message.answer(f"⚠️ {html.escape(str(e))}")
-    await c.message.answer(summary_text(snap, firm), reply_markup=result_keyboard(snap, user))
+    await c.message.answer(summary_text(snap, firm), reply_markup=result_keyboard(snap, user, session))
 
 
 @router.callback_query(F.data == "didox")
@@ -265,7 +272,8 @@ async def cb_didox(c: CallbackQuery) -> None:
         snap = await core.load_didox(session)
     except Exception as e:  # noqa: BLE001
         return await c.message.answer(f"⚠️ {html.escape(str(e))}")
-    await c.message.answer(summary_text(snap, firm, "📑 Didox EHF vs 1C"), reply_markup=result_keyboard(snap, user, "didox"))
+    await c.message.answer(summary_text(snap, firm, "📑 Didox EHF vs 1C"),
+                           reply_markup=result_keyboard(snap, user, session, "didox"))
 
 
 @router.message(F.document)
@@ -285,23 +293,29 @@ async def on_document(m: Message, bot: Bot) -> None:
     except (StatementError, ODataError) as e:
         return await wait.edit_text(f"⚠️ {html.escape(str(e))}")
     db.audit(user["id"], firm["id"], "vipiska_uploaded", file=doc.file_name, rows=len(snap["rows"]), via="telegram")
-    await wait.edit_text(summary_text(snap, firm), reply_markup=result_keyboard(snap, user))
+    await wait.edit_text(summary_text(snap, firm), reply_markup=result_keyboard(snap, user, session))
 
 
 @router.callback_query(F.data.startswith("post:") | (F.data == "confirm"))
 async def cb_post(c: CallbackQuery) -> None:
-    ctx = context_of(c.from_user.id)
-    if not ctx:
+    user = user_of(c.from_user.id)
+    if not user:
         return await c.answer("Ruxsat yo'q", show_alert=True)
-    user, firm, session = ctx
+    parts = (c.data or "").split(":")
+    if len(parts) != 3 or not parts[1].isdigit():  # eski formatdagi (firmasiz) tugma
+        return await c.answer("Bu tugma eskirgan — vipiskani qayta yuboring", show_alert=True)
+    firm_id, token = int(parts[1]), parts[2]
+    if not db.user_can_access(user, firm_id):
+        return await c.answer("Bu firmaga kirish huquqingiz yo'q", show_alert=True)
     if user["role"] not in auth.CAN_POST:
         return await c.answer("\"Kuzatuvchi\" roli 1C ga yoza olmaydi", show_alert=True)
-    if c.data == "confirm" and session.pending:
-        mode, ids = session.pending["mode"], session.pending["ids"]
-        session.pending = None
-    else:
-        mode = c.data.split(":", 1)[1] if ":" in c.data else "vipiska"
-        ids = [r["id"] for r in core.rows_of(session, mode) if r["selectable"]]
+    firm = db.get_firm(firm_id)
+    session = core.get_session(core.session_id(user["id"], firm_id), firm_id)
+    batch = session.batches.pop(token, None)
+    if not batch:
+        return await c.answer("Bu tugma eskirgan yoki allaqachon ishlatilgan — vipiskani qayta yuboring",
+                              show_alert=True)
+    mode, ids = batch["mode"], batch["ids"]
     if not ids:
         return await c.answer("Kiritish uchun yangi qator yo'q", show_alert=True)
     await c.answer("1C ga yozilmoqda…")
@@ -334,9 +348,8 @@ async def on_text(m: Message) -> None:
     kb = []
     for card in res["cards"]:
         if card["type"] == "confirm_post" and user["role"] in auth.CAN_POST:
-            session.pending = {"mode": card["mode"], "ids": card["ids"]}
-            kb.append([InlineKeyboardButton(text=f"✅ Tasdiqlash: {card['count']} ta hujjat ({money(card['total'])})",
-                                            callback_data="confirm")])
+            kb.append([post_button(session, card["mode"], card["ids"],
+                                   f"✅ Tasdiqlash: {card['count']} ta hujjat ({money(card['total'])})")])
     await m.answer(md_to_html(res["reply"]), reply_markup=InlineKeyboardMarkup(inline_keyboard=kb) if kb else None)
 
 

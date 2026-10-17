@@ -84,6 +84,9 @@ Gemini quyidagi vositalarni (tools) chaqiradi: `analyze_and_deduplicate_vipiska(
   tashkiloti va bank hisoblari bilan solishtiriladi. Mos kelmasa — barcha qatorlar bloklanadi va (ruxsatingiz bo'lsa)
   to'g'ri firmaga o'tish taklif qilinadi.
 - Web App va Telegram bir foydalanuvchi + firma uchun bitta umumiy jadvalni ko'radi.
+- 🔗 **Firma almashganda adashmaslik:** Telegram'dagi "✅ Kiritish" tugmalari o'zi ko'rsatgan firma va qatorlarga
+  bog'langan va bir martalik; Web App'da firma almashgandan keyin kelgan eski javoblar ko'rsatilmaydi, server esa
+  boshqa firmaning qatorlarini yozishni rad etadi. Firmaga ruxsat olib tashlansa — ruxsat etilgan firmaga o'tiladi.
 
 ## 🗄️ Real 1C ga ulanish (OData)
 
@@ -159,7 +162,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-60 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+66 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi va boshqa firmaning vipiskasi.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

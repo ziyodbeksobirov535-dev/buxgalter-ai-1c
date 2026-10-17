@@ -425,7 +425,7 @@
       </ul>
       <div class="mt-5 flex justify-end gap-2">
         <button @click="confirmBox=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Bekor qilish</button>
-        <button @click="doPost(confirmBox.ids); confirmBox=null" class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2">Ha, kiritish</button>
+        <button @click="doPost(confirmBox.ids, mode, {}, confirmBox.firm); confirmBox=null" class="rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-2">Ha, kiritish</button>
       </div>
     </div>
   </div>
@@ -755,7 +755,7 @@ function app() {
       this.applyTheme();
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
       if (window.lucide) lucide.createIcons();
-      this.me = await this.api('/api/auth/me');
+      this.me = await this.api('/api/auth/me', { anyFirm: true });
       if (!this.me) return;
       this.firms = this.me.firms;
       if (!this.firms.length) { this.noFirms = true; return; }
@@ -773,7 +773,8 @@ function app() {
       this.firmId = id;
       try { localStorage.setItem('bx_firm', String(id)); } catch (e) {}
       this.data = { vipiska: null, didox: null }; this.selected = { vipiska: [], didox: [] };
-      this.status = { onec: {}, ai: {} }; this.inspect = null; this.mode = 'vipiska';
+      this.status = { onec: {}, ai: {} }; this.inspect = null; this.confirmBox = null; this.mode = 'vipiska';
+      if (this.isTg) this.api('/api/auth/tg-firm', { json: { firm_id: id }, anyFirm: true });  // bot ham shu firmada
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
       await this.loadFirmData();
       const f = this.firms.find(x => x.id === id);
@@ -790,14 +791,17 @@ function app() {
     },
 
     // ---------------- API
-    headers(extra = {}) {
+    headers(extra = {}, firm = this.firmId) {
       const h = { ...extra };
-      if (this.firmId) h['X-Firm-Id'] = String(this.firmId);
+      if (firm) h['X-Firm-Id'] = String(firm);
       if (this.isTg) h['X-Telegram-Init-Data'] = this.tg.initData;
       return h;
     },
     async api(path, opts = {}) {
-      const o = { ...opts, headers: this.headers(opts.headers || {}) };
+      // So'rov qaysi firma uchun yuborilgan bo'lsa — javob ham faqat o'sha firma ko'rinib turganda ko'rsatiladi
+      const firmAtStart = opts.firm ?? this.firmId;
+      const o = { ...opts, headers: this.headers(opts.headers || {}, firmAtStart) };
+      delete o.firm; delete o.anyFirm;
       if (opts.json !== undefined) { o.method = o.method || 'POST'; o.body = JSON.stringify(opts.json); o.headers['Content-Type'] = 'application/json'; delete o.json; }
       try {
         const r = await fetch(path, o);
@@ -805,6 +809,13 @@ function app() {
         if (!r.ok) {
           if (r.status === 401 && !this.isTg) { location.replace('/login'); return null; }
           this.toast('⚠️ ' + (body.detail || ('Xato ' + r.status)), 'error');
+          const detail = body.detail || '';
+          if (r.status === 403 && /firmaga kirish huquqingiz|biriktirilmagan/.test(detail)) await this.handleLostFirm();
+          else if (r.status === 403 && /Kuzatuvchi/.test(detail)) await this.refreshFirms();
+          return null;
+        }
+        if (!opts.anyFirm && firmAtStart !== this.firmId) {
+          this.toast("🏢 Firma almashgani uchun oldingi javob ko'rsatilmadi", 'info');
           return null;
         }
         return body;
@@ -881,17 +892,20 @@ function app() {
       if (!ids.length) return;
       const rows = this.rows.filter(r => ids.includes(r.id));
       const sum = rows.reduce((a, r) => a + r.amount, 0);
-      this.confirmBox = { ids, text: ids.length + " ta yangi hujjat (" + this.fmt(sum) + " so'm) 1C ga qoralama sifatida kiritiladi." };
+      this.confirmBox = { ids, firm: this.snap?.firm_id ?? this.firmId,
+                          text: ids.length + " ta yangi hujjat (" + this.fmt(sum) + " so'm) 1C ga qoralama sifatida kiritiladi." };
     },
     async doForce(id) {
-      const res = await this.doPost([], this.mode, { force_ids: [id], force_reason: this.forceReason.trim() });
+      const res = await this.doPost([], this.mode, { force_ids: [id], force_reason: this.forceReason.trim() }, this.snap?.firm_id);
       if (res) this.inspect = null;
     },
-    async doPost(ids, mode = this.mode, extra = {}) {
+    async doPost(ids, mode = this.mode, extra = {}, firm = this.snap?.firm_id ?? this.firmId) {
       if (this.posting) return null;
+      if (firm !== this.firmId) { this.toast("🏢 Bu qatorlar boshqa firmaga tegishli — yozilmadi", 'error'); return null; }
       this.posting = true;
       try {
-        const res = await this.api('/api/post', { json: { mode, ids, ...extra } });
+        // expected_firm_id: server qatorlar shu firmaniki ekanini tekshiradi
+        const res = await this.api('/api/post', { firm, json: { mode, ids, ...extra, expected_firm_id: firm } });
         if (!res) return null;
         this.setSnap(res);
         const msg = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? ", ⛔ " + res.failed + " ta bloklandi" : '');
@@ -901,7 +915,7 @@ function app() {
       } finally { this.posting = false; }
     },
     async confirmCard(c) {
-      const res = await this.doPost(c.ids, c.mode);
+      const res = await this.doPost(c.ids, c.mode, {}, c.firm_id);
       if (res) {
         c.done = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? " · ⛔ " + res.failed + " ta bloklandi" : '') + ". 1C da tekshirib o'tkazing.";
         this.chat = [...this.chat];
@@ -949,8 +963,16 @@ function app() {
       if (tab === 'audit') this.audit = await this.api('/api/audit?limit=100') || [];
     },
     async refreshFirms() {
-      const me = await this.api('/api/auth/me');
+      const me = await this.api('/api/auth/me', { anyFirm: true });
       if (me) { this.me = me; this.firms = me.firms; this.noFirms = !me.firms.length; }
+    },
+    async handleLostFirm() {
+      // Firma o'chirilgan yoki unga ruxsat olib tashlangan — ruxsat etilgan firmaga o'tamiz
+      await this.refreshFirms();
+      if (this.firms.find(f => f.id === this.firmId)) return;
+      this.data = { vipiska: null, didox: null }; this.selected = { vipiska: [], didox: [] };
+      if (this.firms.length) { this.firmId = null; await this.switchFirm(this.firms[0].id); }
+      else { this.firmId = null; this.noFirms = true; }
     },
     async saveFirm(test) {
       this.onecTest = '';
