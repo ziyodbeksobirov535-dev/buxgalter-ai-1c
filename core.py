@@ -11,7 +11,7 @@ from datetime import date
 
 import config
 import db
-from services_1c import ACCOUNT_CHOICES, ODataError, OneCService, build_service
+from services_1c import ACCOUNT_CHOICES, ODataError, OfflineOData, OneCService, build_service
 from services_didox import analyze_invoices, build_purchase_payload, fetch_invoices, recheck_purchase
 from services_rules import RuleSet
 from services_vipiska import (BankRow, Statement, analyze_statement, build_bank_payload, cash_flow, kpis,
@@ -197,10 +197,12 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     for r in [*db.list_rules(session.firm_id), *rows]:  # firmada ishlatiladigan barcha schyotlar
         if r.get("account") and r["account"] not in choices:
             choices.append(r["account"])
-    stale = bool(rows) and session.analyzed_with.get(mode) not in (None, onec_fingerprint(session.firm_id))
+    analyzed = session.analyzed_with.get(mode) or ""
+    offline = analyzed.startswith(OFFLINE)
+    stale = bool(rows) and not offline and analyzed not in ("", onec_fingerprint(session.firm_id))
     st = session.statement if mode == "vipiska" else None
     return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices,
-            "onec_mode": onec_for(session).mode, "stale": stale, "firm_id": session.firm_id,
+            "onec_mode": onec_for(session).mode, "stale": stale, "offline": offline, "firm_id": session.firm_id,
             "statement_owner": {"inn": st.own_inn, "account": st.own_account, "name": st.own_name} if st else None,
             "is_sample": bool(mode == "vipiska" and session.statement and session.statement.is_sample),
             "warnings": session.statement.warnings if (mode == "vipiska" and session.statement) else []}
@@ -209,10 +211,22 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
 # ---------------------------------------------------------------- vipiska / didox
 async def _analyze_vipiska(session: Session, previous: list[dict] | None = None) -> None:
     onec = onec_for(session)
-    session.vipiska = await analyze_statement(session.statement, onec, previous,
-                                              firm_blockers(session, session.statement), rules_of(session))
-    session.analyzed_with["vipiska"] = onec_fingerprint(session.firm_id)
+    blockers, rules = firm_blockers(session, session.statement), rules_of(session)
+    try:
+        session.vipiska = await analyze_statement(session.statement, onec, previous, blockers, rules)
+        session.analyzed_with["vipiska"] = onec_fingerprint(session.firm_id)
+    except ODataError as e:
+        if onec.mode != "live":
+            raise
+        # Real 1C javob bermadi (masalan, OData'da obyektlar nashr qilinmagan) — ko'rish rejimida tahlil:
+        # schyotlar qoidalar/standart bo'yicha, shartnoma to'lov maqsadidan; hech narsa yozilmaydi.
+        offline = OneCService(OfflineOData(str(e)))
+        session.vipiska = await analyze_statement(session.statement, offline, previous, blockers, rules)
+        session.analyzed_with["vipiska"] = OFFLINE + onec_fingerprint(session.firm_id)
     save_session(session)
+
+
+OFFLINE = "offline:"
 
 
 async def load_statement(session: Session, filename: str, content: bytes, is_sample: bool = False) -> dict:
@@ -279,6 +293,8 @@ async def post(session: Session, mode: str, ids: list[str], force_ids: list[str]
     # FAQAT TAHLIL: real (demo bo'lmagan) 1C ga hozircha hech narsa yozilmaydi — egasining talabi
     if onec_for(session).mode == "live":
         raise ODataError("🔒 Faqat tahlil rejimi: real 1C ga yozish hozircha o'chirilgan (hech narsa o'zgartirilmadi)")
+    if (session.analyzed_with.get(mode) or "").startswith(OFFLINE):
+        raise ODataError("Ko'rish rejimi: vipiska 1C bilan tekshirilmagan — 1C ulangach 🔄 \"1C da qayta tekshirish\" ni bosing")
     if session.analyzed_with.get(mode) != onec_fingerprint(session.firm_id):
         raise ODataError("1C sozlamalari tahlildan keyin o'zgargan — avval 🔄 \"1C da qayta tekshirish\" ni bosing")
     if mode == "vipiska" and session.statement and session.statement.is_sample and onec_for(session).mode == "live":

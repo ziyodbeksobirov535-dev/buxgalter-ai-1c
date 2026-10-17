@@ -23,6 +23,7 @@ STATUS_LABELS = {
     "new": "🟡 Yangi (Kiritishga tayyor)",
     "discrepancy": "🔴 Farq bor (Summa/Sana tafovuti)",
     "posted": "✅ 1C ga qoralama sifatida yozildi",
+    "unchecked": "⚪ 1C da tekshirilmadi (ko'rish rejimi)",
 }
 
 
@@ -393,6 +394,45 @@ def parse_statement(filename: str, content: bytes) -> Statement:
 
 
 # ---------------------------------------------------------------- tahlil
+# ---------------------------------------------------------------- shartnoma raqami (to'lov maqsadidan)
+_KW = r"(?:договор\w*|дог\.?|shartnoma\w*|шартнома\w*|контракт\w*)"
+_NUM = r"(?:№|N_?|N\s|#)?\s*([A-ZА-ЯЁ]?-?\d[\w/-]*)"
+_DATE = r"(\d{2}\.\d{2}\.\d{4})"
+_SONLI = r"(?:\s*-?\s*(?:сонли|sonli|сон|son))?"
+CONTRACT_PATTERNS = [
+    # 11.10.2026 yildagi 398 shartnomaga / 11.10.2026ЙИЛДАГИ №399 СОНЛИ ШАРТНОМАГА / 11.09.2026 yildagi 240 sonli shartnoma
+    re.compile(_DATE + r"\s*(?:й|y)\w*\s*" + _NUM + _SONLI + r"\s*" + _KW, re.IGNORECASE),
+    # дог№50 от 10.09.2026 / Договор 439 от 16.10.2026 / Shartnoma № A-12/3 dan 01.02.2026 / Shartnoma N_434
+    re.compile(_KW + r"\s*" + _NUM + r"(?:\s*(?:от|dan|дан)\s*" + _DATE + r")?", re.IGNORECASE),
+    # №440 шартномага / 17-sonli shartnoma / 05/26-sonli shartnoma
+    re.compile(r"(?:№\s*)?(\d[\w/]*)" + _SONLI + r"\s*" + _KW, re.IGNORECASE),
+]
+
+
+def extract_contract(purpose: str) -> dict | None:
+    """To'lov maqsadidagi shartnoma: {"number": "398", "date": "2026-10-11" | None, "text": topilgan qism}."""
+    text = " ".join(str(purpose or "").split())
+    for i, pat in enumerate(CONTRACT_PATTERNS):
+        m = pat.search(text)
+        if not m:
+            continue
+        if i == 0:
+            raw_date, number = m.group(1), m.group(2)
+        elif i == 1:
+            number, raw_date = m.group(1), m.group(2)
+            if not raw_date:  # "15.10.2026yil Shartnoma N_434" — sana kalit so'zdan oldin
+                before = re.search(_DATE + r"\s*(?:й|y)\w*\s*$", text[:m.start()], re.IGNORECASE)
+                raw_date = before.group(1) if before else None
+        else:
+            number, raw_date = m.group(1), None
+        number = number.strip(".,;:-")
+        if not number or not re.search(r"\d", number) or len(number) > 20:
+            continue
+        d = parse_date(raw_date) if raw_date else None
+        return {"number": number, "date": d.isoformat() if d else None, "text": m.group(0)}
+    return None
+
+
 TAX_INNS = {"201122919"}  # Moliya vazirligi huzuridagi G'aznachilik (soliq to'lovlari)
 TAX_NAME = re.compile(r"молия вазирлиги|moliya vazirligi|ғазна|газна|g'azna|gazna|казначейств|\bдси\b|\bdsi\b|"
                       r"солиқ|soliq|налогов", re.IGNORECASE)
@@ -440,6 +480,23 @@ def special_kind(r: BankRow, org_inn: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+async def resolve_contract(row: dict, onec: OneCService) -> dict:
+    """Qaysi shartnoma: to'lov maqsadida raqam bo'lsa — aynan o'sha (1C dan), aks holda keyinroq tarixdan/standart."""
+    ref = row.get("contract_ref")
+    if not ref:
+        return {"key": None, "source": None, "label": ""}
+    when = f" ({ref['date'][8:10]}.{ref['date'][5:7]}.{ref['date'][:4]})" if ref.get("date") else ""
+    if not row.get("counterparty_key"):
+        return {"key": None, "source": "unchecked", "label": f"📄 Shartnoma №{ref['number']}{when} — 1C da tekshirilmadi"}
+    contract = await onec.find_contract_by_ref(row["counterparty_key"], ref["number"], ref.get("date"))
+    if contract:
+        return {"key": contract["Ref_Key"], "source": "purpose", "name": contract.get("Description", ""),
+                "label": f"📄 Shartnoma №{ref['number']}{when} — 1C da topildi ✓"}
+    return {"key": None, "source": "missing", "label": f"⚠️ Shartnoma №{ref['number']}{when} 1C da topilmadi",
+            "blocker": f"📄 To'lov maqsadidagi shartnoma №{ref['number']}{when} bu kontragent uchun 1C da topilmadi — "
+                       "1C da shartnomani yarating yoki raqamini tekshiring (noto'g'ri shartnomaga yozilmasligi uchun)"}
+
+
 def rule_brief(rule: dict) -> dict:
     return {k: rule.get(k) for k in ("id", "kind", "match", "account", "advance_account", "operation", "contract_key",
                                      "cash_flow_key", "locked")}
@@ -483,6 +540,8 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     row["counterparty_1c_name"] = kontr.get("Description") if kontr else None
     if blocker:
         row["blockers"].append(blocker)
+    elif not kontr and onec.mode == "offline":
+        pass  # ko'rish rejimi: kontragent 1C da qidirilmadi (umumiy "tekshirilmadi" belgisi yetarli)
     elif not kontr and kind == "bank_fee":
         row["blockers"].append("🏦 Bank xizmat haqi — firmaning o'zi 1C \"Контрагенты\" da yo'q; 1C da bankni kontragent "
                                "qilib (Прочее списание, 94.20) kiriting")
@@ -495,8 +554,16 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     else:
         dup = await onec.check_duplicate(entity, r.number, r.date, r.amount, row["counterparty_key"],
                                          posted=r.posted_date)
+    if onec.mode == "offline":
+        dup = {"status": "unchecked", "kind": "none", "reason": "1C ga ulanib bo'lmadi — dublikat tekshirilmadi",
+               "match": None, "diffs": []}
     row.update(status=dup["status"], status_reason=dup["reason"], match=dup["match"], diffs=dup["diffs"],
                dup_kind=dup.get("kind"))
+
+    row["contract_ref"] = extract_contract(r.purpose)
+    row["contract"] = await resolve_contract(row, onec)
+    if row["contract"].get("blocker"):
+        row["blockers"].append(row["contract"]["blocker"])
 
     if dup["status"] != "duplicate" or dup.get("kind") == "weak":
         row["learned"] = await onec.learn_history(entity, row["counterparty_key"], r.purpose, direction=r.direction)
@@ -524,8 +591,24 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         row["operation"] = operation_for(row["account"], r.direction)
     if prev and prev.get("posted"):
         row.update(posted=True, posted_ref=prev["posted_ref"], posted_number=prev["posted_number"], status="posted")
+    if not row["contract"].get("source") and row.get("counterparty_key") and row["status"] != "duplicate":
+        row["contract"] = await fallback_contract(row, onec)
     finalize_row(row)
     return row
+
+
+async def fallback_contract(row: dict, onec: OneCService) -> dict:
+    """To'lov maqsadida raqam yo'q: 1C tarixidagi shartnoma, bo'lmasa shu turdagi birinchi shartnoma."""
+    from services_1c import E_CONTRACT
+    key = (row.get("learned") or {}).get("contract_key") or (row.get("rule") or {}).get("contract_key")
+    if key:
+        name = await onec.ref_description(E_CONTRACT, key) or "shartnoma"
+        return {"key": key, "source": "history", "name": name, "label": f"📄 {name} — 1C tarixidan"}
+    contract = await onec.find_contract(row["counterparty_key"], row["direction"])
+    if contract:
+        return {"key": contract["Ref_Key"], "source": "default", "name": contract.get("Description", ""),
+                "label": f"📄 {contract.get('Description', '')} — birinchi mos shartnoma (tekshiring)"}
+    return {"key": None, "source": "none", "label": "📄 Shartnoma 1C da yo'q"}
 
 
 def apply_rule(row: dict, hit) -> None:
@@ -572,6 +655,11 @@ async def analyze_statement(st: Statement, onec: OneCService, previous: list[dic
         extra.append("🧪 Test (namuna) vipiska — haqiqiy 1C ga yozilmaydi")
     if st.currency_code not in ("", "000"):
         extra.append(f"💱 Valyuta hisobi (kod {st.currency_code}) — hozircha faqat so'm (UZS) hisoblari yoziladi")
+    if onec.mode == "offline":  # 1C ga ulanib bo'lmadi — faqat ko'rish (schyot: qoidalar/standart)
+        extra.append("⚪ 1C bilan tekshirilmadi — ko'rish rejimi (1C ulangach qayta tekshiring)")
+        extra.extend(firm_blockers or [])
+        return list(await asyncio.gather(*(analyze_bank_row(r, onec, prev.get(r.id), f, extra, st.own_inn, rules)
+                                           for r, f in zip(st.rows, flags))))
     org = await onec.organization()
     org_inn = str((org or {}).get(FIELDS["inn"], "") or "")
     if not org:
@@ -637,7 +725,9 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
         raise ODataError(f"{row['account']} schyoti 1C hisoblar rejasida topilmadi")
     rule = row.get("rule") or {}
     rule_fits = rule.get("account") == row["account"]
-    contract_key = learned.get("contract_key") or (rule.get("contract_key") if rule_fits else None) or None
+    # 1) to'lov maqsadidagi shartnoma (1C da topilgan) → 2) 1C tarixi / qoida → 3) shu turdagi birinchi shartnoma
+    contract_key = ((row.get("contract") or {}).get("key") or learned.get("contract_key")
+                    or (rule.get("contract_key") if rule_fits else None) or None)
     if not contract_key:
         contract = await onec.find_contract(row["counterparty_key"], row["direction"])
         contract_key = contract["Ref_Key"] if contract else None

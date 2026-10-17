@@ -37,6 +37,15 @@ tugmasi orqali ham olish mumkin.
 soliq to'lovlari (G'aznachilik, DSI) 64.10, bank xizmat haqi ("За документ №…") 94.20 deb taniladi;
 vipiska egasi (sarlavhadagi hisob nomi) bo'yicha to'g'ri firma taklif qilinadi.
 
+**Shartnoma to'lov maqsadidan:** "дог№50 от 10.09.2026", "11.10.2026 yildagi 398 shartnomaga", "Shartnoma N_434",
+"№440 шартномага", "17-sonli shartnoma" kabi yozuvlardan raqam va sana olinadi va 1C dan aynan shu kontragentning
+o'sha shartnomasi qidiriladi. Topilmasa — qator bloklanadi (noto'g'ri shartnomaga yozilmasligi uchun). Raqam
+bo'lmasa — 1C tarixidagi shartnoma, bo'lmasa shu turdagi birinchi shartnoma (⚠️ "tekshiring" belgisi bilan).
+
+**Ko'rish rejimi:** real 1C javob bermasa (masalan, OData'da obyektlar hali nashr qilinmagan) vipiska baribir
+ko'rsatiladi — schyotlar qoidalar/standart bo'yicha, shartnoma to'lov maqsadidan, "⚪ 1C da tekshirilmadi" belgisi
+bilan; yozish imkonsiz. 1C ulangach "🔄 1C da qayta tekshirish".
+
 ### Namuna vipiska — sinov stsenariysi (8 qator)
 
 | # | Holat | Nima tekshiriladi |
@@ -199,7 +208,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-86 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+106 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel) va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

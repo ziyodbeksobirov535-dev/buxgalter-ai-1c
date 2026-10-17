@@ -332,6 +332,29 @@ class HttpOData:
         return (await self._send("GET", f"{self.base}/$metadata")).text
 
 
+class OfflineOData:
+    """1C ga ulanib bo'lmaganda — ko'rish rejimi: hech qanday so'rov yuborilmaydi, hech narsa topilmaydi."""
+    mode = "offline"
+
+    def __init__(self, reason: str = ""):
+        self.reason = reason
+
+    async def query(self, *a, **kw) -> list[dict]:
+        return []
+
+    async def get(self, *a, **kw) -> dict | None:
+        return None
+
+    async def create(self, *a, **kw) -> dict:
+        raise ODataError("Ko'rish rejimi: 1C ga ulanmagan — yozib bo'lmaydi")
+
+    async def ping(self) -> bool:
+        raise ODataError(self.reason or "1C ga ulanmagan")
+
+    async def metadata_text(self) -> str:
+        return ""
+
+
 class DemoOData:
     """Xotiradagi 1C bazasi — real OData filter semantikasini takrorlaydi."""
     mode = "demo"
@@ -509,6 +532,25 @@ class OneCService:
                     return r
             return rows[0] if rows else None
         return await self._cached(("contract", kontr_key, direction), f)
+
+    async def find_contract_by_ref(self, kontr_key: str, number: str, on_date: str | None = None) -> dict | None:
+        """To'lov maqsadidagi shartnoma raqami bo'yicha aynan shu kontragentning shartnomasi.
+        Raqam "Номер" rekvizitidan, bo'lmasa nomidan ("Shartnoma №398 …") qidiriladi; bir nechta bo'lsa — sanasi mosi."""
+        def norm(v: str) -> str:
+            return re.sub(r"[\s№#]|^n_?", "", str(v or "").lower()).lstrip("0") or "0"
+
+        async def f():
+            rows = await self._q(E_CONTRACT, [Cond("Owner_Key", "eq", Guid(kontr_key)),
+                                              Cond("DeletionMark", "eq", False)], top=200)
+            want = norm(number)
+            hits = [r for r in rows if norm(r.get("Номер")) == want or
+                    re.search(r"(?:№|N_?|\b)\s*0*" + re.escape(number.lstrip("0") or "0") + r"(?![\w/])",
+                              str(r.get("Description") or ""), re.IGNORECASE)]
+            if on_date:
+                dated = [r for r in hits if str(r.get("Дата") or "")[:10] == on_date]
+                hits = dated or hits
+            return hits[0] if hits else None
+        return await self._cached(("contract_ref", kontr_key, number, on_date), f)
 
     async def find_bank_account(self, owner_key: str, owner_entity: str, account_no: str | None) -> dict | None:
         async def f():

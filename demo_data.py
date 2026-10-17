@@ -50,6 +50,10 @@ CASH_FLOW_ITEMS = {
     "bank": "Прочие расходы (комиссия банка)",
 }
 
+# Demo shartnoma raqamlari — namuna vipiskadagi to'lov maqsadlariga mos ("17-sonli shartnoma" …)
+CONTRACT_NUMBERS = {"301234567": "17", "302345678": "8", "303456789": "05/26", "306789012": "11", "304567890": "23",
+                    "305678901": "14"}
+
 ROLE_PATTERN = {  # rol -> (ВидОперации chiqim, ВидОперации kirim, schyot, СтатьяДДС)
     "supplier": ("ОплатаПоставщику", "ВозвратДенежныхСредствПоставщиком", "6010", "supplier"),
     "buyer": ("ВозвратДенежныхСредствПокупателю", "ОплатаОтПокупателя", "4010", "buyer"),
@@ -140,9 +144,10 @@ def seed_1c() -> dict[str, list[dict]]:
             "Ref_Key": gid("bank", acc), "Owner": k, "Owner_Type": "StandardODATA.Catalog_Контрагенты",
             "НомерСчета": acc, "Description": f"{name} ({mfo})", "DeletionMark": False})
         kind = {"supplier": "СПоставщиком", "buyer": "СПокупателем"}.get(role, "Прочее")
+        number = CONTRACT_NUMBERS.get(inn, "1")
         db["Catalog_ДоговорыКонтрагентов"].append({
-            "Ref_Key": gid("contract", inn), "Owner_Key": k, "Description": f"Asosiy shartnoma ({name})",
-            "ВидДоговора": kind, "DeletionMark": False})
+            "Ref_Key": gid("contract", inn), "Owner_Key": k, "Description": f"Shartnoma №{number} ({name})",
+            "Номер": number, "Дата": "2026-01-10T00:00:00", "ВидДоговора": kind, "DeletionMark": False})
 
     counter = {"n": 100}
     ADVANCE_DEMO = {"4010": gid("acc", "6310"), "6010": gid("acc", "4310")}

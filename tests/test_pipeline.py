@@ -144,3 +144,29 @@ def test_failed_analysis_keeps_previous_statement(monkeypatch):
     with pytest.raises(ODataError):
         run(core.load_statement(s, "boshqa.csv", "Sana;Hujjat №;Debet;Kredit;Kontragent;STIR;Maqsad\n16.10.2026;1;5;;A;301234567;x\n".encode()))
     assert (s.statement.source, len(s.vipiska)) == before  # yarim yuklangan vipiska qolmadi
+
+
+class Unpublished(DemoOData):
+    """Real 1C: login to'g'ri, lekin OData'da obyektlar nashr qilinmagan — har so'rov 404."""
+    mode = "live"
+
+    async def query(self, entity, *a, **kw):
+        raise ODataError(f"1C 404: «{entity}» OData tarkibida nashr qilinmagan")
+
+
+def test_offline_preview_when_1c_objects_unpublished(monkeypatch):
+    live = OneCService(Unpublished())
+    monkeypatch.setattr(core, "get_onec", lambda *a: live)
+    csv = ("Sana;Hujjat №;Debet;Kredit;Kontragent;STIR;To'lov maqsadi\n"
+           "15.10.2026;16;945 000,00;;Ўзбекистон Республикаси Молия вазирлиги;201122919;Ижтимоий солиқ учун тўлов\n"
+           "16.10.2026;398;;90 000 000,00;TEST MCHJ;300000011;11.10.2026 yildagi 398 shartnomaga asosan\n").encode()
+    s = core.get_session("off", DEMO_FIRM)
+    snap = run(core.load_statement(s, "v.csv", csv))
+    assert snap["offline"] and not snap["stale"] and snap["kpis"]["ready"] == 0
+    tax, sale = snap["rows"]
+    assert tax["status"] == "unchecked" and tax["account"] == "64.10"
+    assert sale["account"] == "40.10" and sale["advance_account"] == "63.10"
+    assert "№398" in sale["contract"]["label"] and "tekshirilmadi" in sale["contract"]["label"]
+    assert not any("Kontragent 1C da topilmadi" in b for b in sale["blockers"])  # chalg'ituvchi xabar yo'q
+    with pytest.raises(ODataError, match="Ko'rish rejimi|Faqat tahlil"):
+        run(core.post(s, "vipiska", [sale["id"]]))

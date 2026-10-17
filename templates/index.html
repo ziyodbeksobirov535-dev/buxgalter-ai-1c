@@ -195,6 +195,9 @@
              x-text="'🔴 ' + (status.onec?.error || '')"></div>
         <div x-show="status.onec?.warning && mode !== 'rules'" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs px-3 py-2"
              x-text="'🟡 ' + (status.onec?.warning || '')"></div>
+        <div x-show="snap?.offline" class="rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm px-3 py-2">
+          ⚪ <b>Ko'rish rejimi:</b> 1C ga ulanib bo'lmadi — dublikat va kontragentlar 1C bilan tekshirilmadi. Schyotlar qoidalar va standart bo'yicha, shartnomalar to'lov maqsadidan ko'rsatilmoqda. 1C ulangach «🔄 1C da qayta tekshirish» ni bosing.
+        </div>
         <div x-show="snap?.stale" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2 flex flex-wrap items-center gap-2">
           <span>⚠️ 1C sozlamalari tahlildan keyin o'zgargan — yozishdan oldin qayta tekshiring.</span>
           <button @click="recheck()" class="ml-auto text-xs rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1">🔄 1C da qayta tekshirish</button>
@@ -249,6 +252,8 @@
                       <div class="font-medium truncate" :title="r.counterparty_name" x-text="r.counterparty_name"></div>
                       <div class="text-xs text-slate-500 num" x-text="'STIR ' + (r.counterparty_inn || '—')"></div>
                       <div class="2xl:hidden mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1" :title="r.purpose" x-text="'💬 ' + r.purpose"></div>
+                      <div x-show="r.contract?.label" class="mt-0.5 text-[11px] line-clamp-1" :title="r.contract?.name || r.contract?.label"
+                           :class="contractClass(r.contract)" x-text="r.contract?.label"></div>
                       <div x-show="r.blockers.length" class="text-xs text-rose-600 dark:text-rose-400" x-text="'⚠️ ' + (r.blockers[0] || '')"></div>
                     </td>
                     <td class="px-2 py-2.5 align-top whitespace-nowrap">
@@ -301,6 +306,7 @@
                     </div>
                     <div class="text-xs text-slate-500 num" x-text="fmtDate(r.date) + ' · № ' + r.number + ' · STIR ' + (r.counterparty_inn || '—')"></div>
                     <div class="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-2" x-text="r.purpose"></div>
+                    <div x-show="r.contract?.label" class="text-[11px]" :class="contractClass(r.contract)" x-text="r.contract?.label"></div>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                       <span class="text-[11px] font-medium px-2 py-0.5 rounded-lg" :class="statusClass(r.status)" x-text="r.status_label"></span>
                       <select class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
@@ -629,6 +635,12 @@
             </template>
           </div>
 
+          <div x-show="inspect.row.contract?.label" class="text-xs">
+            <div class="font-semibold mb-1">📄 Shartnoma</div>
+            <div :class="contractClass(inspect.row.contract)" x-text="inspect.row.contract?.label"></div>
+            <div x-show="inspect.row.contract?.name" class="text-slate-500" x-text="'1C dagi: ' + (inspect.row.contract?.name || '')"></div>
+            <div x-show="inspect.row.contract_ref" class="text-slate-500" x-text="'To\'lov maqsadidan: «' + (inspect.row.contract_ref?.text || '') + '»'"></div>
+          </div>
           <div x-show="inspect.row.settlement_note" class="rounded-xl bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900 p-3 text-xs space-y-1">
             <div class="font-semibold">💡 1C da qanday yopiladi</div>
             <div x-text="inspect.row.settlement_note"></div>
@@ -1308,11 +1320,19 @@ function app() {
       if (ok === false && !warn) return 'border-rose-300 bg-rose-50 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800';
       return 'border-amber-300/70 bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800';
     },
+    contractClass(c) {
+      const src = c?.source;
+      if (src === 'purpose') return 'text-emerald-700 dark:text-emerald-400';
+      if (src === 'missing') return 'text-rose-600 dark:text-rose-400 font-medium';
+      if (src === 'default') return 'text-amber-700 dark:text-amber-400';
+      return 'text-slate-500 dark:text-slate-400';
+    },
     statusClass(s) {
       return { duplicate: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
                new: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
                discrepancy: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
-               posted: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300' }[s] || '';
+               posted: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
+               unchecked: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' }[s] || '';
     },
     rowClass(r) {
       if (r.status === 'duplicate') return 'bg-slate-50/70 dark:bg-slate-800/30 text-slate-400 dark:text-slate-500';
