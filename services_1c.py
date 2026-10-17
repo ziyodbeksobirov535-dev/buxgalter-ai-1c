@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -148,19 +149,46 @@ class HttpOData:
         self.client = httpx.AsyncClient(auth=(user, password) if user else None, timeout=timeout,
                                         headers={"Accept": "application/json"})
 
+    @staticmethod
+    def _effective_status(r: httpx.Response) -> int:
+        """Bulutli 1C (masalan uzcloud) nginx'i 401/404 ni /availability/ sahifasiga 301 bilan yo'naltiradi."""
+        if not r.is_redirect:
+            return r.status_code
+        if r.headers.get("www-authenticate"):
+            return 401
+        m = re.search(r"[?&]code=(\d{3})", r.headers.get("location", ""))
+        return int(m.group(1)) if m else r.status_code
+
+    def _raise_for(self, r: httpx.Response, status: int) -> None:
+        if status == 401:
+            raise ODataError("1C 401: login yoki parol noto'g'ri (yoki kiritilmagan), yoki bu foydalanuvchiga "
+                             "OData huquqi berilmagan")
+        if status == 404:
+            raise ODataError("1C 404: manzil topilmadi — baza manzilini yoki OData nashr qilinganini tekshiring")
+        if r.is_redirect:
+            raise ODataError(f"1C {status}: kutilmagan yo'naltirish → {r.headers.get('location', '')[:200]}")
+        msg = r.text[:500]
+        try:
+            msg = r.json().get("odata.error", {}).get("message", {}).get("value", msg)
+        except Exception:
+            pass
+        raise ODataError(f"1C OData xatosi {status}: {msg}")
+
     async def _request(self, method: str, path: str, **kw) -> Any:
         try:
             r = await self.client.request(method, f"{self.base}/{path}", **kw)
         except httpx.HTTPError as e:
             raise ODataError(f"1C serveriga ulanib bo'lmadi: {e}") from e
-        if r.status_code >= 400:
-            msg = r.text[:500]
-            try:
-                msg = r.json().get("odata.error", {}).get("message", {}).get("value", msg)
-            except Exception:
-                pass
-            raise ODataError(f"1C OData xatosi {r.status_code}: {msg}")
-        return r.json() if r.content else {}
+        status = self._effective_status(r)
+        if status >= 300:
+            self._raise_for(r, status)
+        if not r.content:
+            return {}
+        try:
+            return r.json()
+        except ValueError:
+            raise ODataError("1C JSON o'rniga boshqa javob qaytardi — manzil OData'ga "
+                             "(…/odata/standard.odata) ishora qilayotganini tekshiring") from None
 
     async def query(self, entity: str, conds: list[Cond] | None = None, top: int | None = None,
                     orderby: str | None = None, select: list[str] | None = None) -> list[dict]:
@@ -196,8 +224,9 @@ class HttpOData:
             r = await self.client.get(f"{self.base}/$metadata")
         except httpx.HTTPError as e:
             raise ODataError(str(e)) from e
-        if r.status_code >= 400:
-            raise ODataError(f"$metadata {r.status_code}")
+        status = self._effective_status(r)
+        if status >= 300:
+            self._raise_for(r, status)
         return r.text
 
 
