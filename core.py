@@ -313,7 +313,7 @@ async def _analyze_vipiska(session: Session, previous: list[dict] | None = None)
 OFFLINE = "offline:"
 FILES = "files:"
 # Tahlil qoidalari o'zgarganda oshiriladi — eski tahlil qilingan jadvalda "qayta tekshiring" ogohlantirishi chiqadi
-ANALYSIS_VERSION = "2026-10-18.4"
+ANALYSIS_VERSION = "2026-10-18.5"
 
 
 async def load_statement(session: Session, filename: str, content: bytes, is_sample: bool = False) -> dict:

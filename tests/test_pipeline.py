@@ -209,3 +209,11 @@ def test_clear_statement_and_outdated_analysis_flag():
     cleared = run(core.clear_statement(s))
     assert cleared["rows"] == [] and cleared["period"] is None and s.statement is None
     assert core._load_session("clr", DEMO_FIRM).statement is None  # diskda ham tozalangan
+
+
+def test_blocked_new_row_is_not_labelled_ready():
+    from services_vipiska import finalize_row
+    row = {"status": "new", "blockers": ["Kontragent 1C da topilmadi"], "missing_counterparty": True, "posted": False,
+           "account": "40.10", "account_source": "rules", "kind": "bank", "direction": "kirim"}
+    finalize_row(row)
+    assert row["status_label"].startswith("⛔") and not row["selectable"]

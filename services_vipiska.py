@@ -770,6 +770,10 @@ def apply_rule(row: dict, hit) -> None:
 
 def finalize_row(row: dict) -> None:
     row["status_label"] = STATUS_LABELS.get(row["status"], row["status"])
+    if row["status"] in ("new", "unchecked") and row.get("blockers") and not row.get("posted"):
+        # "kiritishga tayyor" emas — avval to'siqni hal qilish kerak (masalan, kontragentni 1C ga qo'shish)
+        row["status_label"] = ("⛔ To'siq: kontragent 1C da yo'q" if row.get("missing_counterparty")
+                               else "⛔ To'siq bor (qo'lda ko'rib chiqing)")
     row["advance_account"] = advance_for(row)
     row["settlement_note"] = settlement_note(row)
     row["selectable"] = row["status"] == "new" and not row["blockers"] and not row["posted"]
