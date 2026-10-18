@@ -193,14 +193,15 @@ async def build(session, onec: OneCService, status: dict, today: date | None = N
     statement = statement_info(st, session.vipiska)
     connected = onec.mode in ("live", "demo", "file") and status.get("ok")
 
-    balance_now = balance_at_last = None
+    balance_now = balance_at_last = last_entry = None
     days: list[dict] = []
     debt = None
     if connected:
         own = st.own_account if st else ""
         at_last = _end_of(date.fromisoformat(statement["last_date"])) if statement else None
         since = min(_monday(today) - timedelta(weeks=WEEKS - 1), today.replace(day=1))
-        balance_now, balance_at_last, days, debt = await asyncio.gather(
+        last_entry, balance_now, balance_at_last, days, debt = await asyncio.gather(
+            _safe(onec.last_bank_date(), None, errors, "oxirgi bank hujjati"),
             _safe(bank_balance(onec, _end_of(today), own), None, errors, "51.10 qoldig'i"),
             _safe(bank_balance(onec, at_last, own), None, errors, "sverka") if at_last else asyncio.sleep(0, None),
             _safe(onec.bank_flows(since, today), [], errors, "aylanma"),
@@ -209,11 +210,18 @@ async def build(session, onec: OneCService, status: dict, today: date | None = N
     if not days:
         days = statement_days(st)
     hero_value = balance_now if balance_now is not None else (statement or {}).get("closing")
+    onec_info = None
+    if balance_now is not None:
+        # 1C dagi 51.10 — bugungi holat emas: 1C ga oxirgi kiritilgan bank hujjati kunigacha bo'lgan holat
+        behind = (today - last_entry).days if last_entry else None
+        newer = bool(statement and last_entry and statement["last_date"] > last_entry.isoformat())
+        onec_info = {"value": balance_now, "last_entry": last_entry.isoformat() if last_entry else None,
+                     "days_behind": behind, "statement_newer": newer}
     return {
         "today": today.isoformat(), "onec_mode": onec.mode, "connected": bool(connected), "status": status,
         "balance": {"value": hero_value, "source": "1c" if balance_now is not None else
                     ("statement" if hero_value is not None else "none"),
-                    "statement": statement, "sverka": sverka(statement, balance_at_last)},
+                    "onec": onec_info, "statement": statement, "sverka": sverka(statement, balance_at_last)},
         "month": _month(days, today), "weeks": _weekly(days, today), "flow_source": flow_source,
         "debts": debt, "todo": todo(session.vipiska, session.didox, session.firm_id),
         "errors": errors[:5],

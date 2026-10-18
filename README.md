@@ -73,7 +73,9 @@ Bu ikki marta kiritish imkonsizligini isbotlaydi.
 Manzil sahifani eslab qoladi (`#/home`, `#/bank`, `#/didox`, `#/stock`, `#/rules`, `#/settings`) — yangilansa ham
 joyida qoladi, Telegram'dan to'g'ridan-to'g'ri kerakli sahifani ochish mumkin.
 
-- **🏠 Bosh sahifa** — **51.10 qoldig'i** (1C provodkalaridan; 1C yo'q bo'lsa — vipiskaning yakuniy qoldig'i);
+- **🏠 Bosh sahifa** — **51.10 qoldig'i** (1C provodkalaridan; 1C yo'q bo'lsa — vipiskaning yakuniy qoldig'i).
+  1C dagi qoldiq bugungi emas — **1C ga oxirgi kiritilgan bank hujjati sanasidagi** holat: shu sana va
+  "⏳ 1C N kun orqada" belgisi ko'rsatiladi, yonida bankdagi haqiqiy qoldiq (oxirgi vipiska bo'yicha);
   **⚖️ sverka**: vipiska yakuniy qoldig'i ↔ 1C dagi 51.10 (o'sha kun oxirida) — farq 1C ga hali kiritilmagan
   to'lovlar bilan tushuntirilsa 🟡, aks holda 🔴; shu oydagi kirim / chiqim / sof aylanma; oxirgi 8 haftalik grafik;
   **📋 bugungi ishlar** (tayyor to'lovlar, farqlar, to'siqlar, Didox, ziddiyatli qoidalar — bosilsa o'sha sahifa);
@@ -308,7 +310,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-183 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+184 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

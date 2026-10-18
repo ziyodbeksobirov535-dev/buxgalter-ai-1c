@@ -138,6 +138,17 @@
               </div>
               <div class="mt-3 text-3xl sm:text-4xl font-bold num tracking-tight" x-text="dash.balance.value === null ? '—' : fmt(dash.balance.value)"></div>
               <div class="mt-2 text-xs opacity-90" x-text="balanceSource()"></div>
+              <div x-show="dash.balance.onec" class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span x-show="dash.balance.onec?.days_behind > 0" class="rounded-full bg-amber-300 text-amber-950 px-2 py-0.5 font-medium" x-text="lagLabel()"></span>
+                <span x-show="dash.balance.onec?.days_behind === 0" class="rounded-full bg-white/20 px-2 py-0.5">✅ 1C bugungi kungacha to'liq kiritilgan</span>
+              </div>
+              <div x-show="dash.balance.onec && dash.balance.statement && dash.balance.statement.closing !== null" class="mt-3 rounded-xl bg-white/10 px-3 py-2 text-sm space-y-0.5">
+                <div class="flex flex-wrap items-baseline gap-x-2">
+                  <span class="opacity-90" x-text="bankActualLabel()"></span>
+                  <span class="font-semibold num" x-text="fmt(dash.balance.statement?.closing)"></span>
+                </div>
+                <div x-show="dash.balance.onec?.statement_newer" class="text-xs opacity-90" x-text="bankDiffLabel()"></div>
+              </div>
               <div class="mt-4 flex flex-wrap gap-2 text-sm">
                 <a href="#/bank" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📥 Vipiska yuklash</a>
                 <a href="#/didox" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📑 Didox</a>
@@ -1365,9 +1376,21 @@ function app() {
     },
     balanceSource() {
       const b = this.dash?.balance || {};
-      if (b.source === '1c') return "1C buxgalteriya provodkalari bo'yicha · " + this.fmtDate(this.dash.today) + " holatiga";
+      if (b.source === '1c') return b.onec?.last_entry
+        ? "1C dagi 51.10 — 1C ga oxirgi kiritilgan bank hujjati " + this.fmtDate(b.onec.last_entry) + " holatiga"
+        : "1C dagi 51.10 (1C da hali bank hujjati yo'q)";
       if (b.source === 'statement') return "Yuklangan vipiska bo'yicha (1C ga ulanmagan) · " + this.fmtDate(b.statement.last_date);
       return "Ma'lumot yo'q — 1C ga ulaning yoki boshlang'ich qoldig'i bor vipiskani yuklang";
+    },
+    lagLabel() {
+      const o = this.dash?.balance?.onec || {};
+      return "⏳ 1C " + o.days_behind + " kun orqada: " + this.fmtDate(o.last_entry) + " dan keyingi bank harakatlari hali kiritilmagan";
+    },
+    bankActualLabel() { return "🏦 Bankdagi haqiqiy qoldiq (vipiska " + this.fmtDate(this.dash?.balance?.statement?.last_date) + "):"; },
+    bankDiffLabel() {
+      const b = this.dash?.balance || {};
+      const diff = (b.statement?.closing || 0) - (b.onec?.value || 0);
+      return "1C bilan farq " + this.fmt(diff) + " — vipiskadagi 1C ga hali kiritilmagan to'lovlar (pastdagi sverkaga qarang)";
     },
     sverkaClass() {
       const st = this.dash?.balance?.sverka?.state;

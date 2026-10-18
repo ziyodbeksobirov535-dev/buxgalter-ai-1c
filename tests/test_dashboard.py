@@ -69,7 +69,7 @@ def test_dashboard_falls_back_to_statement_when_1c_offline():
     from services_1c import OfflineOData
     d = run(dash.build(session, OneCService(OfflineOData("x")), {"ok": False}, today=date(2026, 10, 18)))
     assert d["balance"] == {"value": 1300.0, "source": "statement", "statement": d["balance"]["statement"],
-                            "sverka": None}
+                            "sverka": None, "onec": None}
     assert d["flow_source"] == "statement" and d["month"]["net"] == 300.0 and d["debts"] is None
 
 
@@ -102,3 +102,14 @@ def test_balances_endpoint_selected_account_full_list():
     assert {x["account"] for x in r["choices"]} >= {"40.10", "63.10", "60.10", "43.10"}
     assert c.get("/api/balances?account=4310", headers=h).json()["total_dt"] == 15_000_000.0  # nuqtasiz ham
     assert c.get("/api/balances?account=abc", headers=h).status_code == 400
+
+
+def test_onec_balance_is_dated_by_last_entered_bank_document():
+    """1C dagi 51.10 — bugungi emas, 1C ga oxirgi kiritilgan bank hujjati kunidagi holat (1C orqada qolishi mumkin)."""
+    session = core.Session("d3", DEMO_FIRM)
+    session.statement = Statement(rows=[BankRow(date(2026, 10, 16), "1", "kirim", 500.0, "A", "300000011")],
+                                  opening_balance=1000.0)
+    d = run(dash.build(session, OneCService(DemoOData()), {"ok": True}, today=date(2026, 10, 18)))
+    o = d["balance"]["onec"]
+    assert o["value"] == DEMO_BANK_BALANCE and o["last_entry"] == "2026-10-05" and o["days_behind"] == 13
+    assert o["statement_newer"] is True  # vipiskada 1C dan keyingi to'lovlar bor

@@ -919,6 +919,17 @@ class OneCService:
                 rec[side] = round(rec[side] + float(d.get(FIELDS["amount"]) or 0), 2)
         return sorted(days.values(), key=lambda x: x["date"])
 
+    async def last_bank_date(self) -> date | None:
+        """1C ga oxirgi kiritilgan (o'tkazilgan) bank hujjati sanasi — 51.10 qoldig'i shu kungacha to'liq."""
+        async def f():
+            days = []
+            for entity in (E_BANK_IN, E_BANK_OUT):
+                rows = await self._q(entity, [Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False)],
+                                     top=1, orderby="Date desc", select=["Ref_Key", "Date"])
+                days += [_day(r.get("Date")) for r in rows if r.get("Date")]
+            return date.fromisoformat(max(days)) if days else None
+        return await self._cached(("last_bank_date",), f)
+
     async def describe(self, entity: str, keys: list[str], fields: list[str] | None = None) -> dict[str, dict]:
         """Bir nechta obyektning nomi (va qo'shimcha rekvizitlari) — keshlangan. Ko'p bo'lsa (jonli 1C) — butun
         katalog bitta sahifalangan so'rov bilan (yuzlab alohida GET o'rniga)."""
