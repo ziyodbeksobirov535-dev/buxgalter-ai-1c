@@ -326,7 +326,7 @@
                 x-text="stockLoading ? '⏳ Yangilanmoqda…' : '🔄 Notion\'dan yangilash'"></button>
       </div>
       <!-- token yo'q: dastur Notion'ni o'zi o'qiy olmaydi -->
-      <div x-show="notionHelp" x-cloak class="rounded-2xl border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 p-4 text-sm space-y-2">
+      <div x-show="notionHelp && !notionLive()" x-cloak class="rounded-2xl border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 p-4 text-sm space-y-2">
         <div class="flex items-start gap-2">
           <div class="font-semibold">📓 Notion'dan avtomatik yangilash hali ulanmagan</div>
           <button @click="notionHelp=false" class="ml-auto text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">✕</button>
@@ -462,7 +462,8 @@
                   </td>
                   <td class="px-3 py-2 text-right num whitespace-nowrap font-semibold" :class="r.diff > 0 ? 'text-emerald-700 dark:text-emerald-400' : r.diff < 0 ? 'text-rose-700 dark:text-rose-400' : 'text-slate-400'"
                       x-text="r.diff ? (r.diff > 0 ? '+' : '') + fmtQty(r.diff) : '0'"></td>
-                  <td class="px-3 py-2 text-xs whitespace-nowrap" x-text="{ok:'✅ Mos', diff:'⚠️ Farq', only_1c:'🗄️ Faqat 1C', only_notion:'📓 Faqat Notion'}[r.state]"></td>
+                  <td class="px-3 py-2 text-xs whitespace-nowrap" x-text="r.paired ? '✅ Mos (nomi boshqa)' : {ok:'✅ Mos', diff:'⚠️ Farq', only_1c:'🗄️ Faqat 1C', only_notion:'📓 Faqat Notion'}[r.state]"
+                      :title="r.paired ? 'Miqdori aynan teng va nomi o\'xshash — bitta tovar deb olindi. Notion izohiga \'1C nomi: …\' yozsangiz, aniq bog\'lanadi.' : ''"></td>
                 </tr>
               </template>
             </tbody>
@@ -1785,12 +1786,16 @@ function app() {
           this.stockCache[src] = s; if (this.stockSrc === src) this.stock = s;
           const n = src === 'compare' ? s.notion : s;
           if (force && src !== '1c' && n) {
-            if (n.live) this.toast("✅ Notion'dan yangilandi: " + (n.count ?? '') + " ta tovar", 'ok');
+            if (n.live) { this.notionHelp = false; this.toast("✅ Notion'dan yangilandi: " + (n.count ?? '') + " ta tovar", 'ok'); }
             else if (!n.token) this.notionHelp = true;
             else this.toast("⚠️ Notion'dan o'qib bo'lmadi — oxirgi nusxa ko'rsatildi", 'error');
           }
         }
       } finally { this.stockLoading = false; }
+    },
+    notionLive() {
+      const s = this.stock;
+      return !!(s && (this.stockSrc === 'compare' ? s.notion?.live : s.live));
     },
     async openNotionSettings() {
       this.notionHelp = false;

@@ -29,6 +29,8 @@ VERSION = "2022-06-28"
 TIMEOUT = 20.0
 MAX_PAGES = 20  # 20 × 100 qator — sklad uchun yetarli, cheksiz aylanishdan himoya
 SNAP_DIR = config.DATA_DIR / "notion_stock"
+PAIR = 0.6  # miqdori aynan teng bo'lsa, nomlar shunchalik o'xshash bo'lishi yetarli (bitta tovar deb olinadi)
+ALIAS_RE = re.compile(r"1C\s*(?:nomi|name|наименование)\s*[:\-–]?\s*['\"«“‘]([^'\"»”’]{2,})['\"»”’]", re.I)
 SIMILAR = 0.75 # nomlar o'xshashligi (0..1): shundan yuqorisi "o'xshash tovar" deb taklif qilinadi
 
 # Notion ustun nomlari (birinchi topilgani olinadi)
@@ -248,6 +250,32 @@ def build(rows: list[dict]) -> dict:
 
 
 # ---------------------------------------------------------------- solishtirish
+def _ratio(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, name_key(a), name_key(b)).ratio()
+
+
+def _pair_same_qty(rows: list[dict]) -> None:
+    """Nomi boshqacha yozilgan, lekin yetishmayotgan miqdori aynan teng va nomi o'xshash Notion qatorini 1C qatoriga
+    qo'shadi ("СИП 4 4х50" 1C da 1200 ↔ "СИП 4Х50" Notion'da 1200). Belgilanadi: paired=True ("nomi boshqa")."""
+    for r in sorted((r for r in rows if r["state"] in ("only_1c", "diff")), key=lambda r: -abs(r["diff"])):
+        need = round(r["qty_1c"] - (r["qty_notion"] or 0), 3)
+        if abs(need) < 0.001:
+            continue
+        cands = [n for n in rows if n["state"] == "only_notion" and abs(n["qty_notion"] - need) < 0.001
+                 and (not n["unit"] or not r["unit"] or n["unit"] == r["unit"])]
+        if not cands:
+            continue
+        best = max(cands, key=lambda n: _ratio(r["name"], n["name"]))
+        if _ratio(r["name"], best["name"]) < PAIR:
+            continue
+        empty = not r["qty_notion"]
+        r.update(qty_notion=round((r["qty_notion"] or 0) + best["qty_notion"], 3), diff=0.0, state="ok", paired=True,
+                 notion_name=best["name"] if empty else f"{r['notion_name']} + {best['name']}",
+                 url=best["url"] if empty or not r["url"] else r["url"],
+                 note=best["note"] if empty or not r["note"] else r["note"])
+        rows.remove(best)
+
+
 def compare(onec: dict, notion: dict) -> dict:
     """1C va Notion qoldiqlari tovar nomi bo'yicha: mos / farq / faqat 1C da / faqat Notion'da."""
     a: dict[str, dict] = {}
@@ -257,8 +285,10 @@ def compare(onec: dict, notion: dict) -> dict:
             x["qty"] = round(x["qty"] + (it.get("qty") or 0), 3)
     b: dict[str, dict] = {}
     for it in notion.get("_items") or [i for g in notion.get("groups", []) for i in g["items"]]:
-        x = b.setdefault(name_key(it["name"]), {"name": it["name"], "unit": it["unit"], "qty": 0.0, "url": it["url"],
-                                                "note": it["note"]})
+        alias = ALIAS_RE.search(it.get("note") or "")  # Izohda "1C nomi: '…'" — 1C dagi nomi bilan bog'lash
+        key = name_key(alias.group(1)) if alias else name_key(it["name"])
+        x = b.setdefault(key, {"name": it["name"], "unit": it["unit"], "qty": 0.0, "url": it["url"],
+                               "note": it["note"]})
         x["qty"] = round(x["qty"] + it["qty"], 3)
     rows = []
     for k in a.keys() | b.keys():
@@ -272,6 +302,7 @@ def compare(onec: dict, notion: dict) -> dict:
         rows.append({"name": (x or y)["name"], "notion_name": (y or {}).get("name", ""), "unit": (y or x)["unit"],
                      "qty_1c": q1 if x else None, "qty_notion": q2 if y else None, "diff": diff, "state": state,
                      "unit_mismatch": unit_mismatch, "url": (y or {}).get("url", ""), "note": (y or {}).get("note", "")})
+    _pair_same_qty(rows)
     # nomi sal boshqacha yozilgan bo'lishi mumkin — birlashtirmaymiz, faqat "o'xshash" deb ko'rsatamiz
     lonely = [r for r in rows if r["state"] == "only_notion"]
     for r in rows:

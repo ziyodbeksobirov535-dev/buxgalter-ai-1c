@@ -126,3 +126,18 @@ def test_similar_hint_only_when_digits_match():
     assert by["Сип 3*50+1*54,6 nex"]["similar"]["name"] == "Кабел СИП 350+154,6"
     assert by["Сип 3*50+1*54,6 nex"]["similar"]["same_qty"] is False
     assert "similar" not in by["ПУГНП 2х1,5"]  # 1,5 ≠ 2,5
+
+
+def test_alias_in_note_and_same_qty_pairing():
+    onec = {"groups": [{"items": [{"name": "СИП 4 4х50", "unit": "м", "qty": 1200},
+                                  {"name": "Сип23*50+1.54.6", "unit": "м", "qty": 800},
+                                  {"name": "H07V-K 1х1 синий", "unit": "м", "qty": 500}]}]}
+    notion = sn.build([{"Tovar": "СИП 4Х50", "Miqdor": 1200, "Birlik": "m", "Izoh": "16.10 1C inv: 1200 (1C nomi 'СИП 4 4х50')"},
+                       {"Tovar": "Кабел СИП 4 4*50", "Miqdor": 0, "Birlik": "m"},
+                       {"Tovar": "Сип2 350+154,6", "Miqdor": 800, "Birlik": "m"},
+                       {"Tovar": "Труба 76", "Miqdor": 500, "Birlik": "m"}])
+    r = sn.compare(onec, notion)
+    by = {x["name"]: x for x in r["rows"]}
+    assert by["СИП 4 4х50"]["state"] == "ok" and by["СИП 4 4х50"]["notion_name"] == "СИП 4Х50"  # izohdagi 1C nomi
+    assert by["Сип23*50+1.54.6"]["state"] == "ok" and by["Сип23*50+1.54.6"]["paired"]  # miqdori teng, nomi o'xshash
+    assert by["H07V-K 1х1 синий"]["state"] == "only_1c" and by["Труба 76"]["state"] == "only_notion"  # nomi boshqa tovar
