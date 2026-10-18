@@ -77,8 +77,9 @@ joyida qoladi, Telegram'dan to'g'ridan-to'g'ri kerakli sahifani ochish mumkin.
   **⚖️ sverka**: vipiska yakuniy qoldig'i ↔ 1C dagi 51.10 (o'sha kun oxirida) — farq 1C ga hali kiritilmagan
   to'lovlar bilan tushuntirilsa 🟡, aks holda 🔴; shu oydagi kirim / chiqim / sof aylanma; oxirgi 8 haftalik grafik;
   **📋 bugungi ishlar** (tayyor to'lovlar, farqlar, to'siqlar, Didox, ziddiyatli qoidalar — bosilsa o'sha sahifa);
-  **bizga qarzdorlar (40.10)** va **biz qarzdormiz (60.10)** top-5, avanslar (43.10 / 63.10); bir nechta firma
-  bo'lsa — barchasining xulosasi.
+  **🤝 hisob-kitoblar**: 40.10 / 63.10 / 60.10 / 43.10 jami summalari va tanlangan schyot (shular yoki 48.90, 69.90,
+  42.20, 68.10, 66.10) bo'yicha barcha kontragentlar ro'yxati — debet/kredit qoldiq, qidiruv, tanlov firma bo'yicha
+  eslab qolinadi; bir nechta firma bo'lsa — barchasining xulosasi.
 - **📦 Sklad va qoldiqlar** — 29.10, 10.10, 10.30, 10.80, 28.10 qoldig'i nomenklatura bo'yicha: MXIK (IKPU), birlik,
   miqdor, o'rtacha narx, summa, qidiruv. Manba — `AccountingRegister_Хозрасчетный/Balance` (faqat o'qish).
 - **⚙️ Sozlamalar** — tizim holati (1C, AI, Didox, Telegram, eksport fayllari), joriy firma (1C OData manzili, login,
@@ -296,6 +297,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 | POST | `/api/vipiska/export-1c` | 1C ga import fayli (1CClientBankExchange) |
 | GET | `/api/vipiska/checklist` | 📋 Tekshiruv ro'yxati (Excel): schyot, avans, shartnoma |
 | GET | `/api/dashboard` | Bosh sahifa: qoldiq, sverka, aylanma, qarzlar, bugungi ishlar, firmalar |
+| GET | `/api/balances?account=63.10` | Tanlangan schyot qoldig'i kontragentlar bo'yicha |
 | GET | `/api/stock` | Ombor qoldiqlari nomenklatura bo'yicha |
 | POST | `/api/chat` | AI Copilot |
 
@@ -306,7 +308,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-182 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+183 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

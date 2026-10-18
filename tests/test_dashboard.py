@@ -93,3 +93,12 @@ def test_browser_page_url_is_rejected_as_1c_address():
     from services_1c import HttpOData
     h = HttpOData("https://1c.uzcloud.uz/a/adm/#e1cib/list/X", "u", "p")
     assert h.auth_error and "so'rov yuborilmadi" in h.auth_error
+
+
+def test_balances_endpoint_selected_account_full_list():
+    c, h = client(role="viewer")
+    r = c.get("/api/balances?account=63.10", headers=h).json()
+    assert r["account"] == "63.10" and r["total_kt"] == 8_000_000.0 and r["rows"][0]["amount"] == -8_000_000.0
+    assert {x["account"] for x in r["choices"]} >= {"40.10", "63.10", "60.10", "43.10"}
+    assert c.get("/api/balances?account=4310", headers=h).json()["total_dt"] == 15_000_000.0  # nuqtasiz ham
+    assert c.get("/api/balances?account=abc", headers=h).status_code == 400

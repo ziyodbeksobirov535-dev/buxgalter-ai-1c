@@ -221,27 +221,51 @@
             </div>
           </div>
 
-          <!-- Debitor / kreditor -->
-          <div x-show="dash.debts" class="grid lg:grid-cols-2 gap-4">
-            <template x-for="d in debtSections()" :key="d.key">
-              <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
-                <div class="flex items-baseline gap-2">
-                  <span class="font-semibold text-sm" x-text="d.title"></span>
-                  <span class="ml-auto num font-semibold" :class="d.cls" x-text="fmt(d.total)"></span>
-                </div>
-                <div class="text-xs text-slate-500" x-text="d.note"></div>
-                <ol class="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
-                  <template x-for="(t, i) in d.top" :key="i">
-                    <li class="flex items-center gap-2 py-1.5 text-sm">
-                      <span class="text-xs text-slate-400 w-4" x-text="i + 1"></span>
-                      <span class="truncate flex-1" :title="t.inn ? 'STIR ' + t.inn : ''" x-text="t.name"></span>
-                      <span class="num" x-text="fmt(t.amount)"></span>
-                    </li>
+          <!-- 🤝 Hisob-kitoblar: 40.10 / 63.10 / 60.10 / 43.10 va boshqa tanlangan schyot -->
+          <div x-show="dash.debts" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-semibold text-sm">🤝 Hisob-kitoblar (kontragentlar bo'yicha)</span>
+              <select :value="balAccount" @change="pickBalance($event.target.value)" class="ml-auto max-w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2 py-1.5">
+                <template x-for="c in balChoices()" :key="c.account">
+                  <option :value="c.account" :selected="c.account === balAccount" x-text="c.account + ' — ' + c.title"></option>
+                </template>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+              <template x-for="t in debtTiles()" :key="t.account">
+                <button @click="pickBalance(t.account)" class="text-left rounded-xl border p-3 transition"
+                        :class="balAccount === t.account ? 'border-brand-500 ring-2 ring-brand-500/30 bg-brand-50/40 dark:bg-brand-900/10' : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'">
+                  <div class="text-[11px] text-slate-500 dark:text-slate-400" x-text="t.account + ' · ' + t.title"></div>
+                  <div class="mt-1 font-semibold num" :class="t.cls" x-text="fmt(t.total)"></div>
+                  <div class="text-[11px] text-slate-500" x-text="t.count + ' ta kontragent'"></div>
+                </button>
+              </template>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <input x-model="balSearch" placeholder="Qidirish: nomi yoki STIR" class="w-56 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5">
+              <span class="text-slate-500" x-text="balSummary()"></span>
+            </div>
+            <div x-show="balLoading && !bal" class="py-6 text-center text-xs text-slate-500">⏳ 1C dan o'qilmoqda…</div>
+            <div x-show="bal" class="max-h-96 overflow-auto thin-scroll rounded-xl border border-slate-200 dark:border-slate-800">
+              <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 text-left">
+                  <tr><th class="px-3 py-2 w-8">#</th><th class="px-3 py-2">Kontragent</th><th class="px-3 py-2">STIR</th>
+                    <th class="px-3 py-2 text-right whitespace-nowrap">Debet qoldiq</th><th class="px-3 py-2 text-right whitespace-nowrap">Kredit qoldiq</th></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <template x-for="(r, i) in balRows()" :key="i">
+                    <tr>
+                      <td class="px-3 py-1.5 text-xs text-slate-400" x-text="i + 1"></td>
+                      <td class="px-3 py-1.5 min-w-[200px]" x-text="r.name"></td>
+                      <td class="px-3 py-1.5 text-xs num text-slate-500" x-text="r.inn || '—'"></td>
+                      <td class="px-3 py-1.5 text-right num whitespace-nowrap" x-text="r.amount > 0 ? fmt(r.amount) : ''"></td>
+                      <td class="px-3 py-1.5 text-right num whitespace-nowrap" x-text="r.amount < 0 ? fmt(-r.amount) : ''"></td>
+                    </tr>
                   </template>
-                  <li x-show="!d.top.length" class="py-2 text-xs text-slate-500">Qoldiq yo'q</li>
-                </ol>
-              </div>
-            </template>
+                  <tr x-show="bal && !balRows().length"><td colspan="5" class="px-3 py-4 text-center text-xs text-slate-500">Qoldiq yo'q</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <!-- Barcha firmalar -->
@@ -1219,6 +1243,7 @@ function app() {
   return {
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
     dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '',
+    balAccount: '40.10', bal: null, balLoading: false, balSearch: '',
     data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
@@ -1298,6 +1323,45 @@ function app() {
       if (this.dashLoading) return;
       this.dashLoading = true;
       try { const d = await this.api('/api/dashboard'); if (d) this.dash = d; } finally { this.dashLoading = false; }
+      if (this.dash?.debts) await this.loadBalances();
+    },
+
+    // ---------------- 🤝 hisob-kitoblar (tanlangan schyot bo'yicha kontragentlar)
+    async loadBalances() {
+      try { this.balAccount = localStorage.getItem('bx_bal_' + this.firmId) || this.balAccount; } catch (e) {}
+      this.balLoading = true;
+      try {
+        const r = await this.api('/api/balances?account=' + encodeURIComponent(this.balAccount));
+        if (r) this.bal = r;
+      } finally { this.balLoading = false; }
+    },
+    async pickBalance(acc) {
+      if (!acc) return;
+      this.balAccount = acc; this.bal = null; this.balSearch = '';
+      try { localStorage.setItem('bx_bal_' + this.firmId, acc); } catch (e) {}
+      await this.loadBalances();
+    },
+    balChoices() {
+      return this.bal?.choices || [{ account: '40.10', title: 'Xaridorlar qarzi' }, { account: '63.10', title: 'Olingan avanslar' },
+                                   { account: '60.10', title: 'Yetkazib beruvchilarga qarz' }, { account: '43.10', title: 'Berilgan avanslar' }];
+    },
+    debtTiles() {
+      const d = this.dash?.debts;
+      if (!d) return [];
+      const t = (acc, key, title, cls) => ({ account: acc, title, cls, total: d[key]?.total || 0, count: d[key]?.count || 0 });
+      return [t('40.10', 'debitor', 'Bizga qarzdorlar', 'text-emerald-600 dark:text-emerald-400'),
+              t('63.10', 'avans_olingan', 'Olingan avanslar', 'text-amber-600 dark:text-amber-400'),
+              t('60.10', 'kreditor', 'Biz qarzdormiz', 'text-rose-600 dark:text-rose-400'),
+              t('43.10', 'avans_berilgan', 'Berilgan avanslar', 'text-sky-600 dark:text-sky-400')];
+    },
+    balRows() {
+      const q = this.balSearch.trim().toLowerCase();
+      return (this.bal?.rows || []).filter(r => !q || (r.name + ' ' + r.inn).toLowerCase().includes(q));
+    },
+    balSummary() {
+      const b = this.bal;
+      if (!b) return '';
+      return b.account + ': ' + b.count + ' ta · debet ' + this.fmt(b.total_dt) + ' · kredit ' + this.fmt(b.total_kt);
     },
     balanceSource() {
       const b = this.dash?.balance || {};
@@ -1335,17 +1399,6 @@ function app() {
         { id: 'rules', page: 'rules', icon: '⚠️', text: "Ziddiyatli hisob qoidalari", count: t.rules_conflicts, cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
       ];
       return items.filter(i => i.count);
-    },
-    debtSections() {
-      const d = this.dash?.debts;
-      if (!d) return [];
-      const adv = (x) => x ? this.fmt(x.total) : '—';
-      return [
-        { key: 'deb', title: '🧾 Bizga qarzdorlar (40.10)', cls: 'text-emerald-600 dark:text-emerald-400', total: d.debitor.total, top: d.debitor.top,
-          note: d.debitor.count + " ta xaridor · olingan avanslar (63.10): " + adv(d.avans_olingan) },
-        { key: 'kre', title: '💳 Biz qarzdormiz (60.10)', cls: 'text-rose-600 dark:text-rose-400', total: d.kreditor.total, top: d.kreditor.top,
-          note: d.kreditor.count + " ta yetkazib beruvchi · berilgan avanslar (43.10): " + adv(d.avans_berilgan) },
-      ];
     },
     sourceLabel(s) { return { odata: '🟢 OData', files: '📁 Fayllar', demo: '🧪 Demo' }[s] || s; },
 
@@ -1397,7 +1450,7 @@ function app() {
       this.rules = []; this.rulesSummary = {}; this.learnResult = ''; this.importErrors = []; this.rulesDirty = false;
       if (this.isTg) this.api('/api/auth/tg-firm', { json: { firm_id: id }, anyFirm: true });  // bot ham shu firmada
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
-      this.dash = null; this.stock = null; this.stockSearch = '';
+      this.dash = null; this.stock = null; this.stockSearch = ''; this.bal = null; this.balSearch = ''; this.balAccount = '40.10';
       await this.loadFirmData();
       if (this.page !== 'settings') await this.route();
       const f = this.firms.find(x => x.id === id);

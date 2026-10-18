@@ -362,6 +362,18 @@ async def dashboard(ctx: FirmCtx = Depends(firm_ctx)):
     return data
 
 
+@app.get("/api/balances")
+async def balances(account: str = "40.10", ctx: FirmCtx = Depends(firm_ctx)):
+    """Tanlangan hisob-kitob schyoti (40.10, 63.10, 60.10, 43.10 …) qoldig'i kontragentlar bo'yicha — faqat o'qish."""
+    from services_1c import ACCOUNT_RE, fmt_account
+    if not ACCOUNT_RE.match(account or ""):
+        raise HTTPException(400, "Schyot formati: 60.10 ko'rinishida")
+    onec = await core.readable_onec(ctx.session)
+    data = await services_dashboard.account_details(onec, fmt_account(account))
+    data["choices"] = [{"account": c, "title": t, "side": sd} for c, t, sd in services_dashboard.SETTLEMENT_ACCOUNTS]
+    return data
+
+
 @app.get("/api/stock")
 async def stock(ctx: FirmCtx = Depends(firm_ctx)):
     """📦 Ombor qoldiqlari (29.10, 10.xx, 28.10) nomenklatura bo'yicha — 1C provodkalaridan, faqat o'qish."""

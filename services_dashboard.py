@@ -134,6 +134,38 @@ async def debts(onec: OneCService) -> dict:
     return out
 
 
+# ---------------------------------------------------------------- tanlangan schyot bo'yicha to'liq ro'yxat
+SETTLEMENT_ACCOUNTS = [  # Bosh sahifadagi tanlov ro'yxati: (schyot, nomi, qoldiq tomoni: dt — bizga qarz, kt — bizning qarz)
+    ("40.10", "Xaridorlar qarzi (debitorlar)", "dt"), ("63.10", "Xaridorlardan olingan avanslar", "kt"),
+    ("60.10", "Yetkazib beruvchilarga qarz (kreditorlar)", "kt"), ("43.10", "Yetkazib beruvchilarga berilgan avanslar", "dt"),
+    ("48.90", "Turli debitorlar", "dt"), ("69.90", "Turli kreditorlar", "kt"), ("42.20", "Hisobdor shaxslar", "dt"),
+    ("68.10", "Qisqa muddatli kreditlar va qarzlar", "kt"), ("66.10", "Dividendlar", "kt"),
+]
+MAX_ROWS = 1000
+
+
+async def account_details(onec: OneCService, code: str) -> dict:
+    """Bitta schyot qoldig'i subkonto (odatda kontragent) bo'yicha — hammasi, summa bo'yicha kamayish tartibida.
+    amount > 0 — debet qoldiq, < 0 — kredit qoldiq."""
+    rows = [r for r in await onec.account_balance(code) if abs(r["sum"]) >= 0.01]
+    grouped: dict[tuple, float] = {}
+    for r in rows:  # shartnoma/hujjat bo'yicha bo'lingan qatorlar — birinchi subkonto bo'yicha jamlanadi
+        key = (r["dim"], r["dim_type"])
+        grouped[key] = round(grouped.get(key, 0.0) + r["sum"], 2)
+    items = sorted(grouped.items(), key=lambda kv: -abs(kv[1]))[:MAX_ROWS]
+    names: dict[str, dict] = {}
+    for dim_type in {t for (_k, t), _v in items if t}:
+        keys = [k for (k, t), _v in items if t == dim_type]
+        names.update(await onec.describe(dim_type, keys, ["ИНН"] if dim_type == E_COUNTERPARTY else None))
+    out = [{"name": (names.get(k) or {}).get("Description") or "—", "inn": (names.get(k) or {}).get("ИНН") or "",
+            "amount": v} for (k, _t), v in items]
+    title, side = next(((t, sd) for c, t, sd in SETTLEMENT_ACCOUNTS if c == code), ("", "dt"))
+    return {"account": code, "title": title, "side": side, "count": len(grouped),
+            "total_dt": round(sum(v for v in grouped.values() if v > 0), 2),
+            "total_kt": round(-sum(v for v in grouped.values() if v < 0), 2),
+            "rows": out, "onec_mode": onec.mode}
+
+
 # ---------------------------------------------------------------- bugungi ishlar
 def todo(vipiska: list[dict], didox: list[dict], firm_id: int) -> dict:
     bank = [r for r in vipiska if r.get("kind") == "bank"]
