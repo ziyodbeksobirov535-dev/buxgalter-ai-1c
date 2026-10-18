@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -37,8 +38,9 @@ LINK_CODE_TTL = timedelta(minutes=10)
 MIN_PASSWORD = 8
 
 FIRM_FIELDS = ("name", "inn", "onec_demo_mode", "onec_base_url", "onec_user", "onec_password", "didox_demo_mode",
-               "didox_base_url", "didox_user_key", "didox_partner_token", "bank_accounts")
-FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token")
+               "didox_base_url", "didox_user_key", "didox_partner_token", "bank_accounts",
+               "notion_token", "notion_stock_db")
+FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token", "notion_token")
 FIRM_BOOLS = ("onec_demo_mode", "didox_demo_mode")
 # Maxfiy qiymat qaysi manzil/loginga tegishli: ular o'zgarsa va yangi qiymat berilmasa — eskisi o'chiriladi
 FIRM_SECRET_BOUND_TO = {"onec_password": ("onec_base_url", "onec_user"),
@@ -50,6 +52,8 @@ WRITE_ACCESS_COLUMNS = {"onec_write_enabled": "INTEGER NOT NULL DEFAULT 0",   # 
                         "onec_write_limit": "INTEGER NOT NULL DEFAULT 1",     # bir martada nechta hujjat
                         "onec_create_contracts": "INTEGER NOT NULL DEFAULT 0"}  # yangi shartnoma yaratish
 WRITE_LIMIT_MAX = 50
+# 📦 Notion'dagi sklad bazasi (ixtiyoriy): integratsiya tokeni (shifrlangan) va baza ID si
+NOTION_COLUMNS = {"notion_token": "TEXT NOT NULL DEFAULT ''", "notion_stock_db": "TEXT NOT NULL DEFAULT ''"}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -248,7 +252,7 @@ def init() -> None:
         if "advance_account" not in [r[1] for r in c.execute("PRAGMA table_info(account_rules)")]:
             c.execute("ALTER TABLE account_rules ADD COLUMN advance_account TEXT NOT NULL DEFAULT ''")
         firm_cols = [r[1] for r in c.execute("PRAGMA table_info(firms)")]
-        for col, ddl in WRITE_ACCESS_COLUMNS.items():  # 1C ga yozish ruxsati (standart — o'chiq)
+        for col, ddl in {**WRITE_ACCESS_COLUMNS, **NOTION_COLUMNS}.items():  # 1C yozish ruxsati, Notion
             if col not in firm_cols:
                 c.execute(f"ALTER TABLE firms ADD COLUMN {col} {ddl}")
     _chmod600(DB_FILE)
@@ -508,6 +512,15 @@ def _clean_firm_value(key: str, value):
     if key == "bank_accounts":
         value = ",".join(sorted({"".join(ch for ch in a if ch.isdigit()) for a in value.replace(";", ",").split(",")}
                                 - {""}))
+    if key == "notion_stock_db" and value:
+        # Notion havolasi yoki ID: 32 ta hex belgini ajratib olamiz
+        low = value.lower().split("?")[0]
+        hexes = [h.replace("-", "") for h in re.findall(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", low)]
+        hexes = hexes or re.findall(r"(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])", low)
+        if not hexes:
+            raise DBError("Notion baza havolasini yoki ID sini kiriting (32 belgili kod)")
+        h = hexes[0]
+        value = f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
     if key == "onec_base_url" and value:
         if "#" in value or "/a/adm/" in value or "e1cib" in value:
             raise DBError("Bu 1C ning brauzerdagi sahifa manzili, OData emas. Bazaning manzilini kiriting, masalan: "
@@ -574,6 +587,7 @@ def _firm_public(row: sqlite3.Row) -> dict:
     for k in FIRM_SECRETS:
         f[k] = config.MASK if row[k] else ""
     f["bank_accounts"] = row["bank_accounts"]
+    f["notion_stock_db"] = row["notion_stock_db"] if "notion_stock_db" in row.keys() else ""
     f["active"] = bool(row["active"])
     f.update(_write_access(row))
     return f
@@ -591,7 +605,7 @@ def firm_settings(firm_id: int) -> dict | None:
         row = c.execute("SELECT * FROM firms WHERE id = ?", (firm_id,)).fetchone()
     if not row:
         return None
-    s = {k: row[k] for k in FIRM_FIELDS}
+    s = {k: (row[k] if k in row.keys() else "") for k in FIRM_FIELDS}
     for k in FIRM_SECRETS:
         s[k] = decrypt(row[k])
     for k in FIRM_BOOLS:

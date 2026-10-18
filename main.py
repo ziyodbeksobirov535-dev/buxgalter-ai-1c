@@ -21,6 +21,7 @@ import accounts_uz
 import services_ai
 import services_dashboard
 import services_files1c
+import services_notion
 import services_rules
 from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, set_session_cookie
 from demo_data import build_sample_xlsx
@@ -396,10 +397,23 @@ async def balances(account: str = "40.10", ctx: FirmCtx = Depends(firm_ctx)):
 
 
 @app.get("/api/stock")
-async def stock(ctx: FirmCtx = Depends(firm_ctx)):
-    """📦 Ombor qoldiqlari (29.10, 10.xx, 28.10) nomenklatura bo'yicha — 1C provodkalaridan, faqat o'qish."""
-    onec = await core.readable_onec(ctx.session)
-    return await services_dashboard.stock(onec)
+async def stock(source: str = "1c", ctx: FirmCtx = Depends(firm_ctx)):
+    """📦 Ombor qoldiqlari, faqat o'qish. source: 1c — 1C provodkalaridan (29.10, 10.xx, 28.10);
+    notion — firmaning Notion sklad bazasidan; compare — ikkalasini tovar nomi bo'yicha solishtirish."""
+    if source not in ("1c", "notion", "compare"):
+        raise HTTPException(400, "source: 1c, notion yoki compare")
+    notion = None
+    if source in ("notion", "compare"):
+        notion = await services_notion.stock(core.firm_settings(ctx.firm_id))
+        if source == "notion":
+            notion.pop("_items", None)
+            return {**notion, "source": "notion"}
+    onec = await services_dashboard.stock(await core.readable_onec(ctx.session))
+    if source == "1c":
+        return {**onec, "source": "1c"}
+    cmp = services_notion.compare(onec, notion) if notion.get("_items") is not None else {"rows": [], "counts": {}}
+    return {"source": "compare", **cmp, "onec_mode": onec.get("onec_mode"),
+            "notion": {k: notion.get(k) for k in ("configured", "live", "fetched_at", "warning", "error", "count")}}
 
 
 @app.get("/api/1c/metadata")

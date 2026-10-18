@@ -11,6 +11,7 @@ import core  # noqa: E402
 import db  # noqa: E402
 import services_1c  # noqa: E402
 import services_files1c  # noqa: E402
+import services_notion  # noqa: E402
 
 DEMO_FIRM = 1  # db.init() har doim birinchi bo'lib demo firmani yaratadi
 
@@ -27,6 +28,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(core, "SESSIONS_DIR", tmp_path / "sessions")
     monkeypatch.setattr(services_1c, "BLOCK_FILE", tmp_path / "onec_blocks.json")
     monkeypatch.setattr(services_files1c, "FILES_DIR", tmp_path / "onec_files")
+    monkeypatch.setattr(services_notion, "SNAP_DIR", tmp_path / "notion_stock")
     monkeypatch.setattr(db, "DB_FILE", tmp_path / "app.db")
     monkeypatch.setattr(db, "KEY_FILE", tmp_path / "secret.key")
     monkeypatch.setattr(db, "_fernet_cache", None)
