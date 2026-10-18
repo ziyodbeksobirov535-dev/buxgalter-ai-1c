@@ -672,6 +672,45 @@ async def drafts_undo(draft_id: int, ctx: FirmCtx = Depends(firm_ctx)):
     return {"draft": draft, "snapshot": _with_context(ctx, core.snapshot(ctx.session, "vipiska"))}
 
 
+class CounterpartyIn(BaseModel):
+    row_id: str = Field(..., max_length=40)
+    name: str = Field(..., max_length=150)
+    full_name: str = Field("", max_length=250)
+    inn: str = Field(..., max_length=20)
+    person: str = "ЮридическоеЛицо"
+    folder: str = Field("", max_length=40)
+    account_no: str = Field("", max_length=30)
+    mfo: str = Field("", max_length=10)
+    create_contract: bool = True
+    contract_number: str = Field("", max_length=30)
+    contract_date: str = Field("", max_length=10)
+    expected_firm_id: int | None = None
+
+
+@app.get("/api/counterparties/prefill")
+async def counterparty_prefill(row_id: str, ctx: FirmCtx = Depends(firm_ctx)):
+    """"➕ 1C da kontragent yaratish" oynasi uchun: vipiskadagi ma'lumot + 1C dagi guruhlar, bank, bor yozuvlar."""
+    try:
+        return await core.counterparty_prefill(ctx.session, row_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+
+
+@app.post("/api/counterparties")
+async def counterparty_create(body: CounterpartyIn, ctx: FirmCtx = Depends(firm_ctx)):
+    """Kontragent (+ bank hisobi, + shartnoma) 1C da — faqat yozish ruxsati bilan, takror yaratilmaydi."""
+    ctx.require_post()
+    if body.expected_firm_id is not None and body.expected_firm_id != ctx.firm_id:
+        raise HTTPException(409, "Firma almashgan — sahifani yangilang.")
+    try:
+        created = await core.create_counterparty(ctx.session, body.row_id, body.model_dump(), ctx.user["username"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    db.audit(ctx.user["id"], ctx.firm_id, "onec_counterparty_created", name=body.name, inn=body.inn,
+             bank_account=created.get("bank_account"), contract=created.get("contract"))
+    return {"created": created, "snapshot": _with_context(ctx, core.snapshot(ctx.session, "vipiska"))}
+
+
 class ExportIn(BaseModel):
     expected_firm_id: int | None = None
     ids: list[str] = Field(default_factory=list, max_length=1000)

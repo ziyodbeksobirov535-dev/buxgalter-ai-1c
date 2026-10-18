@@ -147,3 +147,69 @@ def test_bot_offers_no_post_button_without_write_access(live):
     db.set_write_access(DEMO_FIRM, True, limit=1)
     buttons = post_buttons()
     assert len(buttons) == 1 and "(1)" in buttons[0].text
+
+
+# ---------------------------------------------------------------- ➕ yangi kontragent (vipiskadan)
+def new_cp_session(live, sid="cp1"):
+    from datetime import date
+    from services_vipiska import BankRow, Statement
+    live.t.db.setdefault("Catalog_Банки", []).append({"Ref_Key": "bank-444", "Code": "00444", "Description": "TEST BANK",
+                                                      "DeletionMark": False})
+    s = core.get_session(sid, DEMO_FIRM)
+    row = BankRow(date(2026, 10, 17), "501", "kirim", 2_500_000.0, "YANGI XARIDOR MChJ", "300000099", mfo="00444",
+                  account_no="20208000100000000099", purpose="Shartnoma №55 dan 01.10.2026 bo'yicha to'lov")
+    row.id = row.key()
+    s.statement = Statement(rows=[row])
+    run(core._analyze_vipiska(s))
+    return s, row.id
+
+
+def test_create_counterparty_with_bank_account_and_contract(live):
+    s, rid = new_cp_session(live)
+    r = s.vipiska[0]
+    assert r["missing_counterparty"] and not r["selectable"]
+    pre = run(core.counterparty_prefill(s, rid))
+    assert (pre["inn"], pre["mfo"], pre["bank"]["name"], pre["contract_number"]) == ("300000099", "00444", "TEST BANK", "55")
+    with pytest.raises(ODataError, match="ruxsat berilmagan"):  # yozish yoqilmagan
+        run(core.create_counterparty(s, rid, pre))
+    db.set_write_access(DEMO_FIRM, True, limit=1)
+    created = run(core.create_counterparty(s, rid, {**pre, "folder": ""}, by="buh"))
+    cp = next(c for c in live.t.db["Catalog_Контрагенты"] if c["Ref_Key"] == created["counterparty"]["ref"])
+    assert cp["ИНН"] == "300000099" and cp["Комментарий"].startswith("BUXGALTER AI") and cp["ЮридическоеФизическоеЛицо"] == "ЮридическоеЛицо"
+    acc = next(a for a in live.t.db["Catalog_БанковскиеСчета"] if a.get("Owner") == cp["Ref_Key"])
+    assert acc["НомерСчета"] == "20208000100000000099" and cp["ОсновнойБанковскийСчет_Key"] == acc["Ref_Key"]
+    ctr = next(c for c in live.t.db["Catalog_ДоговорыКонтрагентов"] if c["Owner_Key"] == cp["Ref_Key"])
+    assert ctr["Номер"] == "55" and ctr["ВидДоговора"] == "СПокупателем"
+    assert {d["entity"] for d in db.list_drafts(DEMO_FIRM)} == {"Catalog_Контрагенты", "Catalog_БанковскиеСчета",
+                                                               "Catalog_ДоговорыКонтрагентов"}
+    row = s.vipiska[0]  # qayta tekshirildi: to'siq yo'q, shartnoma topildi
+    assert not row["blockers"] and row["selectable"] and row["contract"]["source"] == "purpose"
+    with pytest.raises(ValueError, match="bor"):  # takror yaratilmaydi
+        run(core.create_counterparty(s, rid, pre))
+
+
+def test_existing_even_deleted_counterparty_is_not_duplicated(live):
+    db.set_write_access(DEMO_FIRM, True, limit=1)
+    s, rid = new_cp_session(live, "cp2")
+    live.t.db["Catalog_Контрагенты"].append({"Ref_Key": "old", "Description": "ESKI NOM", "ИНН": "300000099", "DeletionMark": True})
+    pre = run(core.counterparty_prefill(s, rid))
+    assert pre["existing"] == [{"name": "ESKI NOM", "deleted": True}]
+    with pytest.raises(ValueError, match="o'chirishga belgilangan"):
+        run(core.create_counterparty(s, rid, pre))
+
+
+def test_undo_counterparty_cascades_and_refuses_when_used(live):
+    db.set_write_access(DEMO_FIRM, True, limit=1)
+    s, rid = new_cp_session(live, "cp3")
+    created = run(core.create_counterparty(s, rid, run(core.counterparty_prefill(s, rid))))
+    ref = created["counterparty"]["ref"]
+    cp_draft = next(d for d in db.list_drafts(DEMO_FIRM) if d["entity"] == "Catalog_Контрагенты")
+    live.t.db["Document_ПоступлениеНаРасчетныйСчет"].append({"Ref_Key": "used", "Контрагент_Key": ref, "Posted": True,
+                                                             "DeletionMark": False})
+    with pytest.raises(ValueError, match="o'tkazilgan hujjatlarda"):
+        run(core.undo_draft(s, cp_draft["id"]))
+    live.t.db["Document_ПоступлениеНаРасчетныйСчет"].pop()
+    run(core.undo_draft(s, cp_draft["id"]))
+    assert all(d["undone_at"] for d in db.list_drafts(DEMO_FIRM))  # bank hisobi va shartnoma ham
+    for entity in ("Catalog_Контрагенты", "Catalog_БанковскиеСчета", "Catalog_ДоговорыКонтрагентов"):
+        assert all(x["DeletionMark"] for x in live.t.db[entity] if ref in (x.get("Ref_Key"), x.get("Owner"), x.get("Owner_Key")))

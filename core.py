@@ -12,7 +12,7 @@ from datetime import date, datetime
 import config
 import db
 import services_files1c as files1c
-from services_1c import ACCOUNT_CHOICES, ODataError, OfflineOData, OneCService, build_service
+from services_1c import ACCOUNT_CHOICES, Cond, ODataError, OfflineOData, OneCService, build_service
 from services_didox import DidoxError, analyze_invoices, build_purchase_payload, fetch_invoices, recheck_purchase
 from services_rules import RuleSet
 from services_vipiska import (BankRow, Statement, StatementError, analyze_statement, build_bank_payload, cash_flow, finalize_row, kpis,
@@ -530,6 +530,121 @@ def export_filename(firm_id: int, rows: list[dict]) -> str:
     return f"kl_to_1c_{firm_id}_{day}.txt"
 
 
+# ---------------------------------------------------------------- yangi kontragent (vipiskadan)
+CREATED_MARK = "BUXGALTER AI: vipiskadan yaratildi"
+
+
+def _find_row(session: Session, row_id: str) -> dict:
+    row = next((r for r in session.vipiska if r["id"] == row_id), None)
+    if not row:
+        raise ValueError("Qator topilmadi")
+    return row
+
+
+async def counterparty_prefill(session: Session, row_id: str) -> dict:
+    """Oyna uchun: vipiskadagi ma'lumot + 1C dagi guruhlar, bank (MFO bo'yicha), shu STIR bilan bor yozuvlar."""
+    row = _find_row(session, row_id)
+    onec = onec_for(session)
+    inn = row.get("counterparty_inn") or ""
+    folders = await onec.counterparty_folders()
+    want = "покуп" if row["direction"] == "kirim" else "постав"
+    folder = next((f["key"] for f in folders if want in f["name"].lower()), "")
+    bank = await onec.find_bank(row.get("mfo") or "")
+    ref = row.get("contract_ref") or {}
+    return {
+        "row_id": row_id, "name": row["counterparty_name"], "full_name": row["counterparty_name"], "inn": inn,
+        "person": "ФизическоеЛицо" if len(inn) == 14 else "ЮридическоеЛицо", "folders": folders, "folder": folder,
+        "account_no": row.get("account_no") or "", "mfo": row.get("mfo") or "",
+        "bank": {"key": bank["Ref_Key"], "name": bank.get("Description")} if bank else None,
+        "create_contract": True, "contract_number": ref.get("number") or "", "contract_date": ref.get("date") or "",
+        "contract_kind": "СПоставщиком" if row["direction"] == "chiqim" else "СПокупателем",
+        "existing": [{"name": r.get("Description"), "deleted": bool(r.get("DeletionMark"))}
+                     for r in await onec.find_counterparty_any(inn)],
+        "write": {"enabled": firm_settings(session.firm_id)["onec_write_enabled"], "mode": onec.mode},
+    }
+
+
+async def create_counterparty(session: Session, row_id: str, data: dict, by: str = "") -> dict:
+    """Kontragent (+ bank hisobi, + shartnoma) 1C da yaratish. Faqat yozish ruxsati bilan; avval shu STIR bilan
+    (o'chirishga belgilanganlari ham) bor-yo'qligi tekshiriladi — takror yaratilmaydi."""
+    import re as _re
+    from services_1c import E_BANK_ACCOUNT, E_COUNTERPARTY, E_CONTRACT, _is_empty_key
+    row = _find_row(session, row_id)
+    name = " ".join(str(data.get("name") or "").split())[:150]
+    inn = _re.sub(r"\D", "", str(data.get("inn") or ""))
+    account_no = _re.sub(r"\D", "", str(data.get("account_no") or ""))
+    mfo = _re.sub(r"\D", "", str(data.get("mfo") or ""))
+    if not name:
+        raise ValueError("Kontragent nomini kiriting")
+    if len(inn) not in (9, 14):
+        raise ValueError("STIR 9 xonali (yuridik shaxs) yoki JShShIR 14 xonali (jismoniy shaxs) bo'lsin")
+    if account_no and len(account_no) != 20:
+        raise ValueError("Bank hisob raqami 20 xonali bo'lsin")
+    write_gate(session, 1)
+    onec = onec_for(session)
+    if onec.mode not in ("live", "demo"):
+        raise ODataError("1C ga ulanmagan — kontragentni 1C ning o'zida qo'shing (yoki import faylida 1C o'zi yaratadi)")
+    async with _post_lock, session.lock:
+        existing = await onec.find_counterparty_any(inn)
+        if existing:
+            e = existing[0]
+            raise ValueError(f"1C da shu STIR bilan kontragent bor: {e.get('Description')}"
+                             + (" (o'chirishga belgilangan — 1C da belgini olib tashlang)" if e.get("DeletionMark") else "")
+                             + " — yangisi yaratilmadi")
+        person = "ФизическоеЛицо" if data.get("person") == "ФизическоеЛицо" or len(inn) == 14 else "ЮридическоеЛицо"
+        template = await onec.latest(E_COUNTERPARTY, [Cond("IsFolder", "eq", False)])
+        body = {"Description": name, "НаименованиеПолное": " ".join(str(data.get("full_name") or name).split())[:250],
+                "ЮридическоеФизическоеЛицо": person, "ИННВведенКорректно": True, "Комментарий": CREATED_MARK,
+                "Parent_Key": data.get("folder") or None, "СтранаРегистрации_Key": template.get("СтранаРегистрации_Key"),
+                "IsFolder": False, "DeletionMark": False,
+                ("ИНН" if len(inn) == 9 else "ПИНФЛ"): inn}
+        body, _ = await onec.filter_payload(E_COUNTERPARTY, {k: v for k, v in body.items() if not _is_empty_key(v) or k in ("IsFolder", "DeletionMark")})
+        cp = await onec.t.create(E_COUNTERPARTY, body)
+        ref = cp["Ref_Key"]
+        db.record_draft(session.firm_id, E_COUNTERPARTY, ref, by, number=cp.get("Code"), counterparty=name)
+        created = {"counterparty": {"ref": ref, "name": name, "code": cp.get("Code")}}
+        patch = {"ГоловнойКонтрагент_Key": ref}
+        bank = await onec.find_bank(mfo) if account_no and mfo else None
+        if account_no and not bank:
+            created["bank_note"] = f"MFO {mfo or '—'} bo'yicha bank 1C da topilmadi — bank hisobini 1C da qo'shing"
+        if bank:
+            acc_tmpl = await onec.latest(E_BANK_ACCOUNT, [Cond("Owner_Type", "eq", f"StandardODATA.{E_COUNTERPARTY}")])
+            acc_body = {"Owner": ref, "Owner_Type": f"StandardODATA.{E_COUNTERPARTY}", "НомерСчета": account_no,
+                        "Банк_Key": bank["Ref_Key"], "Description": f"{account_no} в {mfo} {bank.get('Description') or ''}"[:100],
+                        "ВалютаДенежныхСредств_Key": acc_tmpl.get("ВалютаДенежныхСредств_Key"),
+                        "ВидСчета": acc_tmpl.get("ВидСчета") or "Расчетный", "DeletionMark": False}
+            acc_body, _ = await onec.filter_payload(E_BANK_ACCOUNT, {k: v for k, v in acc_body.items() if v is not None})
+            acc = await onec.t.create(E_BANK_ACCOUNT, acc_body)
+            db.record_draft(session.firm_id, E_BANK_ACCOUNT, acc["Ref_Key"], by, in_number=ref, counterparty=name,
+                            number=account_no)
+            patch["ОсновнойБанковскийСчет_Key"] = acc["Ref_Key"]
+            created["bank_account"] = account_no
+        props = await onec.entity_props(E_COUNTERPARTY)
+        patch = {k: v for k, v in patch.items() if props is None or k in props["header"]}
+        if patch:
+            await onec.t.patch(E_COUNTERPARTY, ref, patch)
+        if data.get("create_contract"):
+            ctr = await onec.create_contract(ref, str(data.get("contract_number") or "").strip()[:30],
+                                             str(data.get("contract_date") or "")[:10] or None, row["direction"])
+            db.record_draft(session.firm_id, E_CONTRACT, ctr["Ref_Key"], by, in_number=ref, counterparty=name,
+                            number=ctr.get("Description") or "")
+            created["contract"] = ctr.get("Description")
+        onec.invalidate()
+    await recheck_vipiska(session)
+    return created
+
+
+async def _used_in_posted(onec, entity: str, ref: str) -> bool:
+    """Kontragent / shartnoma o'tkazilgan bank hujjatlarida ishlatilganmi (bo'lsa — bekor qilinmaydi)."""
+    from services_1c import E_BANK_IN, E_BANK_OUT, E_CONTRACT, FIELDS, Guid
+    for doc_entity in (E_BANK_IN, E_BANK_OUT):
+        cond = (Cond(FIELDS["contract"], "eq", Guid(ref)) if entity == E_CONTRACT
+                else await onec.counterparty_cond(doc_entity, ref))
+        if await onec.t.query(doc_entity, [cond, Cond("Posted", "eq", True)], top=1, select=["Ref_Key"]):
+            return True
+    return False
+
+
 async def undo_draft(session: Session, draft_id: int, by: str = "") -> dict:
     """Dastur yaratgan, hali O'TKAZILMAGAN qoralamani 1C da "o'chirishga belgilash" (DeletionMark). Boshqa
     hujjatlarga tegilmaydi: faqat ro'yxatimizdagi Ref_Key, izohi "BUXGALTER AI" bilan boshlangan va Posted=false."""
@@ -549,9 +664,16 @@ async def undo_draft(session: Session, draft_id: int, by: str = "") -> dict:
                              "o'tkazishni bekor qiling")
         if not str(doc.get("Комментарий") or "").startswith("BUXGALTER AI"):
             raise ValueError("Hujjat izohi o'zgartirilgan — dastur yaratgan qoralama ekaniga ishonch yo'q, tegilmadi")
+        if draft["entity"].startswith("Catalog_") and await _used_in_posted(onec, draft["entity"], draft["ref"]):
+            raise ValueError("Bu kontragent/shartnoma 1C da o'tkazilgan hujjatlarda ishlatilgan — dastur unga tegmaydi")
         if not doc.get("DeletionMark"):
             await onec.t.patch(draft["entity"], draft["ref"], {"DeletionMark": True})
         db.mark_draft_undone(draft_id, by)
+        for child in db.list_drafts(session.firm_id, 500):  # kontragent bilan birga yaratilgan bank hisobi va shartnoma
+            if child["in_number"] == draft["ref"] and not child["undone_at"] and child["entity"].startswith("Catalog_"):
+                if not (await onec.t.get(child["entity"], child["ref"]) or {}).get("DeletionMark"):
+                    await onec.t.patch(child["entity"], child["ref"], {"DeletionMark": True})
+                db.mark_draft_undone(child["id"], by)
         onec.invalidate()
         for row in session.vipiska + session.didox:  # jadvalda qator yana "yangi" bo'ladi
             if row.get("posted_ref") == draft["ref"]:

@@ -257,6 +257,13 @@ Haqiqiy 1C li firma standart holatda **faqat tahlil**: hech narsa yozilmaydi. Yo
    "BUXGALTER AI" bilan boshlanadigan va **o'tkazilmagan** hujjatni "o'chirishga belgilaydi" (DeletionMark).
 5. Ruxsatni yoqish/yopish, har bir yozuv va bekor qilish audit jurnaliga yoziladi. Telegram bot ham shu limitga bo'ysunadi.
 
+**➕ Yangi kontragent:** vipiskadagi kontragent 1C da yo'q bo'lsa (⛔ to'siq), qatorda **"➕ Kontragent yaratish"**:
+nomi, STIR/JShShIR, yuridik/jismoniy, 1C dagi guruh (kirim — покупатели, chiqim — поставщики), bank hisobi (bank
+1C katalogidan MFO bo'yicha) va shartnoma (to'lov maqsadidagi raqam yoki "Основной договор"; valyuta, tashkilot,
+rahbar oxirgi shartnomadan) oldindan to'ldiriladi. Shu STIR bilan kontragent 1C da bo'lsa — **o'chirishga
+belgilangan bo'lsa ham** — yangisi yaratilmaydi. Faqat yozish ruxsati bilan; yaratilganlar "📝 Dastur yaratganlar"
+ro'yxatida, o'tkazilgan hujjatlarda ishlatilmaguncha "↩️ Bekor qilish" (bank hisobi va shartnoma bilan birga).
+
 Yozishdan oldin `ВидОперации` shu bazada haqiqatan ishlatilgan nomga keltiriladi (O'zbekiston BP:
 `ОплатаПокупателя`, `КомиссияБанка`, `ВозвратПокупателю` …), so'm hisoblari uchun kurs/karralik 1 qo'yiladi.
 
@@ -329,7 +336,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-196 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+199 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

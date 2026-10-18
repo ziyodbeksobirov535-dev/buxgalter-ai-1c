@@ -40,6 +40,10 @@ E_NOMENCLATURE = "Catalog_Номенклатура"
 E_ORG = "Catalog_Организации"
 E_CASH_FLOW = "Catalog_СтатьиДвиженияДенежныхСредств"
 E_ACCOUNTS = "ChartOfAccounts_Хозрасчетный"
+E_BANKS = "Catalog_Банки"  # banklar (Code = MFO)
+# Yangi shartnomada shu turdagi oxirgi shartnomadan ko'chiriladigan rekvizitlar
+CONTRACT_TEMPLATE_FIELDS = ("ВалютаВзаиморасчетов_Key", "Организация_Key", "Руководитель_Key", "ДолжностьРуководителя_Key",
+                            "ПредъявляетНДС", "ПорядокРегистрацииСчетовФактурНаАвансПоДоговору")
 E_REGISTER = "AccountingRegister_Хозрасчетный"  # provodkalar (ixtiyoriy: nashr qilingan bo'lsa — schyot shundan)
 E_REGISTER_ROWS = "AccountingRegister_Хозрасчетный_RecordType"
 BANK_ACCOUNT_CODE = "51.10"
@@ -699,19 +703,61 @@ class OneCService:
             return hits[0] if hits else None
         return await self._cached(("contract_ref", kontr_key, number, on_date), f)
 
-    async def create_contract(self, kontr_key: str, number: str, on_date: str | None, direction: str) -> dict:
-        """Yangi shartnoma (to'lov maqsadidagi raqam 1C da yo'q — yangi shartnoma bo'yicha birinchi to'lov)."""
+    async def create_contract(self, kontr_key: str, number: str, on_date: str | None, direction: str,
+                              title: str | None = None) -> dict:
+        """Yangi shartnoma (to'lov maqsadidagi raqam 1C da yo'q — yangi shartnoma bo'yicha birinchi to'lov).
+        Valyuta, tashkilot, rahbar kabi rekvizitlar shu turdagi oxirgi shartnomadan (namuna) olinadi."""
         org = await self.organization()
+        kind = "СПоставщиком" if direction == "chiqim" else "СПокупателем"
         when = f" от {on_date[8:10]}.{on_date[5:7]}.{on_date[:4]}" if on_date else ""
-        body = {"Owner_Key": kontr_key, "Description": f"№{number}{when}", "Номер": number,
-                "Дата": f"{on_date}T00:00:00" if on_date else None,
-                "ВидДоговора": "СПоставщиком" if direction == "chiqim" else "СПокупателем",
-                "Организация_Key": org["Ref_Key"] if org else None, "DeletionMark": False,
-                "Комментарий": "BUXGALTER AI: to'lov maqsadidagi shartnoma bo'yicha yaratildi"}
+        template = await self.latest(E_CONTRACT, [Cond("ВидДоговора", "eq", kind)])
+        body = {k: template[k] for k in CONTRACT_TEMPLATE_FIELDS if k in template and not _is_empty_key(template[k])}
+        body.update({"Owner_Key": kontr_key, "Description": title or (f"№{number}{when}" if number else "Основной договор"),
+                     "Номер": number or None, "Дата": f"{on_date}T00:00:00" if on_date else None, "ВидДоговора": kind,
+                     "Организация_Key": org["Ref_Key"] if org else body.get("Организация_Key"), "DeletionMark": False,
+                     "Комментарий": "BUXGALTER AI: to'lov maqsadidagi shartnoma bo'yicha yaratildi"})
         body, _dropped = await self.filter_payload(E_CONTRACT, {k: v for k, v in body.items() if v is not None})
         created = await self.t.create(E_CONTRACT, body)
         self.invalidate()
         return created
+
+    # ---- yangi kontragent (vipiskadagi ma'lumotdan) — faqat yozish ruxsati bilan, core.create_counterparty orqali
+    async def latest(self, entity: str, conds: list[Cond] | None = None) -> dict:
+        """Namuna: shu katalogdagi eng so'nggi (Code bo'yicha) o'chirilmagan yozuv."""
+        rows = await self._q(entity, [Cond("DeletionMark", "eq", False), *(conds or [])], top=1, orderby="Code desc")
+        return rows[0] if rows else {}
+
+    async def find_counterparty_any(self, inn: str) -> list[dict]:
+        """STIR/JShShIR bo'yicha — o'chirishga belgilanganlari HAM (takror yaratmaslik uchun)."""
+        inn = (inn or "").strip()
+        if not inn:
+            return []
+        fields = [FIELDS["inn"]]
+        if len(inn) == 14:
+            props = await self.entity_props(E_COUNTERPARTY)
+            if props is None or FIELDS["pinfl"] in props["header"]:
+                fields.append(FIELDS["pinfl"])
+        out: dict[str, dict] = {}
+        for f in fields:
+            for r in await self._q(E_COUNTERPARTY, [Cond(f, "eq", inn)], top=5,
+                                   select=["Ref_Key", "Description", "DeletionMark"]):
+                out[r["Ref_Key"]] = r
+        return list(out.values())
+
+    async def counterparty_folders(self) -> list[dict]:
+        rows = await self._q(E_COUNTERPARTY, [Cond("IsFolder", "eq", True), Cond("DeletionMark", "eq", False)], top=200,
+                             select=["Ref_Key", "Description"])
+        return [{"key": r["Ref_Key"], "name": r.get("Description") or ""} for r in rows]
+
+    async def find_bank(self, mfo: str) -> dict | None:
+        mfo = (mfo or "").strip()
+        if not mfo or E_BANKS not in (await self._metadata())["sets"] and self.mode == "live":
+            return None
+        try:
+            rows = await self._q(E_BANKS, [Cond("Code", "eq", mfo)], top=1, select=["Ref_Key", "Code", "Description"])
+        except ODataError:
+            return None
+        return rows[0] if rows else None
 
     async def find_bank_account(self, owner_key: str, owner_entity: str, account_no: str | None) -> dict | None:
         async def f():

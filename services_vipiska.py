@@ -677,6 +677,7 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
                                "qilib (Прочее списание, 94.20) kiriting")
     elif not kontr:
         row["blockers"].append("Kontragent 1C da topilmadi (STIR bo'yicha) — avval katalogga qo'shing")
+        row["missing_counterparty"] = True  # "➕ 1C da kontragent yaratish" tugmasi
 
     if in_file_duplicate:
         dup = {"status": "duplicate", "kind": "infile", "reason": "Shu tranzaksiya faylda ikki marta uchraydi",

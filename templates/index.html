@@ -803,6 +803,7 @@
                     <td class="px-2 py-2.5 align-top">
                       <div class="flex flex-col items-end gap-1 whitespace-nowrap">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">👁 Tekshirish</button>
+                      <button x-show="r.missing_counterparty && canPost && !fileMode()" @click="openCreateCp(r)" class="text-xs rounded-lg border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-2 py-1 hover:bg-violet-50 dark:hover:bg-violet-900/30">➕ Kontragent yaratish</button>
                       <button x-show="r.selectable && canPost && !fileMode()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
                       </div>
                     </td>
@@ -846,6 +847,7 @@
                     <div x-show="r.overridable" class="text-[11px] text-amber-600">👁 Tekshirish orqali baribir yozish mumkin</div>
                     <div class="mt-2 flex gap-2">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1">👁 Tekshirish</button>
+                      <button x-show="r.missing_counterparty && canPost && !fileMode()" @click="openCreateCp(r)" class="text-xs rounded-lg border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-2 py-1">➕ Kontragent</button>
                       <button x-show="r.selectable && canPost && !fileMode()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
                     </div>
                   </div>
@@ -994,19 +996,20 @@
       <!-- 📝 Dastur 1C da yaratgan qoralamalar -->
       <div x-show="mode !== 'rules' && drafts.length" class="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 text-sm">
         <button @click="draftsOpen = !draftsOpen" class="flex w-full items-center gap-2 text-left">
-          <span class="font-medium" x-text="'📝 Dastur 1C da yaratgan qoralamalar (' + drafts.length + ')'"></span>
+          <span class="font-medium" x-text="'📝 Dastur 1C da yaratganlar (' + drafts.length + ')'"></span>
           <span class="text-xs text-slate-500" x-text="draftsActive() + ' ta faol'"></span>
           <span class="ml-auto text-xs text-slate-400" x-text="draftsOpen ? '▲' : '▼'"></span>
         </button>
         <div x-show="draftsOpen" class="mt-2 max-h-56 overflow-y-auto thin-scroll divide-y divide-slate-100 dark:divide-slate-800">
           <template x-for="d in drafts" :key="d.id">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-xs" :class="d.undone_at ? 'opacity-50 line-through' : ''">
-              <span class="font-medium num" x-text="'1C: ' + (d.number || '—')"></span>
-              <span class="num" x-text="'№' + d.in_number + ' · ' + fmtDate(d.doc_date)"></span>
+              <span x-text="draftIcon(d)"></span>
+              <span class="font-medium num" x-text="draftTitle(d)"></span>
+              <span x-show="isDraftDoc(d)" class="num" x-text="'№' + d.in_number + ' · ' + fmtDate(d.doc_date)"></span>
               <span class="truncate max-w-[220px]" x-text="d.counterparty"></span>
-              <span class="num" x-text="fmt(d.amount) + ' → ' + d.account"></span>
+              <span x-show="isDraftDoc(d)" class="num" x-text="fmt(d.amount) + ' → ' + d.account"></span>
               <span class="text-slate-500" x-text="fmtTs(d.created_at) + ' · ' + d.created_by"></span>
-              <button x-show="!d.undone_at && canPost" @click="undoDraft(d)" class="ml-auto rounded-lg border border-rose-300 text-rose-600 dark:border-rose-900 px-2 py-0.5">↩️ Bekor qilish</button>
+              <button x-show="!d.undone_at && canPost && d.entity !== 'Catalog_БанковскиеСчета'" @click="undoDraft(d)" class="ml-auto rounded-lg border border-rose-300 text-rose-600 dark:border-rose-900 px-2 py-0.5">↩️ Bekor qilish</button>
               <span x-show="d.undone_at" class="ml-auto text-slate-500 no-underline" x-text="'bekor qilindi: ' + fmtTs(d.undone_at)"></span>
             </div>
           </template>
@@ -1207,6 +1210,67 @@
     </div>
   </div>
 
+  <!-- ===================== ➕ KONTRAGENT YARATISH ===================== -->
+  <div x-show="cpBox" x-transition.opacity class="fixed inset-0 z-50 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="cpBox=null">
+    <div @click.outside="cpBox=null" class="w-full sm:max-w-xl max-h-[92dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-5 space-y-3 text-sm">
+      <template x-if="cpBox">
+        <div class="space-y-3">
+          <div class="flex items-start gap-2">
+            <div>
+              <h3 class="font-semibold">➕ 1C da yangi kontragent</h3>
+              <p class="text-xs text-slate-500">Vipiskadagi ma'lumot bilan to'ldirildi — tekshirib, kerak bo'lsa o'zgartiring.</p>
+            </div>
+            <button @click="cpBox=null" class="ml-auto text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+          </div>
+          <div x-show="cpBox.existing.length" class="rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-900 p-3 text-xs text-rose-800 dark:text-rose-300">
+            <template x-for="e in cpBox.existing" :key="e.name"><div x-text="cpExistingText(e)"></div></template>
+          </div>
+          <div x-show="cpBox.write.mode === 'live' && !cpBox.write.enabled" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-900 dark:text-amber-200">
+            🔒 Bu firmada 1C ga yozish o'chiq (faqat tahlil). "Egasi" ⚙️ Sozlamalar → Joriy firma → «1C ga yozish» da ruxsat berishi kerak.
+          </div>
+          <label class="block"><span class="text-xs text-slate-500">Nomi (1C da qisqa nom)</span>
+            <input x-model="cpBox.name" maxlength="150" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+          <label class="block"><span class="text-xs text-slate-500">To'liq nomi</span>
+            <input x-model="cpBox.full_name" maxlength="250" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+          <div class="grid sm:grid-cols-2 gap-2">
+            <label class="block"><span class="text-xs text-slate-500">STIR (9) yoki JShShIR (14)</span>
+              <input x-model="cpBox.inn" inputmode="numeric" maxlength="14" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 num"></label>
+            <label class="block"><span class="text-xs text-slate-500">Turi</span>
+              <select x-model="cpBox.person" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-2">
+                <option value="ЮридическоеЛицо">Yuridik shaxs</option><option value="ФизическоеЛицо">Jismoniy shaxs / YaTT</option>
+              </select></label>
+          </div>
+          <label class="block"><span class="text-xs text-slate-500">1C dagi guruh</span>
+            <select x-model="cpBox.folder" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-2">
+              <option value="">— guruhsiz —</option>
+              <template x-for="f in cpBox.folders" :key="f.key"><option :value="f.key" :selected="f.key === cpBox.folder" x-text="f.name"></option></template>
+            </select></label>
+          <div class="grid sm:grid-cols-[1fr_110px] gap-2">
+            <label class="block"><span class="text-xs text-slate-500">Bank hisob raqami (ixtiyoriy)</span>
+              <input x-model="cpBox.account_no" inputmode="numeric" maxlength="20" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 num"></label>
+            <label class="block"><span class="text-xs text-slate-500">MFO</span>
+              <input x-model="cpBox.mfo" inputmode="numeric" maxlength="5" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 num"></label>
+          </div>
+          <div class="text-xs" :class="cpBox.bank ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500'" x-text="cpBankText()"></div>
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2">
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="cpBox.create_contract" class="rounded"> <span x-text="cpContractLabel()"></span></label>
+            <div x-show="cpBox.create_contract" class="grid grid-cols-2 gap-2">
+              <input x-model="cpBox.contract_number" maxlength="30" placeholder="Raqami (bo'sh — Основной договор)" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs">
+              <input type="date" x-model="cpBox.contract_date" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-xs">
+            </div>
+          </div>
+          <p class="text-xs text-slate-500">Yaratilganlar "📝 Dastur yaratganlar" ro'yxatiga tushadi — o'tkazilgan hujjatlarda ishlatilmaguncha "↩️ Bekor qilish" mumkin.</p>
+          <div class="flex justify-end gap-2 pt-1">
+            <button @click="cpBox=null" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">Bekor qilish</button>
+            <button @click="createCp()" :disabled="cpSaving || cpBox.existing.length || (cpBox.write.mode === 'live' && !cpBox.write.enabled)"
+                    class="rounded-lg bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium px-4 py-2"
+                    x-text="cpSaving ? '⏳ 1C da yaratilmoqda…' : '➕ 1C da yaratish'"></button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
   <!-- ===================== TEKSHIRISH MODALI ===================== -->
   <div x-show="inspect" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="inspect=null">
     <div @click.outside="inspect=null" class="w-full sm:max-w-2xl max-h-[90dvh] overflow-y-auto thin-scroll rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl">
@@ -1317,7 +1381,7 @@ function app() {
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
     dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '',
     balAccount: '40.10', bal: null, balLoading: false, balSearch: '',
-    drafts: [], draftsOpen: false, writeForm: { confirm: '', limit: 1, create_contracts: false }, filters: {},
+    drafts: [], draftsOpen: false, cpBox: null, cpSaving: false, writeForm: { confirm: '', limit: 1, create_contracts: false }, filters: {},
     data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
@@ -1431,15 +1495,56 @@ function app() {
       this.toast(enabled ? "⚠️ 1C ga yozish yoqildi — bir martada " + f.onec_write_limit + " ta" : "🔒 1C ga yozish yopildi (faqat tahlil)", enabled ? 'info' : 'ok');
       const v = await this.api('/api/session?mode=vipiska'); if (v) this.setSnap(v);
     },
+    // ---------------- ➕ kontragent yaratish
+    async openCreateCp(r) {
+      const p = await this.api('/api/counterparties/prefill?row_id=' + encodeURIComponent(r.id));
+      if (p) this.cpBox = p;
+    },
+    cpExistingText(e) { return "⚠️ 1C da shu STIR bilan bor: " + e.name + (e.deleted ? " (o'chirishga belgilangan — 1C da belgini olib tashlang)" : '') + " — yangisi yaratilmaydi"; },
+    cpBankText() {
+      const b = this.cpBox || {};
+      if (!b.account_no) return "Bank hisobi kiritilmagan — faqat kontragent yaratiladi";
+      return b.bank ? "🏦 Bank 1C da topildi: " + b.bank.name : "⚠️ MFO " + (b.mfo || '—') + " bo'yicha bank 1C da topilmadi — hisob raqami qo'shilmaydi";
+    },
+    cpContractLabel() {
+      const k = this.cpBox?.contract_kind === 'СПоставщиком' ? "yetkazib beruvchi bilan" : "xaridor bilan";
+      return "Shartnoma ham yaratish (" + k + ")";
+    },
+    async createCp() {
+      if (!this.cpBox || this.cpSaving) return;
+      const firm = this.snap?.firm_id ?? this.firmId;
+      this.cpSaving = true;
+      try {
+        const b = this.cpBox;
+        const res = await this.api('/api/counterparties', { firm, json: { row_id: b.row_id, name: b.name, full_name: b.full_name, inn: b.inn,
+          person: b.person, folder: b.folder, account_no: b.account_no, mfo: b.mfo, create_contract: b.create_contract,
+          contract_number: b.contract_number, contract_date: b.contract_date, expected_firm_id: firm } });
+        if (!res) return;
+        this.setSnap(res.snapshot);
+        await this.loadDrafts();
+        this.draftsOpen = true;
+        this.cpBox = null;
+        const c = res.created;
+        this.toast("➕ 1C da yaratildi: " + c.counterparty.name + (c.bank_account ? " · bank hisobi" : '') + (c.contract ? " · shartnoma" : '') + (c.bank_note ? " · " + c.bank_note : ''), 'ok');
+      } finally { this.cpSaving = false; }
+    },
+    isDraftDoc(d) { return d.entity.startsWith('Document_'); },
+    draftIcon(d) { return { Catalog_Контрагенты: '🏢', Catalog_ДоговорыКонтрагентов: '📃', 'Catalog_БанковскиеСчета': '🏦' }[d.entity] || '📄'; },
+    draftTitle(d) {
+      if (this.isDraftDoc(d)) return "1C: " + (d.number || '—');
+      if (d.entity === 'Catalog_Контрагенты') return "Kontragent: " + d.counterparty;
+      if (d.entity === 'Catalog_ДоговорыКонтрагентов') return "Shartnoma: " + d.number + " (" + d.counterparty + ")";
+      return "Bank hisobi: " + d.number;
+    },
     async loadDrafts() { const d = await this.api('/api/drafts'); if (d) this.drafts = d; },
     draftsActive() { return this.drafts.filter(d => !d.undone_at).length; },
     async undoDraft(d) {
-      if (!confirm("1C dagi qoralama " + (d.number || '') + " (" + this.fmt(d.amount) + ") o'chirishga belgilansinmi? Faqat o'tkazilmagan qoralama bekor qilinadi.")) return;
+      if (!confirm(this.draftTitle(d) + " — 1C da o'chirishga belgilansinmi? (O'tkazilgan hujjatlarga tegilmaydi)")) return;
       const res = await this.api('/api/drafts/' + d.id + '/undo', { json: {} });
       if (!res) return;
       this.setSnap(res.snapshot);
       await this.loadDrafts();
-      this.toast("↩️ Qoralama 1C da o'chirishga belgilandi", 'ok');
+      this.toast("↩️ 1C da o'chirishga belgilandi: " + this.draftTitle(d), 'ok');
     },
 
     // ---------------- 🤝 hisob-kitoblar (tanlangan schyot bo'yicha kontragentlar)
@@ -1656,7 +1761,7 @@ function app() {
       this.lastFile = file;
       const fd = new FormData(); fd.append('file', file);
       const s = await this.busy("📥 " + file.name + " o'qilmoqda, 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/upload', { method: 'POST', body: fd }));
-      if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("✅ " + s.rows.length + " ta qator tahlil qilindi", 'ok'); }
+      if (s) { this.selected.vipiska = []; this.setSnap(s); this.resetFilter(); this.toast("✅ " + s.rows.length + " ta qator tahlil qilindi", 'ok'); }
     },
     async loadSample() {
       this.mode = 'vipiska'; this.showPage('bank');
@@ -2098,6 +2203,9 @@ function app() {
         rules_imported: '📤 Qoidalar Excel\'dan: ' + (d.saved ?? 0) + ' ta' + (d.errors ? ', xato ' + d.errors : ''),
         onec_files_uploaded: '📁 1C eksport fayllari: ' + (d.files || []).map(f => f.file).join(', '),
         onec_files_cleared: "📁 1C eksport fayllari o'chirildi",
+        onec_counterparty_created: '➕ 1C da kontragent yaratildi: ' + (d.name || '') + (d.contract ? ' · shartnoma ' + d.contract : ''),
+        onec_draft_undone: "↩️ 1C da bekor qilindi (o'chirishga belgilandi): " + (d.number || ''),
+        onec_write_access: d.enabled ? "⚠️ 1C ga yozish yoqildi (limit " + d.limit + ")" : "🔒 1C ga yozish yopildi",
         onec_import_file: '📤 1C import fayli: ' + (d.rows ?? 0) + ' ta qator, ' + this.fmt(d.sum || 0) + " so'm",
         posted_to_1c: '✅ 1C ga qoralama: ' + (d.ok ?? 0) + ' ta' + (d.failed ? ', bloklandi ' + d.failed : '') + (d.forced ? ' · ⚠️ majburan: ' + (d.reason || '') : ''),
       };
