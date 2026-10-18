@@ -26,8 +26,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import logging
+
 import httpx
 
+log = logging.getLogger("buxgalter.1c")
 EMPTY_GUID = "00000000-0000-0000-0000-000000000000"
 
 E_BANK_IN = "Document_ПоступлениеНаРасчетныйСчет"
@@ -292,6 +295,13 @@ class HttpOData:
                                "tugashini kuting yoki uzcloud qo'llab-quvvatlash xizmatidan blokni olib tashlashni "
                                "so'rang. Dastur sozlamalar o'zgarmaguncha 1C ga qayta urinmaydi.")
             raise ODataError(self.auth_error)
+        if status == 403 and (r.request.method != "GET" or "прав" in low or "доступ" in low):
+            # login to'g'ri, lekin bu amalga 1C ruxsat bermadi (masalan, yozish) — o'qish to'xtatilmaydi
+            log.warning("1C 403 %s %s: %s", r.request.method, urllib.parse.unquote(r.request.url.path)[-80:], text[:300])
+            action = "yozishga (hujjat yaratish/o'zgartirish)" if r.request.method != "GET" else "bu ma'lumotni o'qishga"
+            raise ODataError(f"1C {action} ruxsat bermadi (403)" + (f": {text[:400]}" if text else "") +
+                             ". 1C da shu foydalanuvchining huquqlarini tekshiring (REST-servis sozlamasi / "
+                             "foydalanuvchi rollari). 1C da hech narsa o'zgarmadi.")
         if status in (401, 402, 403) or "пароль" in low or ("пользовател" in low and "неверно" in low):
             self.auth_error = ("1C: login yoki parol noto'g'ri, yoki foydalanuvchiga OData huquqi berilmagan. "
                                "Eslatma: uzcloud portali emas, 1C BAZASIDAGI foydalanuvchi nomi kerak. "

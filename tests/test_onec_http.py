@@ -356,3 +356,19 @@ def test_draft_mirrors_latest_real_document_of_same_operation():
     asyncio.run(mirror_template(row, payload, onec, "ПеречислениеНалога", None))
     assert payload["Налог_Key"] == "ndfl" and payload["НалоговыйПериод"] == "2026-10-01T00:00:00"
     assert payload["СубконтоДт1"] == "Налог" and "РасшифровкаПлатежа" not in payload
+
+
+def test_write_403_shows_1c_text_and_does_not_block_reads():
+    """Login to'g'ri, lekin 1C yozishga ruxsat bermadi (403): 1C matni ko'rsatiladi, o'qish to'xtamaydi."""
+    import pytest
+    from services_1c import ODataError
+
+    def handler(req):
+        if req.method == "POST":
+            return httpx.Response(403, json={"odata.error": {"code": "", "message": {"lang": "ru", "value": "Недостаточно прав для добавления"}}})
+        return httpx.Response(200, json={"value": [{"Ref_Key": "x"}]})
+    svc = service(handler)
+    with pytest.raises(ODataError, match="yozishga .* ruxsat bermadi .*Недостаточно прав"):
+        asyncio.run(svc.t.create("Document_СписаниеСРасчетногоСчета", {"a": 1}))
+    assert svc.t.auth_error is None
+    assert asyncio.run(svc.t.query("Catalog_Контрагенты", top=1)) == [{"Ref_Key": "x"}]  # o'qish ishlayveradi
