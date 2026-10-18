@@ -23,7 +23,12 @@ class LiveDemo(DemoOData):
 
 @pytest.fixture
 def live(monkeypatch):
-    """Demo firma "haqiqiy 1C" sifatida (xotiradagi baza, lekin mode=live — barcha himoyalar ishlaydi)."""
+    """Demo firma "haqiqiy 1C" sifatida (xotiradagi baza, lekin mode=live — barcha himoyalar ishlaydi).
+    Yozish mexanizmini sinash uchun dastur darajasidagi qulf shu testlarda ochiladi (haqiqiy dasturda — yopiq)."""
+    import services_1c
+    monkeypatch.setattr(services_1c, "WRITES_ENABLED", True)
+    monkeypatch.setattr(services_1c, "WRITE_ALLOWLIST", services_1c.WRITE_ALLOWLIST | {
+        services_1c.E_COUNTERPARTY, services_1c.E_CONTRACT, services_1c.E_BANK_ACCOUNT})
     service = OneCService(LiveDemo())
     monkeypatch.setattr(core, "get_onec", lambda *a: service)
     monkeypatch.setattr(core, "onec_fingerprint", lambda *a: "live-fp")

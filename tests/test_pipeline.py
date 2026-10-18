@@ -89,7 +89,7 @@ def test_sample_never_posts_to_live_1c(monkeypatch):
     snap = run(core.load_statement(s, "sample.xlsx", config.SAMPLE_VIPISKA.read_bytes(), is_sample=True))
     assert snap["is_sample"] and snap["kpis"]["ready"] == 0
     assert all(any("Test" in b for b in r["blockers"]) for r in snap["rows"])
-    with pytest.raises(ODataError, match="Test|Faqat tahlil"):
+    with pytest.raises(ODataError, match="Test|Faqat tahlil|dastur darajasida yopiq"):
         run(core.post(s, "vipiska", [r["id"] for r in snap["rows"]]))
 
 
@@ -175,7 +175,7 @@ def test_offline_preview_when_1c_objects_unpublished(monkeypatch):
     assert sale["account"] == "40.10" and sale["advance_account"] == "63.10"
     assert "№398" in sale["contract"]["label"] and "tekshirilmadi" in sale["contract"]["label"]
     assert not any("Kontragent 1C da topilmadi" in b for b in sale["blockers"])  # chalg'ituvchi xabar yo'q
-    with pytest.raises(ODataError, match="Ko'rish rejimi|Faqat tahlil"):
+    with pytest.raises(ODataError, match="Ko'rish rejimi|Faqat tahlil|dastur darajasida yopiq"):
         run(core.post(s, "vipiska", [sale["id"]]))
 
 

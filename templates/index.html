@@ -540,9 +540,11 @@
                :class="firmForm.onec_write_enabled ? 'border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700'">
             <div class="flex flex-wrap items-center gap-2">
               <div class="font-semibold">✍️ 1C ga yozish</div>
+              <span x-show="snap?.write?.locked !== false" class="text-xs rounded-full px-2 py-0.5 bg-slate-800 text-white">🔒 Dastur darajasida yopiq</span>
               <span class="text-xs rounded-full px-2 py-0.5" :class="firmForm.onec_write_enabled ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'"
                     x-text="firmForm.onec_write_enabled ? '⚠️ Yoqilgan — bir martada ' + firmForm.onec_write_limit + ' ta' : '🔒 Faqat tahlil'"></span>
             </div>
+            <p x-show="snap?.write?.locked !== false" class="text-xs font-medium text-slate-800 dark:text-slate-200">Egasi qarori: hozircha dastur va AI agent 1C ga <b>hech qanday o'zgartirish kiritmaydi</b> — bu sozlama yoqilsa ham. Kelajakda ochilganda ham faqat <b>bank vipiskasi</b> va <b>kirim fakturalari</b> kiritiladi.</p>
             <p class="text-xs text-slate-600 dark:text-slate-400">Yoqilsa, tanlangan qatorlar 1C da faqat <b>qoralama</b> (o'tkazilmagan) hujjat sifatida yaratiladi. Har biri "📝 Dastur yaratgan qoralamalar" ro'yxatiga tushadi va o'tkazilmaguncha "↩️ Bekor qilish" mumkin. Oldin uzcloud'da zaxira nusxa oling.</p>
             <div class="grid sm:grid-cols-[1fr_140px] gap-2">
               <input x-show="!firmForm.onec_write_enabled" x-model="writeForm.confirm" :placeholder="writeConfirmPlaceholder()" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
@@ -1158,7 +1160,7 @@
                 title="1C da: Банк и касса → Банковские выписки → Загрузить"
                 class="ml-auto w-full sm:w-auto rounded-xl border border-sky-400 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold px-4 py-2.5"
                 x-text="exportLabel()"></button>
-        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="writeAllowed() ? askPost(selectedIds()) : openWriteSettings()" :class="liveWrite() ? 'sm:!ml-0' : ''" :disabled="writeAllowed() ? (!canWriteSelected() || posting) : !me?.is_owner"
+        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="writeAllowed() ? askPost(selectedIds()) : openWriteSettings()" :class="liveWrite() ? 'sm:!ml-0' : ''" :disabled="writeInfo().locked && liveWrite() ? true : writeAllowed() ? (!canWriteSelected() || posting) : !me?.is_owner"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="postLabel()"></button>
       </div>
@@ -1358,7 +1360,7 @@
             <template x-for="e in cpBox.existing" :key="e.name"><div x-text="cpExistingText(e)"></div></template>
           </div>
           <div x-show="cpBox.write.mode === 'live' && !cpBox.write.enabled" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 p-3 text-xs text-amber-900 dark:text-amber-200">
-            🔒 Bu firmada 1C ga yozish o'chiq (faqat tahlil). "Egasi" ⚙️ Sozlamalar → Joriy firma → «1C ga yozish» da ruxsat berishi kerak.
+            <span x-text="cpBox.write.locked ? '🔒 1C ga yozish dastur darajasida yopiq: kontragentni 1C da o\'zingiz yarating (quyidagi ma\'lumotlardan nusxa oling).' : '🔒 Bu firmada 1C ga yozish o\'chiq (faqat tahlil). «Egasi» ⚙️ Sozlamalar → Joriy firma → «1C ga yozish» da ruxsat berishi kerak.'"></span>
           </div>
           <label class="block"><span class="text-xs text-slate-500">Nomi (1C da qisqa nom)</span>
             <input x-model="cpBox.name" maxlength="150" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
@@ -1619,6 +1621,7 @@ function app() {
     postLabel() {
       if (this.posting) return '⏳ 1C ga yozilmoqda…';
       const n = this.selCount(), w = this.writeInfo();
+      if (this.liveWrite() && w.locked) return "🔒 1C ga yozish yopiq — faqat o'qish (📤 import fayli orqali kiriting)";
       if (this.liveWrite() && !w.enabled) return this.me?.is_owner ? "🔒 Faqat tahlil — 1C ga yozishni yoqish ⚙️" : "🔒 Faqat tahlil — 1C ga yozish o'chiq";
       if (this.liveWrite() && n > w.limit) return "Bir martada ko'pi bilan " + w.limit + " ta tanlang (" + n + " ta tanlangan)";
       return "✅ " + n + " ta yangi hujjatni 1C ga qoralama kiritish" + (this.liveWrite() ? " (limit " + w.limit + ")" : '');

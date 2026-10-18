@@ -2,7 +2,11 @@
 
 Gemini quyidagi vositalarni (tools) chaqira oladi:
   analyze_and_deduplicate_vipiska(), check_didox_vs_1c(), learn_from_1c_history(stir),
-  post_confirmed_to_1c(doc_ids), cash_flow_summary()
+  post_confirmed_to_1c(doc_ids), cash_flow_summary(),
+  1C dan o'qish (services_insight): firm_overview(), account_balance(account), stock_overview(source),
+  counterparty_card(query), list_documents(doc_type, …), onec_read(entity, …)
+
+🔒 1C ga yozish dastur darajasida yopiq (services_1c.WRITES_ENABLED) — agent faqat o'qiydi.
 
 MUHIM: post_confirmed_to_1c hech narsani 1C ga yozmaydi — u faqat chatda tasdiqlash kartasini chiqaradi.
 Haqiqiy yozuv faqat buxgalter karta ichidagi tugmani bosganda (/api/post) amalga oshadi.
@@ -19,6 +23,8 @@ import httpx
 
 import config
 import core
+import services_1c
+import services_insight as insight
 from services_1c import E_BANK_IN, E_BANK_OUT, E_PURCHASE
 
 log = logging.getLogger("buxgalter.ai")
@@ -28,6 +34,13 @@ SYSTEM_PROMPT = """Sen — "BUXGALTER AI", O'zbekistondagi korxonalar uchun tajr
 
 Qoidalar:
 - Raqamlarni o'zing to'qib chiqarma — har doim vositalardan (tools) olingan ma'lumotga tayan.
+- 🔒 Sen 1C ga HECH QANDAY o'zgartirish kirita olmaysan va kiritmaysan (egasi qarori) — faqat o'qiysan va tahlil
+  qilasan. Kiritish so'ralsa: "1C ga yozish yopiq — 📤 1C import fayli orqali o'zingiz kiritasiz" deb tushuntir.
+- 1C dan ma'lumot kerak bo'lsa (o'qish): bank qoldig'i / sverka / oylik aylanma / qarzlar umumiy — firm_overview;
+  bitta schyot bo'yicha kontragentlar (40.10, 60.10, 43.10, 63.10, 64.xx, 67.10 …) — account_balance;
+  ombor / sklad / tovar qoldig'i — stock_overview (source: 1c, notion yoki compare); bitta kontragent haqida —
+  counterparty_card; hujjatlar ro'yxati (bank, xarid/kirim faktura, sotuv, kassa) — list_documents; boshqa
+  narsa (masalan asosiy vositalar, xodimlar, shartnomalar, registrlar) — onec_read (OData, faqat o'qish).
 - Vipiska yoki dublikat haqida so'ralsa — analyze_and_deduplicate_vipiska chaqir.
 - Didox / EHF / hisob-faktura haqida — check_didox_vs_1c chaqir.
 - Kontragent schyoti / tarix haqida — learn_from_1c_history(stir) chaqir.
@@ -64,6 +77,45 @@ TOOL_DECLARATIONS = [
          "mode": {"type": "STRING", "enum": ["vipiska", "didox"], "description": "vipiska yoki didox"}}}},
     {"name": "cash_flow_summary",
      "description": "Vipiska bo'yicha kunlik pul oqimi: kirim, chiqim, sof oqim va eng yirik kontragentlar."},
+    {"name": "firm_overview",
+     "description": "1C dan firma holati: 51.10 bank qoldig'i (1C va vipiska), sverka, shu oy kirim/chiqim, haftalik "
+                    "aylanma, debitor/kreditor (40.10/60.10/43.10/63.10) jami va eng kattalari, bugungi ishlar."},
+    {"name": "account_balance",
+     "description": "Bitta schyot qoldig'i kontragentlar (subkonto) bo'yicha, 1C provodkalaridan.",
+     "parameters": {"type": "OBJECT", "properties": {
+         "account": {"type": "STRING", "description": "Schyot kodi, masalan 60.10, 40.10, 4310, 64.10"},
+         "search": {"type": "STRING", "description": "Kontragent nomi yoki STIR bo'yicha qidiruv (ixtiyoriy)"}},
+         "required": ["account"]}},
+    {"name": "stock_overview",
+     "description": "Ombor (sklad) qoldiqlari: 1c — 1C provodkalari (29.10, 10.xx, 28.10); notion — Notion sklad "
+                    "bazasi (band/zaxira, izohlar bilan); compare — 1C va Notion farqlari.",
+     "parameters": {"type": "OBJECT", "properties": {
+         "source": {"type": "STRING", "enum": ["1c", "notion", "compare"]},
+         "search": {"type": "STRING", "description": "Tovar nomi bo'yicha qidiruv (ixtiyoriy)"}}}},
+    {"name": "counterparty_card",
+     "description": "Kontragent kartasi: 1C dagi nomi, STIR, hisob-kitob schyotlaridagi qoldig'i (qarz/avans), "
+                    "oxirgi 1 yildagi bank, xarid va sotuv hujjatlari.",
+     "parameters": {"type": "OBJECT", "properties": {
+         "query": {"type": "STRING", "description": "STIR (9 xonali) yoki nomining bir qismi"}}, "required": ["query"]}},
+    {"name": "list_documents",
+     "description": "1C hujjatlari ro'yxati (yangi → eski): bank kirim/chiqim, xarid (kirim fakturasi), sotuv, kassa.",
+     "parameters": {"type": "OBJECT", "properties": {
+         "doc_type": {"type": "STRING", "enum": list(insight.DOC_TYPES)},
+         "date_from": {"type": "STRING", "description": "YYYY-MM-DD (ixtiyoriy)"},
+         "date_to": {"type": "STRING", "description": "YYYY-MM-DD (ixtiyoriy)"},
+         "stir": {"type": "STRING", "description": "Kontragent STIR yoki nomi (ixtiyoriy)"},
+         "top": {"type": "INTEGER", "description": "Nechta (1–50, standart 20)"}}, "required": ["doc_type"]}},
+    {"name": "onec_read",
+     "description": "1C dan istalgan obyektni o'qish (OData, faqat GET). Boshqa vositalar yetmaganda ishlat. "
+                    "Masalan: Catalog_ОсновныеСредства, Catalog_Сотрудники, Catalog_ДоговорыКонтрагентов, "
+                    "Document_СчетНаОплатуПокупателю, InformationRegister_КурсыВалют.",
+     "parameters": {"type": "OBJECT", "properties": {
+         "entity": {"type": "STRING", "description": "OData obyekt nomi, masalan Catalog_Номенклатура"},
+         "filter": {"type": "STRING", "description": "OData $filter, masalan: DeletionMark eq false and "
+                                                     "substringof('кабель', Description)"},
+         "select": {"type": "STRING", "description": "Maydonlar vergul bilan (ixtiyoriy)"},
+         "orderby": {"type": "STRING", "description": "Masalan: Date desc (ixtiyoriy)"},
+         "top": {"type": "INTEGER", "description": "1–50, standart 20"}}, "required": ["entity"]}},
 ]
 
 
@@ -95,6 +147,8 @@ class ToolContext:
             return {"xato": f"Noma'lum vosita: {name}"}
         try:
             return await fn(**(args or {}))
+        except ValueError as e:  # noto'g'ri argument (schyot, obyekt nomi …) — agentga tushunarli xato
+            return {"xato": str(e)}
         except Exception as e:  # noqa: BLE001
             log.exception("tool %s failed", name)
             return {"xato": str(e)}
@@ -131,6 +185,8 @@ class ToolContext:
 
     async def t_post_confirmed_to_1c(self, doc_ids: list[str] | None = None, mode: str | None = None) -> dict:
         mode = mode if mode in ("vipiska", "didox") else self.mode
+        if not services_1c.WRITES_ENABLED and core.onec_for(self.session).mode == "live":
+            return {"holat": "yozish_yopiq", "izoh": services_1c.WRITE_LOCK_TEXT}
         rows = core.rows_of(self.session, mode)
         if not rows:
             return {"xato": "Avval vipiska (yoki Didox) ni yuklang va tekshiring"}
@@ -157,6 +213,31 @@ class ToolContext:
                 "tayyor_soni": len(chosen), "tayyor_summa": round(sum(r["amount"] for r in chosen), 2),
                 "bloklangan": [{"raqam": r["number"], "sabab": r["status_label"]} for r in blocked]}
 
+    # ---------------- 1C dan o'qish
+    async def _onec(self):
+        return await core.readable_onec(self.session)
+
+    async def t_firm_overview(self) -> dict:
+        return await insight.overview(self.session, await self._onec(), await core.onec_status(self.session.firm_id))
+
+    async def t_account_balance(self, account: str = "", search: str = "") -> dict:
+        return await insight.account(await self._onec(), account, search)
+
+    async def t_stock_overview(self, source: str = "1c", search: str = "") -> dict:
+        return await insight.stock(await self._onec(), core.firm_settings(self.session.firm_id),
+                                   source if source in ("1c", "notion", "compare") else "1c", search)
+
+    async def t_counterparty_card(self, query: str = "") -> dict:
+        return await insight.counterparty_card(await self._onec(), query)
+
+    async def t_list_documents(self, doc_type: str = "", date_from: str = "", date_to: str = "", stir: str = "",
+                               top: int = 20) -> dict:
+        return await insight.documents(await self._onec(), doc_type, date_from, date_to, stir, top)
+
+    async def t_onec_read(self, entity: str = "", filter: str = "", select: str = "", orderby: str = "",
+                          top: int = 20) -> dict:
+        return await insight.raw_query(await self._onec(), entity, filter, select, top, orderby)
+
     async def t_cash_flow_summary(self) -> dict:
         if not self.session.vipiska:
             if core.onec_for(self.session).mode != "demo":
@@ -178,12 +259,23 @@ def route_intent(message: str) -> list[tuple[str, dict]]:
         calls.append(("check_didox_vs_1c", {}))
     if stir and any(k in m for k in ("tarix", "schyot", "o'rgan", "stir")):
         calls.append(("learn_from_1c_history", {"stir": stir.group(1)}))
-    elif any(k in m for k in ("dublikat", "tekshir", "vipiska", "tarix", "schyot", "mosla")) and not calls:
+    elif any(k in m for k in ("dublikat", "tekshir", "vipiska", "tarix", "schyot", "mosla")) and not calls \
+            and not re.search(r"\b\d{2}[.]?\d{2}\b", m):  # "60.10 schyot" — schyot qoldig'i, vipiska emas
         calls.append(("analyze_and_deduplicate_vipiska", {}))
     if any(k in m for k in ("kirit", "1c ga", "yoz", "qoralama")):
         calls.append(("post_confirmed_to_1c", {"mode": "didox" if "didox" in m or "ehf" in m else "vipiska"}))
     if any(k in m for k in ("pul oqimi", "oqim", "tahlil", "cash")):
         calls.append(("cash_flow_summary", {}))
+    acc = re.search(r"\b(\d{2})[.]?(\d{2})\b", m)
+    if any(k in m for k in ("sklad", "ombor", "tovar qoldi")):
+        calls.append(("stock_overview", {"source": "compare" if "notion" in m and "1c" in m else
+                                          "notion" if "notion" in m else "1c"}))
+    elif acc and any(k in m for k in ("schyot", "qoldi", "qarz")) and not stir:
+        calls.append(("account_balance", {"account": acc.group(1) + "." + acc.group(2)}))
+    elif any(k in m for k in ("bank qoldi", "51.10", "5110", "sverka", "holat", "umumiy", "qarzdor", "debitor", "kreditor")):
+        calls.append(("firm_overview", {}))
+    if stir and any(k in m for k in ("kontragent", "karta", "qarz", "haqida")):
+        calls.append(("counterparty_card", {"query": stir.group(1)}))
     return calls
 
 
@@ -236,6 +328,11 @@ def mock_reply(calls: list[tuple[str, dict]], results: list[dict], mode: str) ->
             if not found:
                 lines.append("- Bu kontragent bo'yicha o'tkazilgan hujjat topilmadi")
             parts.append("\n".join(lines))
+        elif name == "post_confirmed_to_1c" and res.get("holat") == "yozish_yopiq":
+            parts.append(res["izoh"])
+        elif name in ("firm_overview", "account_balance", "stock_overview", "counterparty_card", "list_documents",
+                      "onec_read"):
+            parts.append(_plain_summary(name, res))
         elif name == "post_confirmed_to_1c" and res.get("holat") == "import_fayli_orqali":
             parts.append(f"📤 **{res['import_uchun_tayyor']} ta yangi qator** ({money(res['summa'])}). " + res["izoh"])
         elif name == "post_confirmed_to_1c":
@@ -255,6 +352,39 @@ def mock_reply(calls: list[tuple[str, dict]], results: list[dict], mode: str) ->
                          f"sof oqim **{money(res['net'])}**.")
             parts.append("\n".join(lines))
     return "\n\n".join(parts)
+
+
+def _plain_summary(name: str, res: dict) -> str:
+    """Demo AI uchun: o'qish vositalari natijasining qisqa ko'rinishi."""
+    if name == "firm_overview":
+        b = res["bank_51_10"]
+        lines = [f"**🏦 51.10:** {money(b['qiymat']) if b['qiymat'] is not None else '—'} ({b['manba']})"]
+        m = res.get("shu_oy") or {}
+        if m:
+            lines.append(f"- Shu oy: kirim {money(m.get('kirim', 0))}, chiqim {money(m.get('chiqim', 0))}")
+        for k, v in (res.get("qarzlar") or {}).items():
+            lines.append(f"- {k}: {money(v['jami'] or 0)}")
+        return "\n".join(lines)
+    if name == "account_balance":
+        lines = [f"**{res['schyot']} {res['nomi']}** — Dt {money(res['jami_debet'])}, Kt {money(res['jami_kredit'])}"]
+        lines += [f"- {r['name']}: {money(r['amount'])}" for r in res["qatorlar"][:10]]
+        return "\n".join(lines)
+    if name == "stock_overview":
+        if "holatlar" in res:
+            return f"**⚖️ Sklad 1C ↔ Notion:** {res['holatlar']}"
+        lines = [f"**📦 Sklad ({res['manba']}):** {res.get('pozitsiyalar')} pozitsiya, {money(res.get('jami_summa') or 0)}"]
+        lines += [f"- {t['name']}: {t['qty']} {t['unit']}" for t in res["tovarlar"][:10]]
+        return "\n".join(lines)
+    if name == "counterparty_card":
+        lines = [f"**{res['kontragent']}** (STIR {res.get('stir') or '—'})"]
+        q = res.get("qoldiqlar")
+        lines += [f"- {c} {v['nomi']}: {money(v['qoldiq'])}" for c, v in q.items()] if isinstance(q, dict) else [f"- {q}"]
+        return "\n".join(lines)
+    if name == "list_documents":
+        lines = [f"**{res['tur']}:** {res['soni']} ta, {money(res['jami_summa'])}"]
+        lines += [f"- {d['sana']} №{d['raqam']} {d['kontragent'] or ''} {money(d['summa'] or 0)}" for d in res["hujjatlar"][:10]]
+        return "\n".join(lines)
+    return f"**{res.get('obyekt')}:** {res.get('soni')} ta yozuv"
 
 
 # ---------------------------------------------------------------- dvigatellar

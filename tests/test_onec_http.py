@@ -1,5 +1,6 @@
 """Real 1C HTTP mijozining xatti-harakati — internetga chiqmasdan (httpx.MockTransport)."""
 import asyncio
+import urllib.parse
 
 import httpx
 
@@ -358,8 +359,10 @@ def test_draft_mirrors_latest_real_document_of_same_operation():
     assert payload["СубконтоДт1"] == "Налог" and "РасшифровкаПлатежа" not in payload
 
 
-def test_write_403_shows_1c_text_and_does_not_block_reads():
+def test_write_403_shows_1c_text_and_does_not_block_reads(monkeypatch):
     """Login to'g'ri, lekin 1C yozishga ruxsat bermadi (403): 1C matni ko'rsatiladi, o'qish to'xtamaydi."""
+    import services_1c
+    monkeypatch.setattr(services_1c, "WRITES_ENABLED", True)  # HTTP xatosini sinash uchun qulf ochiladi
     import pytest
     from services_1c import ODataError
 
@@ -374,8 +377,10 @@ def test_write_403_shows_1c_text_and_does_not_block_reads():
     assert asyncio.run(svc.t.query("Catalog_Контрагенты", top=1)) == [{"Ref_Key": "x"}]  # o'qish ishlayveradi
 
 
-def test_write_403_from_hosting_nginx_is_explained():
+def test_write_403_from_hosting_nginx_is_explained(monkeypatch):
     """So'rov 1C gacha yetmay hosting proksi-serveri (nginx) yozishni yopsa — HTML emas, tushunarli sabab."""
+    import services_1c
+    monkeypatch.setattr(services_1c, "WRITES_ENABLED", True)  # HTTP xatosini sinash uchun qulf ochiladi
     import pytest
     from services_1c import ODataError
     html = "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center><hr><center>nginx</center></body></html>"
@@ -388,3 +393,45 @@ def test_write_403_from_hosting_nginx_is_explained():
     with pytest.raises(ODataError, match="Hosting serveri \\(nginx\\).*1C gacha") as e:
         asyncio.run(svc.t.create("Document_СписаниеСРасчетногоСчета", {"a": 1}))
     assert "<html" not in str(e.value) and svc.t.auth_error is None
+
+
+def test_hard_write_lock_sends_nothing_to_1c(monkeypatch):
+    """Egasi qarori: haqiqiy 1C ga hech qanday yozuv yuborilmaydi — so'rov umuman jo'natilmaydi; o'qish ishlaydi."""
+    import pytest
+    import services_1c
+    from services_1c import ODataError
+    assert services_1c.WRITES_ENABLED is False
+    sent = []
+
+    def handler(req):
+        sent.append(req.method)
+        return httpx.Response(200, json={"value": []})
+    svc = service(handler)
+    for call in (svc.t.create("Document_СписаниеСРасчетногоСчета", {"a": 1}),
+                 svc.t.patch("Document_СписаниеСРасчетногоСчета", "x", {"DeletionMark": True}),
+                 svc.t.create("Catalog_Контрагенты", {"a": 1})):
+        with pytest.raises(ODataError, match="dastur darajasida yopiq"):
+            asyncio.run(call)
+    assert sent == []
+    asyncio.run(svc.t.query("Catalog_Контрагенты", top=1))
+    assert sent == ["GET"]
+
+
+def test_when_opened_only_bank_and_purchase_documents_allowed(monkeypatch):
+    import pytest
+    import services_1c
+    from services_1c import ODataError
+    monkeypatch.setattr(services_1c, "WRITES_ENABLED", True)
+    assert services_1c.WRITE_ALLOWLIST == {"Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета",
+                                           "Document_ПоступлениеТоваровУслуг"}
+    sent = []
+
+    def handler(req):
+        sent.append(urllib.parse.unquote(req.url.path).rsplit("/", 1)[-1])
+        return httpx.Response(201, json={"Ref_Key": "r", "Number": "1"})
+    svc = service(handler)
+    for entity in ("Catalog_Контрагенты", "Document_РеализацияТоваровУслуг", "Document_ПриходныйКассовыйОрдер"):
+        with pytest.raises(ODataError, match="faqat bank vipiskasi va kirim fakturalari"):
+            asyncio.run(svc.t.create(entity, {"a": 1}))
+    asyncio.run(svc.t.create("Document_ПоступлениеТоваровУслуг", {"a": 1}))
+    assert sent == ["Document_ПоступлениеТоваровУслуг"]

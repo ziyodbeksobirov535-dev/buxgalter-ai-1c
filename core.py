@@ -11,6 +11,7 @@ from datetime import date, datetime
 
 import config
 import db
+import services_1c
 import services_files1c as files1c
 from services_1c import ACCOUNT_CHOICES, Cond, ODataError, OfflineOData, OneCService, build_service
 from services_didox import DidoxError, analyze_invoices, build_purchase_payload, fetch_invoices, recheck_purchase
@@ -265,8 +266,8 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     outdated = bool(rows) and session.analyzed_with.get(f"{mode}_ver") != ANALYSIS_VERSION
     st = session.statement if mode == "vipiska" else None
     fs = firm_settings(session.firm_id)
-    write = {"enabled": fs["onec_write_enabled"], "limit": fs["onec_write_limit"],
-             "create_contracts": fs["onec_create_contracts"]}
+    write = {"enabled": fs["onec_write_enabled"] and services_1c.WRITES_ENABLED, "limit": fs["onec_write_limit"],
+             "create_contracts": fs["onec_create_contracts"], "locked": not services_1c.WRITES_ENABLED}
     period = None
     if st and st.rows:
         days = [r.posted_date or r.date for r in st.rows]
@@ -410,6 +411,8 @@ def write_gate(session: Session, count: int) -> dict:
     doirasida. Demo baza — cheklovsiz. Natija: firma sozlamalari."""
     settings = firm_settings(session.firm_id)
     if onec_for(session).mode == "live":
+        if not services_1c.WRITES_ENABLED:
+            raise ODataError(services_1c.WRITE_LOCK_TEXT)
         if not settings["onec_write_enabled"]:
             raise ODataError("🔒 Faqat tahlil rejimi: bu firma uchun 1C ga yozishga ruxsat berilmagan (hech narsa "
                              "o'zgartirilmadi). Ruxsatni \"Egasi\" ⚙️ Sozlamalar → Joriy firma → «1C ga yozish» da beradi.")
@@ -583,7 +586,8 @@ async def counterparty_prefill(session: Session, row_id: str) -> dict:
         "contract_kind": "СПоставщиком" if row["direction"] == "chiqim" else "СПокупателем",
         "existing": [{"name": r.get("Description"), "deleted": bool(r.get("DeletionMark"))}
                      for r in await onec.find_counterparty_any(inn)],
-        "write": {"enabled": firm_settings(session.firm_id)["onec_write_enabled"], "mode": onec.mode},
+        "write": {"enabled": firm_settings(session.firm_id)["onec_write_enabled"] and services_1c.WRITES_ENABLED,
+                  "locked": not services_1c.WRITES_ENABLED, "mode": onec.mode},
     }
 
 
@@ -605,6 +609,8 @@ async def create_counterparty(session: Session, row_id: str, data: dict, by: str
         raise ValueError("Bank hisob raqami 20 xonali bo'lsin")
     write_gate(session, 1)
     onec = onec_for(session)
+    if onec.mode == "live":  # egasi qarori: haqiqiy 1C ga faqat bank vipiskasi va kirim fakturalari
+        services_1c.write_guard(E_COUNTERPARTY)
     if onec.mode not in ("live", "demo"):
         raise ODataError("1C ga ulanmagan — kontragentni 1C ning o'zida qo'shing (yoki import faylida 1C o'zi yaratadi)")
     async with _post_lock, session.lock:

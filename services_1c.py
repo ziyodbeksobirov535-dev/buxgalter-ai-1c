@@ -44,6 +44,27 @@ E_ORG = "Catalog_Организации"
 E_CASH_FLOW = "Catalog_СтатьиДвиженияДенежныхСредств"
 E_ACCOUNTS = "ChartOfAccounts_Хозрасчетный"
 E_BANKS = "Catalog_Банки"  # banklar (Code = MFO)
+
+# ---------------------------------------------------------------- 🔒 1C ga yozish qulfi (dastur darajasida)
+# Egasi qarori (2026-10-18): hozircha haqiqiy 1C ga HECH QANDAY o'zgartirish kiritilmaydi — firma sozlamasida
+# "1C ga yozish" yoqilgan bo'lsa ham. Bu qulf HTTP so'rov yuboriladigan joyda (HttpOData._send) tekshiriladi:
+# GET dan boshqa har qanday so'rov (POST/PATCH/PUT/DELETE/MERGE) 1C ga umuman jo'natilmaydi.
+# Kelajakda ochilsa ham (WRITES_ENABLED = True — faqat kod o'zgarishi bilan, egasining roziligi bilan) faqat
+# quyidagi hujjatlar yoziladi: bank vipiskasi (kirim/chiqim) va kirim fakturalari (tovar/xizmat xaridi).
+WRITES_ENABLED = False
+WRITE_ALLOWLIST = frozenset({E_BANK_IN, E_BANK_OUT, E_PURCHASE})
+WRITE_LOCK_TEXT = ("🔒 1C ga yozish dastur darajasida yopiq: hozircha agent va dastur 1C ga hech qanday o'zgartirish "
+                   "kiritmaydi (faqat o'qiydi). 1C da hech narsa o'zgarmadi. Yangi qatorlarni 📤 «1C import fayli» "
+                   "orqali o'zingiz kiritasiz.")
+
+
+def write_guard(entity: str) -> None:
+    """Haqiqiy 1C ga yozishdan oldin: qulf va ruxsat etilgan hujjatlar ro'yxati."""
+    if not WRITES_ENABLED:
+        raise ODataError(WRITE_LOCK_TEXT)
+    if entity not in WRITE_ALLOWLIST:
+        raise ODataError(f"🔒 1C ga faqat bank vipiskasi va kirim fakturalari yoziladi — «{entity}» ga yozish "
+                         "taqiqlangan. 1C da hech narsa o'zgarmadi.")
 E_TAXES = "Catalog_ВидыНалоговИПлатежейВБюджет"  # soliq turlari: soliq to'lovining schyoti shu turdan (СчетУчета)
 # Namuna hujjatdan qoralamaga ko'chiriladigan "holat" maydonlari (konfiguratsiyada bo'lmasa — tashlab yuboriladi)
 TEMPLATE_HEADER_FIELDS = ("СпособПогашенияЗадолженности", "СтатусВыписки", "ВидНалоговогоОбязательства")
@@ -324,6 +345,8 @@ class HttpOData:
         raise ODataError(f"1C OData xatosi {status}: {text[:500]}")
 
     async def _send(self, method: str, url: str, **kw) -> httpx.Response:
+        if method.upper() != "GET":
+            write_guard(urllib.parse.unquote(urllib.parse.urlsplit(url).path).rsplit("/", 1)[-1].split("(")[0])
         if self.auth_error:
             raise ODataError(self.auth_error)
         try:
@@ -358,6 +381,11 @@ class HttpOData:
             params["$orderby"] = orderby
         if select:
             params["$select"] = ",".join(select)
+        data = await self._request("GET", entity + "?" + encode_query(params))
+        return data.get("value", [])
+
+    async def raw(self, entity: str, params: dict[str, str]) -> list[dict]:
+        """Agentning umumiy o'qish so'rovi (faqat GET; $filter matni agentdan)."""
         data = await self._request("GET", entity + "?" + encode_query(params))
         return data.get("value", [])
 
