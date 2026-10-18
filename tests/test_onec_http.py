@@ -268,3 +268,21 @@ def test_dedup_without_counterparty_uses_number_date_amount():
     assert dup["status"] == "duplicate" and dup["kind"] == "exact"
     new = asyncio.run(onec.check_duplicate("Document_СписаниеСРасчетногоСчета", "999999", day, 1.0, None))
     assert new["status"] == "new"
+
+
+def test_nomenclature_found_by_ikpu_in_classifier_field():
+    """BP UZ 3.0: КодИКПУ yo'q, MXIK КодИзКлассификатора rekvizitida."""
+    import asyncio
+    from services_1c import DemoOData, OneCService
+    meta = COMPOSITE_META.replace('<Property Name="Description" Type="Edm.String"/></EntityType>',
+                                  '<Property Name="Description" Type="Edm.String"/>'
+                                  '<Property Name="КодИзКлассификатора" Type="Edm.String"/></EntityType>')
+
+    class UzLive(DemoOData):
+        mode = "live"
+
+        async def metadata_text(self):
+            return meta
+    onec = OneCService(UzLive())
+    nom = asyncio.run(onec.find_nomenclature("boshqa nom", "07214001001000000"))
+    assert nom and nom["Description"] == "Armatura A500C d12"

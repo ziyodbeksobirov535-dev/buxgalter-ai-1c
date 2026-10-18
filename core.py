@@ -60,7 +60,7 @@ def save_session(session: Session) -> None:
                       "posted_date": r.posted_date.isoformat() if r.posted_date else None} for r in st.rows],
             "own_account": st.own_account,
             "source": st.source, "warnings": st.warnings, "is_sample": st.is_sample, "own_inn": st.own_inn,
-            "own_name": st.own_name},
+            "own_name": st.own_name, "opening_balance": st.opening_balance},
         "vipiska": session.vipiska, "didox": session.didox, "didox_source": session.didox_source,
         "analyzed_with": session.analyzed_with,
     }
@@ -87,7 +87,8 @@ def _load_session(sid: str, firm_id: int) -> Session:
                     for r in st["rows"]]
             session.statement = Statement(rows=rows, own_account=st["own_account"], source=st["source"],
                                           warnings=st["warnings"], is_sample=st.get("is_sample", False),
-                                          own_inn=st.get("own_inn", ""), own_name=st.get("own_name", ""))
+                                          own_inn=st.get("own_inn", ""), own_name=st.get("own_name", ""),
+                                          opening_balance=st.get("opening_balance"))
         session.vipiska = data.get("vipiska", [])
         session.didox = data.get("didox", [])
         session.didox_source = data.get("didox_source", "")

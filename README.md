@@ -4,7 +4,9 @@ Bank vipiskasi va Didox EHF larini **1C OData** bilan solishtiradigan, **dublika
 schyotlarni **buxgalterning oldingi 1C yozuvlaridan o'rganadigan** va yangi hujjatlarni faqat
 **qoralama** (`Posted: false`) sifatida kirituvchi tizim.
 
-- 🖥️ Split-screen Web App (70% jadval / 30% AI Copilot), yorug'/to'q rejim, 100% o'zbek tilida
+- 🖥️ Ko'p sahifali Web App (chap menyu / telefonda pastki menyu), yorug'/to'q rejim, 100% o'zbek tilida:
+  🏠 Bosh sahifa · 🏦 Bank vipiskalari · 📑 Didox · 📦 Sklad · 📚 Hisob qoidalari · ⚙️ Sozlamalar;
+  🤖 AI Copilot — istalgan sahifadan ochiladigan suzuvchi panel
 - 🔐 Login va parol bilan kirish, rollar: **Egasi / Buxgalter / Kuzatuvchi**
 - 🏢 **Bir akkauntdan bir nechta firma** — har birining o'z 1C bazasi (yoki bitta bazadagi alohida tashkiloti)
 - 📜 Audit jurnali: kim, qachon, qaysi firmada nima qilgani
@@ -65,6 +67,24 @@ bilan; yozish imkonsiz. 1C ulangach "🔄 1C da qayta tekshirish".
 Bu ikki marta kiritish imkonsizligini isbotlaydi.
 
 ---
+
+## 🏠 Sahifalar
+
+Manzil sahifani eslab qoladi (`#/home`, `#/bank`, `#/didox`, `#/stock`, `#/rules`, `#/settings`) — yangilansa ham
+joyida qoladi, Telegram'dan to'g'ridan-to'g'ri kerakli sahifani ochish mumkin.
+
+- **🏠 Bosh sahifa** — **51.10 qoldig'i** (1C provodkalaridan; 1C yo'q bo'lsa — vipiskaning yakuniy qoldig'i);
+  **⚖️ sverka**: vipiska yakuniy qoldig'i ↔ 1C dagi 51.10 (o'sha kun oxirida) — farq 1C ga hali kiritilmagan
+  to'lovlar bilan tushuntirilsa 🟡, aks holda 🔴; shu oydagi kirim / chiqim / sof aylanma; oxirgi 8 haftalik grafik;
+  **📋 bugungi ishlar** (tayyor to'lovlar, farqlar, to'siqlar, Didox, ziddiyatli qoidalar — bosilsa o'sha sahifa);
+  **bizga qarzdorlar (40.10)** va **biz qarzdormiz (60.10)** top-5, avanslar (43.10 / 63.10); bir nechta firma
+  bo'lsa — barchasining xulosasi.
+- **📦 Sklad va qoldiqlar** — 29.10, 10.10, 10.30, 10.80, 28.10 qoldig'i nomenklatura bo'yicha: MXIK (IKPU), birlik,
+  miqdor, o'rtacha narx, summa, qidiruv. Manba — `AccountingRegister_Хозрасчетный/Balance` (faqat o'qish).
+- **⚙️ Sozlamalar** — tizim holati (1C, AI, Didox, Telegram, eksport fayllari), joriy firma (1C OData manzili, login,
+  Didox), firmalar, foydalanuvchilar, AI kaliti, jurnal, akkaunt.
+
+Bosh sahifa va Sklad 1C dan **faqat o'qiydi**. Demo firmada namuna qoldiqlar bilan darhol ko'rinadi.
 
 ## 🧠 Gemini API kaliti (bepul, 30 soniya)
 
@@ -250,6 +270,7 @@ services_1c.py       1C OData: Ref_Key, dublikat, tarixdan o'rganish, qoralama; 
 services_vipiska.py  Excel / CSV / 1CClientBankExchange parser, tahlil, payload
 services_didox.py    Didox EHF ↔ ПоступлениеТоваровУслуг
 services_rules.py    Hisob qoidalari: 1C tarixidan o'rganish, ustuvorlik, Excel
+services_dashboard.py Bosh sahifa va Sklad: 1C qoldiqlari, sverka, aylanma, qarzlar, bugungi ishlar
 services_files1c.py  1C bilan fayl orqali: Excel eksportlari → 1C nusxasi, OSV qoldiqlari, 1CClientBankExchange
 services_ai.py       Gemini Function Calling + Demo AI + OpenAI/Claude zaxira
 demo_data.py         Demo 1C bazasi (OData shaklida) va namuna vipiska generatori
@@ -274,6 +295,8 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 | GET/POST/DELETE | `/api/1c-files…` | 1C Excel eksportlari (o'qish, o'rganish, o'chirish) |
 | POST | `/api/vipiska/export-1c` | 1C ga import fayli (1CClientBankExchange) |
 | GET | `/api/vipiska/checklist` | 📋 Tekshiruv ro'yxati (Excel): schyot, avans, shartnoma |
+| GET | `/api/dashboard` | Bosh sahifa: qoldiq, sverka, aylanma, qarzlar, bugungi ishlar, firmalar |
+| GET | `/api/stock` | Ombor qoldiqlari nomenklatura bo'yicha |
 | POST | `/api/chat` | AI Copilot |
 
 ## 🧪 Avtomatik testlar
@@ -283,9 +306,9 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-172 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+182 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
-bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli va sahifadagi JS satrlari.
+bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
 
 **Zaxira nusxa:** `data/` papkasini (ayniqsa `app.db` va `secret.key`) muntazam nusxalang.

@@ -19,6 +19,7 @@ import core
 import db
 import accounts_uz
 import services_ai
+import services_dashboard
 import services_files1c
 import services_rules
 from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, set_session_cookie
@@ -330,6 +331,42 @@ async def status(ctx: FirmCtx = Depends(firm_ctx)):
     return {"onec": await core.onec_status(ctx.firm_id), "ai": services_ai.engine_info(), "dedup": True,
             "files": services_files1c.summary(services_files1c.load_store(ctx.firm_id)),
             "firm": db.get_firm(ctx.firm_id), "telegram": bool(config.TELEGRAM_BOT_TOKEN)}
+
+
+def _source_label(firm: dict) -> str:
+    s = db.firm_settings(firm["id"])
+    if s["onec_base_url"]:
+        return "odata"
+    if services_files1c.load_store(firm["id"]):
+        return "files"
+    return "demo"
+
+
+@app.get("/api/dashboard")
+async def dashboard(ctx: FirmCtx = Depends(firm_ctx)):
+    """🏠 Bosh sahifa: 51.10 qoldig'i va sverka, oylik aylanma, debitor/kreditor, bugungi ishlar (faqat o'qish)."""
+    session = ctx.session
+    status = await core.onec_status(ctx.firm_id)
+    onec = await core.readable_onec(session)
+    data = await services_dashboard.build(session, onec, status)
+    firms = []
+    for f in db.list_firms(ctx.user):  # barcha firmalar xulosasi (shu foydalanuvchining jadvallari bo'yicha)
+        s = core.get_session(core.session_id(ctx.user["id"], f["id"]), f["id"])
+        t = services_dashboard.todo(s.vipiska, s.didox, f["id"])
+        firms.append({"id": f["id"], "name": f["name"], "inn": f["inn"], "source": _source_label(f),
+                      "rows": len(s.vipiska), "ready": t["bank_ready"] + t["bank_to_export"] if s.vipiska else 0,
+                      "discrepancy": t["bank_discrepancy"], "didox_pending": t["didox_pending"],
+                      "statement": s.statement.source if s.statement else ""})
+    data["firms"] = firms
+    data["can_post"] = ctx.can_post
+    return data
+
+
+@app.get("/api/stock")
+async def stock(ctx: FirmCtx = Depends(firm_ctx)):
+    """📦 Ombor qoldiqlari (29.10, 10.xx, 28.10) nomenklatura bo'yicha — 1C provodkalaridan, faqat o'qish."""
+    onec = await core.readable_onec(ctx.session)
+    return await services_dashboard.stock(onec)
 
 
 @app.get("/api/1c/metadata")

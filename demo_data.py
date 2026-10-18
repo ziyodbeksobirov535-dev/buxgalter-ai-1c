@@ -151,7 +151,10 @@ def seed_1c() -> dict[str, list[dict]]:
                                                             "DeletionMark": False})
     for name, ikpu in NOMENCLATURE.items():
         db["Catalog_Номенклатура"].append({"Ref_Key": gid("nom", name), "Description": name, "КодИКПУ": ikpu,
-                                           "DeletionMark": False})
+                                           "КодИзКлассификатора": ikpu, "DeletionMark": False,
+                                           "ЕдиницаИзмерения_Key": gid("unit", NOMENCLATURE_UNITS.get(name, "dona"))})
+    db["Catalog_КлассификаторЕдиницИзмерения"] = [{"Ref_Key": gid("unit", u), "Description": u, "DeletionMark": False}
+                                                 for u in sorted(set(NOMENCLATURE_UNITS.values()) | {"dona"})]
 
     for inn, (name, role, mfo, acc) in COUNTERPARTIES.items():
         k = gid("kontr", inn)
@@ -262,7 +265,36 @@ def seed_1c() -> dict[str, list[dict]]:
         elif inv["in_1c"] == "diff":
             purchase_doc(inv["seller_inn"], inv["date"], inv["number"], inv["amount_in_1c"], inv["kind"],
                          inv["items"][0][0])
+    db["_balances"] = demo_balances()
     return db
+
+
+# ---------------------------------------------------------------- demo qoldiqlar (Bosh sahifa, Sklad)
+NOMENCLATURE_UNITS = {"Sement M400 (50 kg)": "qop", "Armatura A500C d12": "tonna", "Polietilen quvur PE100 d110": "metr",
+                      "Kabel VVG 3x2.5": "metr", "Yuk tashish xizmati": "xizmat"}
+DEMO_STOCK = [  # (nomi, miqdor, summa) — 29.10 Ombordagi tovarlar
+    ("Sement M400 (50 kg)", 1240, 62_000_000.0), ("Armatura A500C d12", 18.5, 166_500_000.0),
+    ("Polietilen quvur PE100 d110", 2300, 161_000_000.0), ("Kabel VVG 3x2.5", 5400, 48_600_000.0),
+]
+DEMO_DEBTS = {  # schyot -> [(STIR, qoldiq: + debet, − kredit)]
+    "40.10": [("301234567", 45_000_000.0), ("306789012", 19_050_000.0), ("303456789", 12_400_000.0)],
+    "63.10": [("305678901", -8_000_000.0)],
+    "60.10": [("304567890", -67_800_000.0), ("307890123", -23_520_000.0), ("302345678", -4_200_000.0)],
+    "43.10": [("308901234", 15_000_000.0)],
+}
+DEMO_BANK_BALANCE = 412_650_300.0  # 51.10 — 1C dagi qoldiq
+
+
+def demo_balances() -> dict[str, list[dict]]:
+    """OData AccountingRegister_Хозрасчетный/Balance javobi shaklida."""
+    def row(dim, dim_type, amount, qty=0.0):
+        return {"ExtDimension1": dim, "ExtDimension1_Type": f"StandardODATA.{dim_type}", "СуммаBalance": amount,
+                "КоличествоBalance": qty}
+    out = {"51.10": [row(gid("bank", ORG["account"]), "Catalog_БанковскиеСчета", DEMO_BANK_BALANCE)],
+           "29.10": [row(gid("nom", n), "Catalog_Номенклатура", s, q) for n, q, s in DEMO_STOCK]}
+    for code, items in DEMO_DEBTS.items():
+        out[code] = [row(gid("kontr", inn), "Catalog_Контрагенты", amount) for inn, amount in items]
+    return out
 
 
 def build_sample_xlsx(path) -> None:

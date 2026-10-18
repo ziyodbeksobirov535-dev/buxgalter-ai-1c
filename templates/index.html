@@ -54,19 +54,6 @@
         <template x-for="f in firms" :key="f.id"><option :value="f.id" :selected="f.id===firmId" x-text="'🏢 ' + f.name"></option></template>
       </select>
 
-      <!-- Rejim tablari -->
-      <div class="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-sm order-3 lg:order-none w-full lg:w-auto">
-        <button @click="switchMode('vipiska')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
-                :class="mode==='vipiska' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
-          🏦 Bank Vipiskasi (Sinov)</button>
-        <button @click="switchMode('didox')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
-                :class="mode==='didox' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
-          📑 Didox EHF vs 1C</button>
-        <button @click="switchMode('rules')" class="flex-1 lg:flex-none px-3 py-1.5 rounded-lg font-medium transition"
-                :class="mode==='rules' ? 'bg-white dark:bg-slate-700 shadow-sm text-brand-700 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'">
-          📚 Hisob qoidalari</button>
-      </div>
-
       <!-- Holat belgilari -->
       <div class="hidden md:flex items-center gap-1.5 text-xs">
         <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')"
@@ -77,16 +64,16 @@
       </div>
 
       <div class="ml-auto flex items-center gap-1.5">
-        <template x-if="mode==='vipiska'">
+        <template x-if="page==='bank'">
           <div class="flex items-center gap-1.5">
             <button @click="$refs.file.click()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">📥 <span class="hidden sm:inline">Vipiska/Excel Yuklash</span><span class="sm:hidden">Yuklash</span></button>
             <button x-show="isDemoFirm()" @click="loadSample()" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-3 py-1.5">🧪 <span class="hidden sm:inline">Test Vipiska Namunasini Yuklash</span><span class="sm:hidden">Test</span></button>
           </div>
         </template>
-        <template x-if="mode==='didox'">
+        <template x-if="page==='didox'">
           <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">🔄 Didox'dan yuklash</button>
         </template>
-        <button @click="openSettings()" title="Sozlamalar" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5">⚙️<span class="hidden xl:inline"> Sozlamalar</span></button>
+        <button @click="go('settings')" title="Sozlamalar" class="lg:hidden rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5">⚙️<span class="hidden xl:inline"> Sozlamalar</span></button>
         <div class="relative" x-data="{ open: false }" @click.outside="open = false">
           <button @click="open = !open" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5 max-w-[180px] truncate"
                   :title="me?.user.role_label" x-text="'👤 ' + (me?.user.full_name || me?.user.username || '')"></button>
@@ -113,8 +100,453 @@
   <!-- ===================== MAIN SPLIT ===================== -->
   <main class="flex-1 flex min-h-0">
 
-    <!-- ---------- CHAP PANEL (70%) ---------- -->
-    <section class="flex-col min-w-0 lg:w-[70%] w-full" :class="mobileTab==='table' ? 'flex' : 'hidden lg:flex'"
+    <!-- ---------- CHAP MENYU (kompyuter) ---------- -->
+    <nav class="hidden lg:flex flex-col w-56 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 gap-1">
+      <template x-for="p in pages()" :key="p.id">
+        <a :href="'#/' + p.id" class="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition"
+           :class="page===p.id ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
+          <span class="text-base" x-text="p.icon"></span><span class="flex-1" x-text="p.label"></span>
+          <span x-show="p.badge" class="text-[11px] rounded-full px-1.5 min-w-[20px] text-center"
+                :class="page===p.id ? 'bg-white/25' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'" x-text="p.badge"></span>
+        </a>
+      </template>
+      <div class="mt-auto pt-3 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+        <div>🛡️ Dublikat himoyasi yoqilgan</div>
+        <div x-show="snap?.onec_mode==='live' || status.onec?.mode==='live'">🔒 Faqat tahlil: 1C ga yozilmaydi</div>
+      </div>
+    </nav>
+
+    <!-- ---------- SAHIFALAR ---------- -->
+    <div class="flex-1 min-w-0 min-h-0 flex flex-col">
+    <!-- ===================== 🏠 BOSH SAHIFA ===================== -->
+    <div x-show="page==='home'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 space-y-4">
+      <div x-show="noFirms" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm">
+        <div class="text-3xl">🏢</div><p class="mt-2">Sizga hali hech qanday firma biriktirilmagan — "Egasi"ga murojaat qiling.</p>
+      </div>
+      <div x-show="!noFirms && dashLoading && !dash" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-500">
+        <div class="inline-block h-6 w-6 rounded-full border-2 border-brand-500 border-t-transparent animate-spin"></div>
+        <div class="mt-2">1C dan qoldiq va aylanma o'qilmoqda…</div>
+      </div>
+      <template x-if="dash && !noFirms">
+        <div class="space-y-4">
+          <!-- Qoldiq + sverka -->
+          <div class="grid lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 rounded-2xl p-5 bg-gradient-to-br from-brand-600 via-brand-500 to-emerald-600 text-white shadow-sm">
+              <div class="flex items-start gap-2">
+                <div class="text-sm opacity-90">🏦 51.10 Hisob-kitob schyoti qoldig'i (UZS)</div>
+                <button @click="loadDash(true)" :disabled="dashLoading" class="ml-auto rounded-lg bg-white/15 hover:bg-white/25 px-2 py-1 text-xs" x-text="dashLoading ? '⏳' : '🔄 Yangilash'"></button>
+              </div>
+              <div class="mt-3 text-3xl sm:text-4xl font-bold num tracking-tight" x-text="dash.balance.value === null ? '—' : fmt(dash.balance.value)"></div>
+              <div class="mt-2 text-xs opacity-90" x-text="balanceSource()"></div>
+              <div class="mt-4 flex flex-wrap gap-2 text-sm">
+                <a href="#/bank" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📥 Vipiska yuklash</a>
+                <a href="#/didox" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📑 Didox</a>
+                <a href="#/stock" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📦 Sklad</a>
+              </div>
+            </div>
+            <div class="rounded-2xl p-5 border bg-white dark:bg-slate-900" :class="sverkaClass()">
+              <div class="font-semibold text-sm">⚖️ Sverka: vipiska ↔ 1C (51.10)</div>
+              <template x-if="dash.balance.sverka">
+                <div class="mt-2 space-y-2 text-sm">
+                  <div x-text="dash.balance.sverka.text"></div>
+                  <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs num">
+                    <span class="text-slate-500" x-text="'Vipiska (' + fmtDate(dash.balance.sverka.date) + ')'"></span><span class="text-right" x-text="fmt(dash.balance.sverka.statement_closing)"></span>
+                    <span class="text-slate-500">1C dagi 51.10</span><span class="text-right" x-text="fmt(dash.balance.sverka.onec)"></span>
+                    <span class="text-slate-500 font-medium">Farq</span><span class="text-right font-semibold" x-text="fmt(dash.balance.sverka.diff)"></span>
+                    <span class="text-slate-500">1C da yo'q to'lovlar</span><span class="text-right" x-text="fmt(dash.balance.sverka.pending_net)"></span>
+                  </div>
+                </div>
+              </template>
+              <p x-show="!dash.balance.sverka" class="mt-2 text-xs text-slate-500 leading-relaxed" x-text="sverkaHint()"></p>
+            </div>
+          </div>
+
+          <!-- Shu oy -->
+          <div class="grid sm:grid-cols-3 gap-3">
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 p-4">
+              <div class="text-xs text-emerald-700 dark:text-emerald-400">⬇️ Shu oydagi jami kirim</div>
+              <div class="mt-1 text-2xl font-bold num text-emerald-600 dark:text-emerald-400" x-text="fmt(dash.month.kirim)"></div>
+              <div class="mt-1 text-xs text-slate-500" x-text="monthLabel()"></div>
+            </div>
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/60 p-4">
+              <div class="text-xs text-rose-700 dark:text-rose-400">⬆️ Shu oydagi jami chiqim</div>
+              <div class="mt-1 text-2xl font-bold num text-rose-600 dark:text-rose-400" x-text="fmt(dash.month.chiqim)"></div>
+              <div class="mt-1 text-xs text-slate-500" x-text="monthLabel()"></div>
+            </div>
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+              <div class="text-xs text-slate-500 dark:text-slate-400">⚖️ Sof aylanma (farq)</div>
+              <div class="mt-1 text-2xl font-bold num" :class="dash.month.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'" x-text="(dash.month.net > 0 ? '+' : '') + fmt(dash.month.net)"></div>
+              <div class="mt-1 text-xs text-slate-500" x-text="flowSourceLabel()"></div>
+            </div>
+          </div>
+
+          <!-- Grafik + bugungi ishlar -->
+          <div class="grid lg:grid-cols-3 gap-4">
+            <div class="lg:col-span-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+              <div class="flex flex-wrap items-center gap-3 text-sm">
+                <span class="font-semibold">📊 Haftalik aylanma (oxirgi 8 hafta)</span>
+                <span class="ml-auto flex items-center gap-3 text-xs text-slate-500">
+                  <span class="flex items-center gap-1"><i class="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500"></i>Kirim</span>
+                  <span class="flex items-center gap-1"><i class="inline-block h-2.5 w-2.5 rounded-sm bg-rose-500"></i>Chiqim</span>
+                </span>
+              </div>
+              <div class="mt-4 flex items-end gap-1.5 sm:gap-3 h-52">
+                <template x-for="w in dash.weeks" :key="w.week">
+                  <div class="flex-1 min-w-0 flex flex-col items-center gap-1 h-full">
+                    <div class="w-full flex-1 flex items-end justify-center gap-0.5 sm:gap-1">
+                      <div class="w-1/2 max-w-[22px] rounded-t bg-emerald-500/90 transition-all" :style="`height:${weekBar(w.kirim)}%`" :title="'Kirim: ' + fmt(w.kirim)"></div>
+                      <div class="w-1/2 max-w-[22px] rounded-t bg-rose-500/90 transition-all" :style="`height:${weekBar(w.chiqim)}%`" :title="'Chiqim: ' + fmt(w.chiqim)"></div>
+                    </div>
+                    <div class="text-[10px] text-slate-500 num whitespace-nowrap" x-text="fmtDate(w.week).slice(0, 5)"></div>
+                  </div>
+                </template>
+              </div>
+              <div x-show="!dash.weeks.some(w => w.kirim || w.chiqim)" class="text-center text-xs text-slate-500 -mt-28 mb-24">Bu davrda bank harakati topilmadi</div>
+            </div>
+            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+              <div class="font-semibold text-sm">📋 Bugungi ishlar</div>
+              <div class="mt-2 space-y-0.5">
+                <template x-for="t in todoItems()" :key="t.id">
+                  <a :href="'#/' + t.page" class="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm">
+                    <span x-text="t.icon"></span><span class="flex-1 min-w-0" x-text="t.text"></span>
+                    <span class="text-xs rounded-full px-2 py-0.5 num" :class="t.cls" x-text="t.count"></span>
+                  </a>
+                </template>
+                <div x-show="!todoItems().length" class="px-2 py-3 text-sm text-slate-500">✅ Hozircha kutilayotgan ish yo'q</div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5 text-xs">
+                <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')" x-text="onecBadge()"></span></div>
+                <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)" x-text="aiBadge()"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Debitor / kreditor -->
+          <div x-show="dash.debts" class="grid lg:grid-cols-2 gap-4">
+            <template x-for="d in debtSections()" :key="d.key">
+              <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+                <div class="flex items-baseline gap-2">
+                  <span class="font-semibold text-sm" x-text="d.title"></span>
+                  <span class="ml-auto num font-semibold" :class="d.cls" x-text="fmt(d.total)"></span>
+                </div>
+                <div class="text-xs text-slate-500" x-text="d.note"></div>
+                <ol class="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
+                  <template x-for="(t, i) in d.top" :key="i">
+                    <li class="flex items-center gap-2 py-1.5 text-sm">
+                      <span class="text-xs text-slate-400 w-4" x-text="i + 1"></span>
+                      <span class="truncate flex-1" :title="t.inn ? 'STIR ' + t.inn : ''" x-text="t.name"></span>
+                      <span class="num" x-text="fmt(t.amount)"></span>
+                    </li>
+                  </template>
+                  <li x-show="!d.top.length" class="py-2 text-xs text-slate-500">Qoldiq yo'q</li>
+                </ol>
+              </div>
+            </template>
+          </div>
+
+          <!-- Barcha firmalar -->
+          <div x-show="(dash.firms || []).length > 1" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+            <div class="font-semibold text-sm">🏢 Barcha firmalar</div>
+            <div class="mt-2 overflow-x-auto thin-scroll">
+              <table class="w-full text-sm">
+                <thead class="text-xs text-slate-500 text-left"><tr>
+                  <th class="py-1.5 pr-2">Firma</th><th class="py-1.5 px-2">1C</th><th class="py-1.5 px-2">Vipiska</th>
+                  <th class="py-1.5 px-2 text-right">Yangi</th><th class="py-1.5 px-2 text-right">Farq</th><th class="py-1.5 pl-2 text-right">Didox</th>
+                </tr></thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <template x-for="f in dash.firms" :key="f.id">
+                    <tr class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60" :class="f.id === firmId ? 'font-medium' : ''" @click="switchFirm(f.id)">
+                      <td class="py-2 pr-2"><span x-text="(f.id === firmId ? '▶ ' : '') + f.name"></span><div class="text-[11px] text-slate-500" x-text="f.inn ? 'STIR ' + f.inn : ''"></div></td>
+                      <td class="py-2 px-2 text-xs whitespace-nowrap" x-text="sourceLabel(f.source)"></td>
+                      <td class="py-2 px-2 text-xs text-slate-500 max-w-[180px] truncate" x-text="f.statement || '—'"></td>
+                      <td class="py-2 px-2 text-right num" x-text="f.ready || '—'"></td>
+                      <td class="py-2 px-2 text-right num" :class="f.discrepancy ? 'text-rose-600' : ''" x-text="f.discrepancy || '—'"></td>
+                      <td class="py-2 pl-2 text-right num" x-text="f.didox_pending || '—'"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div x-show="dash.errors.length" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs px-3 py-2 space-y-0.5">
+            <template x-for="e in dash.errors" :key="e"><div x-text="'⚠️ ' + e"></div></template>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- ===================== 📦 SKLAD VA QOLDIQLAR ===================== -->
+    <div x-show="page==='stock'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 space-y-4">
+      <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <div class="col-span-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+          <div class="text-xs text-slate-500 dark:text-slate-400">📦 Ombordagi qoldiq qiymati (UZS)</div>
+          <div class="mt-1 text-2xl font-bold num" x-text="stock ? fmt(stock.total) : '—'"></div>
+          <div class="mt-1 text-xs text-slate-500" x-text="stockSourceLabel()"></div>
+        </div>
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+          <div class="text-xs text-slate-500 dark:text-slate-400">🔢 Pozitsiyalar</div>
+          <div class="mt-1 text-2xl font-bold num" x-text="stock ? stock.count : '—'"></div>
+        </div>
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-2">
+          <input x-model="stockSearch" placeholder="Qidirish: nomi yoki MXIK" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5">
+          <button @click="loadStock()" :disabled="stockLoading" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5" x-text="stockLoading ? '⏳ O\'qilmoqda…' : '🔄 1C dan yangilash'"></button>
+        </div>
+      </div>
+      <div x-show="stockLoading && !stock" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-500">
+        <div class="inline-block h-6 w-6 rounded-full border-2 border-brand-500 border-t-transparent animate-spin"></div>
+        <div class="mt-2">1C provodkalaridan ombor qoldig'i o'qilmoqda…</div>
+      </div>
+      <div x-show="stock && !stock.count" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 text-sm text-slate-600 dark:text-slate-300" x-text="stockEmptyText()"></div>
+      <template x-for="g in stockGroups()" :key="g.account">
+        <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div class="flex flex-wrap items-baseline gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800">
+            <span class="font-semibold text-sm" x-text="g.account + ' — ' + g.title"></span>
+            <span class="text-xs text-slate-500" x-text="g.items.length + ' ta'"></span>
+            <span class="ml-auto num font-semibold" x-text="fmt(g.total)"></span>
+          </div>
+          <div class="overflow-x-auto thin-scroll">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 text-left">
+                <tr><th class="px-3 py-2">Nomi</th><th class="px-3 py-2">MXIK (IKPU)</th><th class="px-3 py-2">Birlik</th>
+                  <th class="px-3 py-2 text-right">Miqdor</th><th class="px-3 py-2 text-right whitespace-nowrap">O'rtacha narx</th><th class="px-3 py-2 text-right">Summa</th></tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                <template x-for="(it, i) in g.items" :key="i">
+                  <tr>
+                    <td class="px-3 py-2 min-w-[220px]" x-text="it.name"></td>
+                    <td class="px-3 py-2 text-xs num text-slate-500" x-text="it.ikpu || '—'"></td>
+                    <td class="px-3 py-2 text-xs" x-text="it.unit || '—'"></td>
+                    <td class="px-3 py-2 text-right num whitespace-nowrap" x-text="fmtQty(it.qty)"></td>
+                    <td class="px-3 py-2 text-right num whitespace-nowrap text-slate-500" x-text="it.price === null ? '—' : fmt(it.price)"></td>
+                    <td class="px-3 py-2 text-right num whitespace-nowrap font-medium" x-text="fmt(it.sum)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+    </div>
+  <!-- ===================== SOZLAMALAR SAHIFASI ===================== -->
+  <div x-show="page==='settings'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4">
+    <div class="max-w-4xl mx-auto flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm">
+      <div class="shrink-0 flex items-center px-5 pt-4 pb-2"><h3 class="font-semibold text-base">⚙️ Sozlamalar</h3></div>
+      <!-- Tizim holati -->
+      <div class="px-5 pb-3">
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
+          <template x-for="h in healthItems()" :key="h.label">
+            <div class="rounded-xl border px-3 py-2" :class="h.ok === true ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/20' : (h.ok === false ? 'border-rose-200 bg-rose-50/60 dark:border-rose-900 dark:bg-rose-950/20' : 'border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20')">
+              <div class="font-medium" x-text="h.label"></div>
+              <div class="mt-0.5 text-slate-600 dark:text-slate-400 break-words" x-text="h.detail"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+      <div class="shrink-0 flex gap-1 overflow-x-auto thin-scroll px-5 pb-2 border-b border-slate-200 dark:border-slate-800">
+        <template x-for="t in settingsTabs()" :key="t.id">
+          <button @click="openTab(t.id)" class="shrink-0 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap"
+                  :class="settingsTab===t.id ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'" x-text="t.label"></button>
+        </template>
+      </div>
+
+      <div class="p-5 space-y-5">
+        <!-- ---- Joriy firma ---- -->
+        <section x-show="settingsTab==='firm'" class="space-y-4">
+          <div class="grid sm:grid-cols-2 gap-3">
+            <label class="block"><span class="text-xs text-slate-500">Firma nomi</span>
+              <input x-model="firmForm.name" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+            <label class="block"><span class="text-xs text-slate-500">STIR (1C dagi tashkilot)</span>
+              <input x-model="firmForm.inn" inputmode="numeric" maxlength="9" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+          </div>
+          <label class="block"><span class="text-xs text-slate-500">Bank hisob raqamlari (vergul bilan, ixtiyoriy) — boshqa firmaning vipiskasini aniqlash uchun</span>
+            <input x-model="firmForm.bank_accounts" placeholder="20208000100123456001, 20208000…" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">🗄️ 1C OData ulanishi</div>
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.onec_demo_mode" class="rounded"> Demo 1C bazasi (sinov uchun, real 1C ga tegmaydi)</label>
+            <div x-show="!firmForm.onec_demo_mode" class="space-y-2">
+              <input x-model="firmForm.onec_base_url" placeholder="https://1c.uzcloud.uz/a/bpuz/1234" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <div class="grid grid-cols-2 gap-2">
+                <input x-model="firmForm.onec_user" placeholder="1C foydalanuvchi" autocomplete="off" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                <input type="password" x-model="firmForm.onec_password" placeholder="Parol" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              </div>
+              <p class="text-xs text-slate-500">🔐 Parol shifrlangan holda saqlanadi. Manzil yoki login o'zgarsa, eski parol o'chiriladi — qayta kiriting. Xato login bilan dastur 1C ga faqat bir marta urinadi.</p>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">📑 Didox</div>
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
+            <div x-show="!firmForm.didox_demo_mode" class="space-y-2">
+              <input x-model="firmForm.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            </div>
+          </div>
+          <div x-show="onecTest" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs whitespace-pre-line" x-text="onecTest"></div>
+          <div class="flex flex-wrap justify-end gap-2">
+            <button @click="saveFirm(true)" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">🔌 Saqlash va 1C ni tekshirish</button>
+            <button @click="saveFirm(false)" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button>
+          </div>
+        </section>
+
+        <!-- ---- Firmalar ---- -->
+        <section x-show="settingsTab==='firms'" class="space-y-4">
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+            <template x-for="f in allFirms" :key="f.id">
+              <div class="flex flex-wrap items-center gap-2 px-3 py-2.5" :class="f.active ? '' : 'opacity-50'">
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium truncate" x-text="f.name"></div>
+                  <div class="text-xs text-slate-500" x-text="(f.inn ? 'STIR ' + f.inn + ' · ' : '') + (f.onec_demo_mode ? '1C: Demo' : '1C: ' + (f.onec_base_url || '—')) + (f.active ? '' : ' · o\'chirilgan')"></div>
+                </div>
+                <button x-show="f.active" @click="switchFirm(f.id); openTab('firm')" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1">✏️ Sozlash</button>
+                <button x-show="f.active" @click="deactivateFirm(f)" class="text-xs rounded-lg border border-rose-300 text-rose-600 dark:border-rose-900 px-2.5 py-1">O'chirish</button>
+              </div>
+            </template>
+          </div>
+          <form @submit.prevent="addFirm()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">➕ Yangi firma</div>
+            <div class="grid sm:grid-cols-[1fr_160px_auto] gap-2">
+              <input x-model="newFirm.name" required placeholder="Firma nomi" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input x-model="newFirm.inn" placeholder="STIR" inputmode="numeric" maxlength="9" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Qo'shish</button>
+            </div>
+            <p class="text-xs text-slate-500">Yangi firma Demo rejimda yaratiladi — keyin "✏️ Sozlash" orqali 1C manzili va loginini kiriting.</p>
+          </form>
+        </section>
+
+        <!-- ---- Foydalanuvchilar ---- -->
+        <section x-show="settingsTab==='users'" class="space-y-4">
+          <template x-for="u in users" :key="u.id">
+            <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2" :class="u.active ? '' : 'opacity-60'">
+              <div class="flex flex-wrap items-center gap-2">
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium" x-text="(u.full_name || u.username) + (u.id === me?.user.id ? ' (siz)' : '')"></div>
+                  <div class="text-xs text-slate-500" x-text="u.username + (u.telegram_id ? ' · 📱 Telegram bog\'langan' : '') + (u.last_login_at ? ' · oxirgi kirish ' + fmtTs(u.last_login_at) : '')"></div>
+                </div>
+                <select x-model="u.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
+                  <option value="owner">Egasi</option><option value="accountant">Buxgalter</option><option value="viewer">Kuzatuvchi</option>
+                </select>
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="u.active" class="rounded"> Faol</label>
+              </div>
+              <div x-show="u.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                <span class="text-slate-500">Firmalar:</span>
+                <template x-for="f in allFirms.filter(f => f.active)" :key="f.id">
+                  <label class="flex items-center gap-1"><input type="checkbox" class="rounded" :checked="u.firm_ids.includes(f.id)" @change="toggleId(u.firm_ids, f.id)"><span x-text="f.name"></span></label>
+                </template>
+              </div>
+              <div x-show="u.role === 'owner'" class="text-xs text-slate-500">Egasi barcha firmalarni ko'radi.</div>
+              <div class="flex flex-wrap items-center gap-2">
+                <input type="password" x-model="u.new_password" placeholder="Yangi parol (ixtiyoriy)" autocomplete="new-password" class="flex-1 min-w-[160px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
+                <button @click="saveUser(u)" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5">💾 Saqlash</button>
+              </div>
+            </div>
+          </template>
+          <form @submit.prevent="addUser()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">➕ Yangi foydalanuvchi</div>
+            <div class="grid sm:grid-cols-2 gap-2">
+              <input x-model="newUser.username" required placeholder="Login" autocomplete="off" autocapitalize="none" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input x-model="newUser.full_name" placeholder="Ism-familiya" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="newUser.password" required placeholder="Parol (kamida 8 belgi)" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <select x-model="newUser.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+                <option value="accountant">Buxgalter — yuklaydi va 1C ga yozadi</option>
+                <option value="viewer">Kuzatuvchi — faqat ko'radi</option>
+                <option value="owner">Egasi — hamma narsa</option>
+              </select>
+            </div>
+            <div x-show="newUser.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              <span class="text-slate-500">Firmalar:</span>
+              <template x-for="f in allFirms.filter(f => f.active)" :key="f.id">
+                <label class="flex items-center gap-1"><input type="checkbox" class="rounded" :checked="newUser.firm_ids.includes(f.id)" @change="toggleId(newUser.firm_ids, f.id)"><span x-text="f.name"></span></label>
+              </template>
+            </div>
+            <div class="flex justify-end"><button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Qo'shish</button></div>
+          </form>
+        </section>
+
+        <!-- ---- AI ---- -->
+        <section x-show="settingsTab==='ai'" class="space-y-2">
+          <select x-model="settings.ai_provider" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <option value="gemini">Google Gemini (bepul) — tavsiya etiladi</option>
+            <option value="openai">OpenAI (zaxira)</option>
+            <option value="claude">Anthropic Claude (zaxira)</option>
+            <option value="mock">Demo AI (kalitsiz)</option>
+          </select>
+          <div x-show="settings.ai_provider==='gemini'" class="space-y-2">
+            <div class="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 p-3 text-xs text-emerald-800 dark:text-emerald-300">
+              🎁 Bepul Gemini API kalitini 30 soniyada oling:
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" @click="openExternal($event)" class="font-semibold underline">aistudio.google.com/app/apikey</a>
+              → "Create API key" → nusxa oling va shu yerga qo'ying.
+            </div>
+            <input type="password" x-model="settings.gemini_api_key" autocomplete="off" placeholder="Gemini API kaliti (AIza…)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input x-model="settings.gemini_model" placeholder="Model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <div x-show="settings.ai_provider==='openai'" class="space-y-2">
+            <input type="password" x-model="settings.openai_api_key" placeholder="OpenAI API kaliti" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input x-model="settings.openai_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <div x-show="settings.ai_provider==='claude'" class="space-y-2">
+            <input type="password" x-model="settings.anthropic_api_key" placeholder="Anthropic API kaliti" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <input x-model="settings.anthropic_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+          </div>
+          <p class="text-xs text-slate-500">AI sozlamalari barcha firmalar uchun umumiy.</p>
+          <div class="flex justify-end"><button @click="saveAi()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button></div>
+        </section>
+
+        <!-- ---- Jurnal ---- -->
+        <section x-show="settingsTab==='audit'" class="space-y-2">
+          <p class="text-xs text-slate-500">Kim, qachon, qaysi firmada nima qilgani (oxirgi 100 ta).</p>
+          <div class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+            <template x-for="a in audit" :key="a.id">
+              <div class="px-3 py-2 flex flex-wrap gap-x-3 gap-y-0.5">
+                <span class="text-slate-500 num" x-text="fmtTs(a.ts)"></span>
+                <span class="font-medium" x-text="a.user || '—'"></span>
+                <span x-show="a.firm" class="text-slate-500" x-text="'🏢 ' + a.firm"></span>
+                <span x-text="actionLabel(a)"></span>
+              </div>
+            </template>
+            <div x-show="!audit.length" class="px-3 py-4 text-slate-500 text-center">Hozircha yozuv yo'q</div>
+          </div>
+        </section>
+
+        <!-- ---- Akkaunt ---- -->
+        <section x-show="settingsTab==='account'" class="space-y-5">
+          <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs" x-text="'👤 ' + (me?.user.full_name || me?.user.username || '') + ' · ' + (me?.user.username || '') + ' · ' + (me?.user.role_label || '')"></div>
+          <form x-show="!isTg" @submit.prevent="changePassword()" class="space-y-2">
+            <div class="font-semibold">🔑 Parolni o'zgartirish</div>
+            <input type="text" :value="me?.user.username" autocomplete="username" class="hidden" aria-hidden="true">
+            <input type="password" x-model="pwd.old" required placeholder="Joriy parol" autocomplete="current-password" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <div class="grid sm:grid-cols-2 gap-2">
+              <input type="password" x-model="pwd.new1" required placeholder="Yangi parol (kamida 8 belgi)" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="pwd.new2" required placeholder="Yangi parolni takrorlang" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            </div>
+            <p class="text-xs text-slate-500">Parol o'zgarganda boshqa barcha qurilmalardan chiqariladi.</p>
+            <div class="flex justify-end"><button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Parolni o'zgartirish</button></div>
+          </form>
+          <div class="space-y-2">
+            <div class="font-semibold">📱 Telegram'ni bog'lash</div>
+            <template x-if="me?.user.telegram_id">
+              <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span>✅ Bog'langan (ID <span x-text="me.user.telegram_id"></span>)</span>
+                <button @click="unlinkTg()" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1">Uzish</button>
+              </div>
+            </template>
+            <template x-if="!me?.user.telegram_id">
+              <div class="space-y-2 text-xs">
+                <p class="text-slate-500" x-show="me?.telegram_bot">Kod oling va uni botga yuboring — shundan keyin bot va Mini App sizni taniydi.</p>
+                <p class="text-slate-500" x-show="!me?.telegram_bot">Telegram bot sozlanmagan (.env dagi TELEGRAM_BOT_TOKEN).</p>
+                <button x-show="me?.telegram_bot" @click="getTgCode()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5">Kod olish</button>
+                <div x-show="tgCode" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">Botga yuboring: <code class="text-base font-semibold" x-text="'/link ' + tgCode"></code> <span class="text-slate-500">(10 daqiqa amal qiladi)</span></div>
+              </div>
+            </template>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+    <!-- 🏦 Bank / 📑 Didox / 📚 Qoidalar ish joyi -->
+    <section x-show="isWork()" class="flex flex-col flex-1 min-h-0 min-w-0"
              @dragover.prevent="drag=true" @dragleave.prevent="drag=false" @drop.prevent="drag=false; mode==='vipiska' && upload($event.dataTransfer.files[0])">
       <div x-show="mode !== 'rules'" class="flex-1 overflow-y-auto thin-scroll p-4 space-y-4 relative">
 
@@ -499,9 +931,14 @@
                 x-text="posting ? '⏳ 1C ga yozilmoqda…' : '✅ Faqat yangi (dublikat bo\'lmagan) ' + selCount() + ' ta hujjatni 1C ga Qoralama kiritish'"></button>
       </div>
     </section>
+    </div>
 
-    <!-- ---------- O'NG PANEL (30%): AI COPILOT ---------- -->
-    <aside class="flex-col min-w-0 lg:w-[30%] w-full border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" :class="mobileTab==='chat' ? 'flex' : 'hidden lg:flex'">
+    <!-- ---------- 🤖 AI COPILOT (suzuvchi panel) ---------- -->
+    <div x-show="chatOpen" x-transition.opacity @click="chatOpen=false" class="fixed inset-0 z-40 bg-slate-900/40"></div>
+    <aside x-show="chatOpen" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+           x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full"
+           @keydown.escape.window="chatOpen=false"
+           class="fixed z-50 inset-y-0 right-0 w-full sm:w-[440px] flex flex-col border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl" style="padding-bottom: env(safe-area-inset-bottom)">
       <div class="shrink-0 px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
         <div class="h-8 w-8 rounded-lg bg-violet-100 dark:bg-violet-900/40 grid place-items-center">🤖</div>
         <div class="leading-tight min-w-0">
@@ -509,6 +946,7 @@
           <div class="text-[11px] text-slate-500 truncate" x-text="status.ai.label || '…'"></div>
         </div>
         <button @click="chat = [chat[0]]" class="ml-auto text-xs text-slate-400 hover:text-slate-600" title="Chatni tozalash">🧹</button>
+        <button @click="chatOpen=false" class="text-slate-400 hover:text-slate-600 text-lg leading-none px-1" aria-label="Yopish">✕</button>
       </div>
 
       <div x-ref="chatBox" class="flex-1 overflow-y-auto thin-scroll px-3 py-3 space-y-3">
@@ -584,10 +1022,19 @@
     </aside>
   </main>
 
-  <!-- Mobil pastki tablar -->
-  <nav class="lg:hidden shrink-0 grid grid-cols-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm" style="padding-bottom: env(safe-area-inset-bottom)">
-    <button @click="mobileTab='table'" class="py-2.5 font-medium" :class="mobileTab==='table' ? 'text-brand-600 dark:text-sky-400' : 'text-slate-500'" x-text="'📋 Jadval' + (kpis.ready ? ' (' + kpis.ready + ')' : '')"></button>
-    <button @click="mobileTab='chat'" class="py-2.5 font-medium" :class="mobileTab==='chat' ? 'text-brand-600 dark:text-sky-400' : 'text-slate-500'">🤖 AI Copilot</button>
+  <!-- 🤖 AI tugmasi (har bir sahifada) -->
+  <button x-show="!chatOpen" @click="openChat()" class="fixed z-30 right-4 bottom-20 rounded-full bg-violet-600 hover:bg-violet-700 text-white shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2"
+          :class="isWork() && rows.length ? 'lg:bottom-24' : 'lg:bottom-6'">🤖 <span class="hidden sm:inline">AI Buxgalter Copilot</span></button>
+
+  <!-- Telefon: pastki menyu -->
+  <nav class="lg:hidden shrink-0 grid grid-cols-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" style="padding-bottom: env(safe-area-inset-bottom)">
+    <template x-for="p in pages()" :key="p.id">
+      <a :href="'#/' + p.id" class="relative flex flex-col items-center py-1.5 text-[10px] font-medium"
+         :class="page===p.id ? 'text-brand-600 dark:text-sky-400' : 'text-slate-500'">
+        <span class="text-lg leading-none" x-text="p.icon"></span><span class="mt-0.5 truncate max-w-full" x-text="p.short"></span>
+        <span x-show="p.badge" class="absolute top-0.5 right-2 text-[9px] rounded-full bg-amber-500 text-white px-1" x-text="p.badge"></span>
+      </a>
+    </template>
   </nav>
 
   <!-- ===================== TASDIQLASH MODALI ===================== -->
@@ -756,213 +1203,6 @@
     </div>
   </div>
 
-  <!-- ===================== SOZLAMALAR MODALI ===================== -->
-  <div x-show="settingsOpen" x-transition.opacity class="fixed inset-0 z-40 bg-slate-900/50 flex items-end sm:items-center justify-center sm:p-4" @keydown.escape.window="settingsOpen=false">
-    <div @click.outside="settingsOpen=false" class="w-full sm:max-w-3xl h-[90dvh] sm:h-[85dvh] flex flex-col rounded-t-2xl sm:rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl text-sm">
-      <div class="shrink-0 flex items-center px-5 pt-4 pb-2"><h3 class="font-semibold text-base">⚙️ Sozlamalar</h3><button @click="settingsOpen=false" class="ml-auto text-slate-400" aria-label="Yopish">✕</button></div>
-      <div class="shrink-0 flex gap-1 overflow-x-auto thin-scroll px-5 pb-2 border-b border-slate-200 dark:border-slate-800">
-        <template x-for="t in settingsTabs()" :key="t.id">
-          <button @click="openTab(t.id)" class="shrink-0 rounded-lg px-3 py-1.5 font-medium whitespace-nowrap"
-                  :class="settingsTab===t.id ? 'bg-brand-600 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'" x-text="t.label"></button>
-        </template>
-      </div>
-
-      <div class="flex-1 overflow-y-auto thin-scroll p-5 space-y-5">
-        <!-- ---- Joriy firma ---- -->
-        <section x-show="settingsTab==='firm'" class="space-y-4">
-          <div class="grid sm:grid-cols-2 gap-3">
-            <label class="block"><span class="text-xs text-slate-500">Firma nomi</span>
-              <input x-model="firmForm.name" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
-            <label class="block"><span class="text-xs text-slate-500">STIR (1C dagi tashkilot)</span>
-              <input x-model="firmForm.inn" inputmode="numeric" maxlength="9" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
-          </div>
-          <label class="block"><span class="text-xs text-slate-500">Bank hisob raqamlari (vergul bilan, ixtiyoriy) — boshqa firmaning vipiskasini aniqlash uchun</span>
-            <input x-model="firmForm.bank_accounts" placeholder="20208000100123456001, 20208000…" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
-
-          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-            <div class="font-semibold">🗄️ 1C OData ulanishi</div>
-            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.onec_demo_mode" class="rounded"> Demo 1C bazasi (sinov uchun, real 1C ga tegmaydi)</label>
-            <div x-show="!firmForm.onec_demo_mode" class="space-y-2">
-              <input x-model="firmForm.onec_base_url" placeholder="https://1c.uzcloud.uz/a/bpuz/1234" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <div class="grid grid-cols-2 gap-2">
-                <input x-model="firmForm.onec_user" placeholder="1C foydalanuvchi" autocomplete="off" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-                <input type="password" x-model="firmForm.onec_password" placeholder="Parol" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              </div>
-              <p class="text-xs text-slate-500">🔐 Parol shifrlangan holda saqlanadi. Manzil yoki login o'zgarsa, eski parol o'chiriladi — qayta kiriting. Xato login bilan dastur 1C ga faqat bir marta urinadi.</p>
-            </div>
-          </div>
-
-          <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-            <div class="font-semibold">📑 Didox</div>
-            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
-            <div x-show="!firmForm.didox_demo_mode" class="space-y-2">
-              <input x-model="firmForm.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            </div>
-          </div>
-          <div x-show="onecTest" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs whitespace-pre-line" x-text="onecTest"></div>
-          <div class="flex flex-wrap justify-end gap-2">
-            <button @click="saveFirm(true)" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">🔌 Saqlash va 1C ni tekshirish</button>
-            <button @click="saveFirm(false)" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button>
-          </div>
-        </section>
-
-        <!-- ---- Firmalar ---- -->
-        <section x-show="settingsTab==='firms'" class="space-y-4">
-          <div class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
-            <template x-for="f in allFirms" :key="f.id">
-              <div class="flex flex-wrap items-center gap-2 px-3 py-2.5" :class="f.active ? '' : 'opacity-50'">
-                <div class="min-w-0 flex-1">
-                  <div class="font-medium truncate" x-text="f.name"></div>
-                  <div class="text-xs text-slate-500" x-text="(f.inn ? 'STIR ' + f.inn + ' · ' : '') + (f.onec_demo_mode ? '1C: Demo' : '1C: ' + (f.onec_base_url || '—')) + (f.active ? '' : ' · o\'chirilgan')"></div>
-                </div>
-                <button x-show="f.active" @click="switchFirm(f.id); openTab('firm')" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1">✏️ Sozlash</button>
-                <button x-show="f.active" @click="deactivateFirm(f)" class="text-xs rounded-lg border border-rose-300 text-rose-600 dark:border-rose-900 px-2.5 py-1">O'chirish</button>
-              </div>
-            </template>
-          </div>
-          <form @submit.prevent="addFirm()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4 space-y-2">
-            <div class="font-semibold">➕ Yangi firma</div>
-            <div class="grid sm:grid-cols-[1fr_160px_auto] gap-2">
-              <input x-model="newFirm.name" required placeholder="Firma nomi" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input x-model="newFirm.inn" placeholder="STIR" inputmode="numeric" maxlength="9" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Qo'shish</button>
-            </div>
-            <p class="text-xs text-slate-500">Yangi firma Demo rejimda yaratiladi — keyin "✏️ Sozlash" orqali 1C manzili va loginini kiriting.</p>
-          </form>
-        </section>
-
-        <!-- ---- Foydalanuvchilar ---- -->
-        <section x-show="settingsTab==='users'" class="space-y-4">
-          <template x-for="u in users" :key="u.id">
-            <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2" :class="u.active ? '' : 'opacity-60'">
-              <div class="flex flex-wrap items-center gap-2">
-                <div class="min-w-0 flex-1">
-                  <div class="font-medium" x-text="(u.full_name || u.username) + (u.id === me?.user.id ? ' (siz)' : '')"></div>
-                  <div class="text-xs text-slate-500" x-text="u.username + (u.telegram_id ? ' · 📱 Telegram bog\'langan' : '') + (u.last_login_at ? ' · oxirgi kirish ' + fmtTs(u.last_login_at) : '')"></div>
-                </div>
-                <select x-model="u.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
-                  <option value="owner">Egasi</option><option value="accountant">Buxgalter</option><option value="viewer">Kuzatuvchi</option>
-                </select>
-                <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="u.active" class="rounded"> Faol</label>
-              </div>
-              <div x-show="u.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                <span class="text-slate-500">Firmalar:</span>
-                <template x-for="f in allFirms.filter(f => f.active)" :key="f.id">
-                  <label class="flex items-center gap-1"><input type="checkbox" class="rounded" :checked="u.firm_ids.includes(f.id)" @change="toggleId(u.firm_ids, f.id)"><span x-text="f.name"></span></label>
-                </template>
-              </div>
-              <div x-show="u.role === 'owner'" class="text-xs text-slate-500">Egasi barcha firmalarni ko'radi.</div>
-              <div class="flex flex-wrap items-center gap-2">
-                <input type="password" x-model="u.new_password" placeholder="Yangi parol (ixtiyoriy)" autocomplete="new-password" class="flex-1 min-w-[160px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
-                <button @click="saveUser(u)" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5">💾 Saqlash</button>
-              </div>
-            </div>
-          </template>
-          <form @submit.prevent="addUser()" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4 space-y-2">
-            <div class="font-semibold">➕ Yangi foydalanuvchi</div>
-            <div class="grid sm:grid-cols-2 gap-2">
-              <input x-model="newUser.username" required placeholder="Login" autocomplete="off" autocapitalize="none" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input x-model="newUser.full_name" placeholder="Ism-familiya" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input type="password" x-model="newUser.password" required placeholder="Parol (kamida 8 belgi)" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <select x-model="newUser.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-                <option value="accountant">Buxgalter — yuklaydi va 1C ga yozadi</option>
-                <option value="viewer">Kuzatuvchi — faqat ko'radi</option>
-                <option value="owner">Egasi — hamma narsa</option>
-              </select>
-            </div>
-            <div x-show="newUser.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-              <span class="text-slate-500">Firmalar:</span>
-              <template x-for="f in allFirms.filter(f => f.active)" :key="f.id">
-                <label class="flex items-center gap-1"><input type="checkbox" class="rounded" :checked="newUser.firm_ids.includes(f.id)" @change="toggleId(newUser.firm_ids, f.id)"><span x-text="f.name"></span></label>
-              </template>
-            </div>
-            <div class="flex justify-end"><button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Qo'shish</button></div>
-          </form>
-        </section>
-
-        <!-- ---- AI ---- -->
-        <section x-show="settingsTab==='ai'" class="space-y-2">
-          <select x-model="settings.ai_provider" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            <option value="gemini">Google Gemini (bepul) — tavsiya etiladi</option>
-            <option value="openai">OpenAI (zaxira)</option>
-            <option value="claude">Anthropic Claude (zaxira)</option>
-            <option value="mock">Demo AI (kalitsiz)</option>
-          </select>
-          <div x-show="settings.ai_provider==='gemini'" class="space-y-2">
-            <div class="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900 p-3 text-xs text-emerald-800 dark:text-emerald-300">
-              🎁 Bepul Gemini API kalitini 30 soniyada oling:
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" @click="openExternal($event)" class="font-semibold underline">aistudio.google.com/app/apikey</a>
-              → "Create API key" → nusxa oling va shu yerga qo'ying.
-            </div>
-            <input type="password" x-model="settings.gemini_api_key" autocomplete="off" placeholder="Gemini API kaliti (AIza…)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            <input x-model="settings.gemini_model" placeholder="Model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          </div>
-          <div x-show="settings.ai_provider==='openai'" class="space-y-2">
-            <input type="password" x-model="settings.openai_api_key" placeholder="OpenAI API kaliti" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            <input x-model="settings.openai_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          </div>
-          <div x-show="settings.ai_provider==='claude'" class="space-y-2">
-            <input type="password" x-model="settings.anthropic_api_key" placeholder="Anthropic API kaliti" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            <input x-model="settings.anthropic_model" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-          </div>
-          <p class="text-xs text-slate-500">AI sozlamalari barcha firmalar uchun umumiy.</p>
-          <div class="flex justify-end"><button @click="saveAi()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">💾 Saqlash</button></div>
-        </section>
-
-        <!-- ---- Jurnal ---- -->
-        <section x-show="settingsTab==='audit'" class="space-y-2">
-          <p class="text-xs text-slate-500">Kim, qachon, qaysi firmada nima qilgani (oxirgi 100 ta).</p>
-          <div class="rounded-xl border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-            <template x-for="a in audit" :key="a.id">
-              <div class="px-3 py-2 flex flex-wrap gap-x-3 gap-y-0.5">
-                <span class="text-slate-500 num" x-text="fmtTs(a.ts)"></span>
-                <span class="font-medium" x-text="a.user || '—'"></span>
-                <span x-show="a.firm" class="text-slate-500" x-text="'🏢 ' + a.firm"></span>
-                <span x-text="actionLabel(a)"></span>
-              </div>
-            </template>
-            <div x-show="!audit.length" class="px-3 py-4 text-slate-500 text-center">Hozircha yozuv yo'q</div>
-          </div>
-        </section>
-
-        <!-- ---- Akkaunt ---- -->
-        <section x-show="settingsTab==='account'" class="space-y-5">
-          <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs" x-text="'👤 ' + (me?.user.full_name || me?.user.username || '') + ' · ' + (me?.user.username || '') + ' · ' + (me?.user.role_label || '')"></div>
-          <form x-show="!isTg" @submit.prevent="changePassword()" class="space-y-2">
-            <div class="font-semibold">🔑 Parolni o'zgartirish</div>
-            <input type="text" :value="me?.user.username" autocomplete="username" class="hidden" aria-hidden="true">
-            <input type="password" x-model="pwd.old" required placeholder="Joriy parol" autocomplete="current-password" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            <div class="grid sm:grid-cols-2 gap-2">
-              <input type="password" x-model="pwd.new1" required placeholder="Yangi parol (kamida 8 belgi)" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input type="password" x-model="pwd.new2" required placeholder="Yangi parolni takrorlang" autocomplete="new-password" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-            </div>
-            <p class="text-xs text-slate-500">Parol o'zgarganda boshqa barcha qurilmalardan chiqariladi.</p>
-            <div class="flex justify-end"><button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-4 py-2">Parolni o'zgartirish</button></div>
-          </form>
-          <div class="space-y-2">
-            <div class="font-semibold">📱 Telegram'ni bog'lash</div>
-            <template x-if="me?.user.telegram_id">
-              <div class="flex flex-wrap items-center gap-2 text-xs">
-                <span>✅ Bog'langan (ID <span x-text="me.user.telegram_id"></span>)</span>
-                <button @click="unlinkTg()" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1">Uzish</button>
-              </div>
-            </template>
-            <template x-if="!me?.user.telegram_id">
-              <div class="space-y-2 text-xs">
-                <p class="text-slate-500" x-show="me?.telegram_bot">Kod oling va uni botga yuboring — shundan keyin bot va Mini App sizni taniydi.</p>
-                <p class="text-slate-500" x-show="!me?.telegram_bot">Telegram bot sozlanmagan (.env dagi TELEGRAM_BOT_TOKEN).</p>
-                <button x-show="me?.telegram_bot" @click="getTgCode()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5">Kod olish</button>
-                <div x-show="tgCode" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3">Botga yuboring: <code class="text-base font-semibold" x-text="'/link ' + tgCode"></code> <span class="text-slate-500">(10 daqiqa amal qiladi)</span></div>
-              </div>
-            </template>
-          </div>
-        </section>
-      </div>
-    </div>
-  </div>
-
   <!-- Toastlar -->
   <div class="fixed z-50 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 space-y-2 w-[92%] max-w-md pointer-events-none">
     <template x-for="t in toasts" :key="t.id">
@@ -977,14 +1217,15 @@ const WELCOME = "Salom! Men **AI Buxgalter Copilot**man 👋\n\n- 🏦 Vipiskani
 
 function app() {
   return {
-    mode: 'vipiska', dark: false, mobileTab: 'table', drag: false,
+    mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
+    dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '',
     data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
-    settingsOpen: false, settings: {}, onecTest: '', inspect: null, confirmBox: null, forceReason: '', forceAck: false,
+    settings: {}, onecTest: '', inspect: null, confirmBox: null, forceReason: '', forceAck: false,
     tg: window.Telegram && window.Telegram.WebApp, isTg: false,
     me: null, firms: [], firmId: null, noFirms: false, lastFile: null, accountGroups: [],
-    settingsTab: 'account', firmForm: {}, allFirms: [], users: [], audit: [], tgCode: '',
+    settingsTab: '', firmForm: {}, allFirms: [], users: [], audit: [], tgCode: '',
     newFirm: { name: '', inn: '' }, newUser: { username: '', full_name: '', password: '', role: 'accountant', firm_ids: [] },
     pwd: { old: '', new1: '', new2: '' },
     rules: [], rulesSummary: {}, rulesCanEdit: false, rulesFilter: 'all', rulesSearch: '', learnMonths: 12,
@@ -1013,10 +1254,134 @@ function app() {
       this.firms = this.me.firms;
       const acc = await this.api('/api/accounts', { anyFirm: true });
       if (acc) this.accountGroups = acc.groups;
-      if (!this.firms.length) { this.noFirms = true; return; }
+      window.addEventListener('hashchange', () => this.route());
+      if (!this.firms.length) { this.noFirms = true; await this.route(); return; }
       const preferred = this.isTg ? this.me.user.tg_firm_id : savedFirm;
       this.firmId = (this.firms.find(f => f.id === preferred) || this.firms[0]).id;
       await this.loadFirmData();
+      await this.route();
+    },
+
+    // ---------------- sahifalar (manzil: #/home, #/bank, #/didox, #/stock, #/rules, #/settings)
+    pages() {
+      const v = this.data.vipiska, d = this.data.didox;
+      const bank = v ? (v.kpis.ready || v.exportable || 0) : 0;
+      const didox = d ? d.rows.filter(r => ['new', 'unchecked'].includes(r.status) && !r.posted).length : 0;
+      return [
+        { id: 'home', icon: '🏠', label: 'Bosh sahifa', short: 'Bosh' },
+        { id: 'bank', icon: '🏦', label: 'Bank vipiskalari', short: 'Bank', badge: bank || '' },
+        { id: 'didox', icon: '📑', label: 'Didox fakturalar', short: 'Didox', badge: didox || '' },
+        { id: 'stock', icon: '📦', label: 'Sklad va qoldiqlar', short: 'Sklad' },
+        { id: 'rules', icon: '📚', label: 'Hisob qoidalari', short: 'Qoidalar', badge: this.rulesSummary.conflicts || '' },
+        { id: 'settings', icon: '⚙️', label: 'Sozlamalar', short: 'Sozlama' },
+      ];
+    },
+    isWork() { return ['bank', 'didox', 'rules'].includes(this.page); },
+    go(p) { if (location.hash !== '#/' + p) location.hash = '#/' + p; else this.route(); },
+    showPage(p) { this.page = p; if (location.hash !== '#/' + p) history.replaceState(null, '', '#/' + p); },
+    async route() {
+      const p = (location.hash.match(/^#\/(\w+)/) || [])[1];
+      const page = this.pages().some(x => x.id === p) ? p : 'home';
+      this.page = page;
+      if (page === 'settings') { await this.openTab(this.settingsTab || (this.me?.is_owner ? 'firm' : 'account')); return; }
+      if (this.noFirms) return;
+      if (page === 'bank' && this.mode !== 'vipiska') this.switchMode('vipiska');
+      else if (page === 'didox' && this.mode !== 'didox') this.switchMode('didox');
+      else if (page === 'rules') this.switchMode('rules');
+      else if (page === 'home') await this.loadDash();
+      else if (page === 'stock' && !this.stock) await this.loadStock();
+    },
+    openChat() { this.chatOpen = true; this.scrollChat(); },
+
+    // ---------------- 🏠 Bosh sahifa
+    async loadDash() {
+      if (this.dashLoading) return;
+      this.dashLoading = true;
+      try { const d = await this.api('/api/dashboard'); if (d) this.dash = d; } finally { this.dashLoading = false; }
+    },
+    balanceSource() {
+      const b = this.dash?.balance || {};
+      if (b.source === '1c') return "1C buxgalteriya provodkalari bo'yicha · " + this.fmtDate(this.dash.today) + " holatiga";
+      if (b.source === 'statement') return "Yuklangan vipiska bo'yicha (1C ga ulanmagan) · " + this.fmtDate(b.statement.last_date);
+      return "Ma'lumot yo'q — 1C ga ulaning yoki boshlang'ich qoldig'i bor vipiskani yuklang";
+    },
+    sverkaClass() {
+      const st = this.dash?.balance?.sverka?.state;
+      return { ok: 'border-emerald-300 dark:border-emerald-800', pending: 'border-amber-300 dark:border-amber-800',
+               mismatch: 'border-rose-300 dark:border-rose-800' }[st] || 'border-slate-200 dark:border-slate-800';
+    },
+    sverkaHint() {
+      const b = this.dash?.balance || {};
+      if (!b.statement) return "Vipiskani yuklang — uning yakuniy qoldig'i 1C dagi 51.10 bilan solishtiriladi.";
+      if (b.statement.closing === null) return "Vipiskada boshlang'ich qoldiq ko'rsatilmagan — sverka uchun qoldiqli vipiska kerak.";
+      return "1C dagi 51.10 qoldig'ini o'qib bo'lmadi (1C ulanmagan yoki provodkalar registri yoqilmagan).";
+    },
+    monthLabel() { const m = this.dash?.month || {}; return this.fmtDate(m.from) + ' — ' + this.fmtDate(m.to); },
+    flowSourceLabel() {
+      return { '1c': "1C dagi bank hujjatlari bo'yicha", statement: "Yuklangan vipiska bo'yicha", none: "Ma'lumot yo'q" }[this.dash?.flow_source] || '';
+    },
+    weekBar(v) {
+      const m = Math.max(...(this.dash?.weeks || []).map(w => Math.max(w.kirim, w.chiqim)), 1);
+      return v ? Math.max(2, Math.round(100 * v / m)) : 0;
+    },
+    todoItems() {
+      const t = this.dash?.todo || {};
+      const items = [
+        { id: 'ready', page: 'bank', icon: '🟡', text: "1C ga kiritishga tayyor to'lovlar", count: t.bank_ready, cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+        { id: 'export', page: 'bank', icon: '📥', text: "1C import fayliga chiqarilmagan to'lovlar", count: this.fileMode() ? t.bank_to_export : 0, cls: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300' },
+        { id: 'diff', page: 'bank', icon: '🔴', text: 'Summa/sana farqi (1C bilan)', count: t.bank_discrepancy, cls: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300' },
+        { id: 'blocked', page: 'bank', icon: '⛔', text: "To'siqli qatorlar (qo'lda ko'rish)", count: t.bank_blocked, cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+        { id: 'didox', page: 'didox', icon: '📑', text: "Didox: 1C da yo'q fakturalar", count: t.didox_pending, cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+        { id: 'rules', page: 'rules', icon: '⚠️', text: "Ziddiyatli hisob qoidalari", count: t.rules_conflicts, cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
+      ];
+      return items.filter(i => i.count);
+    },
+    debtSections() {
+      const d = this.dash?.debts;
+      if (!d) return [];
+      const adv = (x) => x ? this.fmt(x.total) : '—';
+      return [
+        { key: 'deb', title: '🧾 Bizga qarzdorlar (40.10)', cls: 'text-emerald-600 dark:text-emerald-400', total: d.debitor.total, top: d.debitor.top,
+          note: d.debitor.count + " ta xaridor · olingan avanslar (63.10): " + adv(d.avans_olingan) },
+        { key: 'kre', title: '💳 Biz qarzdormiz (60.10)', cls: 'text-rose-600 dark:text-rose-400', total: d.kreditor.total, top: d.kreditor.top,
+          note: d.kreditor.count + " ta yetkazib beruvchi · berilgan avanslar (43.10): " + adv(d.avans_berilgan) },
+      ];
+    },
+    sourceLabel(s) { return { odata: '🟢 OData', files: '📁 Fayllar', demo: '🧪 Demo' }[s] || s; },
+
+    // ---------------- 📦 Sklad
+    async loadStock() {
+      if (this.stockLoading) return;
+      this.stockLoading = true;
+      try { const s = await this.api('/api/stock'); if (s) this.stock = s; } finally { this.stockLoading = false; }
+    },
+    stockGroups() {
+      const q = this.stockSearch.trim().toLowerCase();
+      return (this.stock?.groups || []).map(g => ({ ...g, items: q ? g.items.filter(i => (i.name + ' ' + i.ikpu).toLowerCase().includes(q)) : g.items }))
+        .filter(g => g.items.length);
+    },
+    stockSourceLabel() {
+      if (!this.stock) return '';
+      return { live: "1C provodkalari (29.10, 10.xx, 28.10) bo'yicha", demo: "Demo baza", file: "1C eksport fayllari", offline: "1C ga ulanmagan" }[this.stock.onec_mode] || '';
+    },
+    stockEmptyText() {
+      if (this.stock?.onec_mode === 'offline' || this.stock?.onec_mode === 'file')
+        return "Ombor qoldig'i uchun 1C ga OData orqali ulanish kerak (provodkalar registri — Регистр бухгалтерии Хозрасчетный yoqilgan bo'lsin).";
+      return "29.10 / 10.xx / 28.10 schyotlarida qoldiq topilmadi.";
+    },
+    fmtQty(v) { return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 }).format(v || 0); },
+
+    // ---------------- ⚙️ tizim holati
+    healthItems() {
+      const o = this.status.onec || {}, a = this.status.ai || {}, f = this.status.firm || {}, files = this.status.files || {};
+      return [
+        { label: '🗄️ 1C ulanishi', ok: o.ok === undefined ? null : o.ok && !o.warning, detail: o.error || o.warning || o.label || '…' },
+        { label: '🤖 AI yordamchi', ok: a.ok ? true : null, detail: a.label || "Demo AI (kalit yo'q)" },
+        { label: '📑 Didox', ok: f.didox_user_key ? true : null, detail: f.didox_user_key ? 'API kaliti kiritilgan' : (f.didox_demo_mode ? 'Demo rejim' : 'API kaliti kiritilmagan') },
+        { label: '📱 Telegram bot', ok: this.status.telegram ? true : null, detail: this.status.telegram ? 'Ishlayapti' : 'Sozlanmagan (.env)' },
+        { label: '📁 1C eksport fayllari', ok: files.loaded ? true : null, detail: files.loaded ? (files.counts.docs + ' bank hujjati, ' + files.counts.counterparties + ' kontragent') : 'Yuklanmagan (OData ishlasa — shart emas)' },
+        { label: '🛡️ Dublikat himoyasi', ok: true, detail: (o.mode === 'live' ? 'Yoqilgan · 🔒 faqat tahlil' : 'Yoqilgan') },
+      ];
     },
     async loadFirmData() {
       await this.loadStatus();
@@ -1032,7 +1397,9 @@ function app() {
       this.rules = []; this.rulesSummary = {}; this.learnResult = ''; this.importErrors = []; this.rulesDirty = false;
       if (this.isTg) this.api('/api/auth/tg-firm', { json: { firm_id: id }, anyFirm: true });  // bot ham shu firmada
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
+      this.dash = null; this.stock = null; this.stockSearch = '';
       await this.loadFirmData();
+      if (this.page !== 'settings') await this.route();
       const f = this.firms.find(x => x.id === id);
       if (f) this.toast('🏢 ' + f.name, 'info');
     },
@@ -1100,14 +1467,14 @@ function app() {
     async busy(msg, fn) { this.loading = true; this.busyMsg = msg; try { return await fn(); } finally { this.loading = false; } },
     async upload(file) {
       if (!file) return;
-      this.mode = 'vipiska'; this.mobileTab = 'table';
+      this.mode = 'vipiska'; this.showPage('bank');
       this.lastFile = file;
       const fd = new FormData(); fd.append('file', file);
       const s = await this.busy("📥 " + file.name + " o'qilmoqda, 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/upload', { method: 'POST', body: fd }));
       if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("✅ " + s.rows.length + " ta qator tahlil qilindi", 'ok'); }
     },
     async loadSample() {
-      this.mode = 'vipiska'; this.mobileTab = 'table';
+      this.mode = 'vipiska'; this.showPage('bank');
       const s = await this.busy("🧪 Test vipiska 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/sample', { method: 'POST' }));
       if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("🧪 Test vipiska yuklandi: " + s.kpis.duplicates + " dublikat bloklandi", 'ok'); }
     },
@@ -1402,8 +1769,8 @@ function app() {
     },
     async openSettings(tab) {
       this.onecTest = ''; this.tgCode = '';
-      this.settingsOpen = true;
-      await this.openTab(tab || (this.me?.is_owner ? 'firm' : 'account'));
+      this.settingsTab = tab || this.settingsTab || (this.me?.is_owner ? 'firm' : 'account');
+      if (this.page === 'settings') await this.openTab(this.settingsTab); else this.go('settings');
     },
     async openTab(tab) {
       this.settingsTab = tab;

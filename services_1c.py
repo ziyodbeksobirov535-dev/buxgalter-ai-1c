@@ -54,6 +54,7 @@ FIELDS = {
     "counterparty_composite": "Контрагент",
     "pinfl": "ПИНФЛ",       # YaTT (yakka tadbirkor) — 14 xonali JShShIR
     "ikpu": "КодИКПУ",      # nomenklatura MXIK kodi (konfiguratsiyada bo'lmasa — nomi bo'yicha qidiriladi)
+    "ikpu_alt": "КодИзКлассификатора",  # BP UZ 3.0 (uzcloud): 17 xonali MXIK shu rekvizitda
     "contract": "ДоговорКонтрагента_Key",
     "in_number": "НомерВходящегоДокумента",
     "in_date": "ДатаВходящегоДокумента",
@@ -236,6 +237,10 @@ class HttpOData:
             self.auth_error = (f"🔒 Bu 1C foydalanuvchisi {until:%d.%m.%Y %H:%M} gacha bloklangan. Har yangi urinish "
                                "blokni uzaytirgani uchun shu vaqtgacha 1C ga so'rov yuborilmaydi (parol o'zgarsa ham). "
                                "Blokni darhol olib tashlash uchun uzcloud qo'llab-quvvatlash xizmatiga murojaat qiling.")
+        elif "#" in base_url or "/a/adm/" in base_url or "e1cib" in base_url:
+            self.auth_error = ("1C manzili noto'g'ri: bu brauzerdagi sahifa (yoki boshqaruv bazasi /a/adm/), OData emas. "
+                               "⚙️ Joriy firma → bazaning manzili, masalan https://1c.uzcloud.uz/a/bpuz/1234 "
+                               "(1C ga so'rov yuborilmadi)")
         elif not user or not password:
             self.auth_error = ("1C login yoki parol kiritilmagan — ⚙️ Sozlamalarda 1C bazasidagi foydalanuvchi nomi "
                                "va parolini kiriting (1C ga so'rov yuborilmadi)")
@@ -348,6 +353,14 @@ class HttpOData:
     async def metadata_text(self) -> str:
         return (await self._send("GET", f"{self.base}/$metadata")).text
 
+    async def balance_rows(self, account_key: str, code: str, at: datetime) -> list[dict]:
+        """Hisob qoldig'i subkonto bo'yicha (AccountingRegister_Хозрасчетный/Balance) — faqat o'qish.
+        Condition parametri uzcloud da ishlamaydi, shuning uchun $filter."""
+        path = urllib.parse.quote(f"{E_REGISTER}/Balance(Period=datetime'{at:%Y-%m-%dT%H:%M:%S}')", safe="(),='/")
+        data = await self._request("GET", path + "?" + encode_query({"$format": "json",
+                                                                    "$filter": f"Account_Key eq guid'{account_key}'"}))
+        return data.get("value", [])
+
     async def register_records(self, entity: str, ref: str) -> list[dict]:
         """Hujjatning buxgalteriya provodkalari (AccountingRegister_Хозрасчетный, Recorder bo'yicha) — faqat o'qish."""
         path = f"{E_REGISTER}(Recorder=guid'{ref}', Recorder_Type='StandardODATA.{entity}')"
@@ -370,6 +383,9 @@ class OfflineOData:
 
     async def create(self, *a, **kw) -> dict:
         raise ODataError("Ko'rish rejimi: 1C ga ulanmagan — yozib bo'lmaydi")
+
+    async def balance_rows(self, *a, **kw) -> list[dict]:
+        return []
 
     async def ping(self) -> bool:
         raise ODataError(self.reason or "1C ga ulanmagan")
@@ -440,8 +456,12 @@ class DemoOData:
     async def ping(self) -> bool:
         return True
 
+    async def balance_rows(self, account_key: str, code: str, at: datetime) -> list[dict]:
+        """Demo / fayl nusxasi: tayyor qoldiqlar (db["_balances"][schyot])."""
+        return copy.deepcopy(self.db.get("_balances", {}).get(code, []))
+
     async def metadata_text(self) -> str:
-        return " ".join(f'EntitySet Name="{e}"' for e in self.db)
+        return " ".join(f'EntitySet Name="{e}"' for e in self.db if not e.startswith("_"))
 
 
 # ---------------------------------------------------------------- yordamchilar
@@ -694,9 +714,11 @@ class OneCService:
     async def find_nomenclature(self, name: str, ikpu: str | None = None) -> dict | None:
         async def f():
             props = await self.entity_props(E_NOMENCLATURE)
-            if ikpu and (props is None or FIELDS["ikpu"] in props["header"]):
-                rows = await self._q(E_NOMENCLATURE, [Cond(FIELDS["ikpu"], "eq", ikpu), Cond("DeletionMark", "eq", False)],
-                                     top=1)
+            # MXIK kodi: КодИКПУ yoki (BP UZ 3.0) КодИзКлассификатора — konfiguratsiyada borini ishlatamiz
+            fields = [FIELDS["ikpu"]] if props is None else \
+                [f for f in (FIELDS["ikpu"], FIELDS["ikpu_alt"]) if f in props["header"]]
+            for field in fields if ikpu else []:
+                rows = await self._q(E_NOMENCLATURE, [Cond(field, "eq", ikpu), Cond("DeletionMark", "eq", False)], top=1)
                 if rows:
                     return rows[0]
             rows = await self._q(E_NOMENCLATURE, [Cond("Description", "eq", name), Cond("DeletionMark", "eq", False)],
@@ -851,6 +873,76 @@ class OneCService:
                 break
             skip += 1000
         return {ref: c.most_common(1)[0][0] for ref, c in sums.items()}
+
+    # ---- qoldiqlar, aylanma, nomlar (Bosh sahifa va Sklad uchun; faqat o'qish)
+    async def account_balance(self, code: str, at: datetime | None = None) -> list[dict]:
+        """Schyot qoldig'i subkonto bo'yicha: [{"dim": ref, "dim_type": "Catalog_…", "sum": Dt−Kt, "qty": miqdor}]."""
+        at = at or datetime.combine(date.today(), datetime.max.time()).replace(microsecond=0)
+        key = await self.account_key(code) if self.mode == "live" else None
+        if self.mode == "live" and not (key and await self._register_on()):
+            return []
+
+        async def f():
+            rows = await self.t.balance_rows(key or "", code, at)
+            out = []
+            for r in rows:
+                out.append({"dim": r.get("ExtDimension1"), "dim_type": str(r.get("ExtDimension1_Type") or "").split(".")[-1],
+                            "sum": round(float(r.get("СуммаBalance") or 0), 2),
+                            "qty": round(float(r.get("КоличествоBalance") or 0), 3)})
+            return out
+        return await self._cached(("balance", code, at.isoformat()), f)
+
+    async def fetch_all(self, entity: str, conds: list[Cond] | None = None, select: list[str] | None = None,
+                        orderby: str | None = None, limit: int = 20000, page: int = 500) -> list[dict]:
+        """Sahifalab o'qish — tartib barqaror bo'lishi shart (bulutli 1C $orderby siz sahifalarni takrorlaydi)."""
+        order = f"{orderby},Ref_Key" if orderby else "Ref_Key"
+        out: list[dict] = []
+        while len(out) < limit:
+            chunk = await self._q(entity, conds or [], top=page, skip=len(out) or None, orderby=order, select=select)
+            out.extend(chunk)
+            if len(chunk) < page:
+                break
+        return out[:limit]
+
+    async def bank_flows(self, since: date, until: date | None = None) -> list[dict]:
+        """O'tkazilgan bank hujjatlari bo'yicha kunlik kirim/chiqim: [{"date", "kirim", "chiqim"}]."""
+        until = until or date.today()
+        days: dict[str, dict] = {}
+        for entity, side in ((E_BANK_IN, "kirim"), (E_BANK_OUT, "chiqim")):
+            docs = await self.fetch_all(entity, [Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False),
+                                                 Cond("Date", "ge", DT(datetime.combine(since, datetime.min.time()))),
+                                                 Cond("Date", "le", DT(datetime.combine(until, datetime.max.time()).replace(microsecond=0)))],
+                                        select=["Ref_Key", "Date", FIELDS["amount"]])
+            for d in docs:
+                day = _day(d.get("Date"))
+                rec = days.setdefault(day, {"date": day, "kirim": 0.0, "chiqim": 0.0})
+                rec[side] = round(rec[side] + float(d.get(FIELDS["amount"]) or 0), 2)
+        return sorted(days.values(), key=lambda x: x["date"])
+
+    async def describe(self, entity: str, keys: list[str], fields: list[str] | None = None) -> dict[str, dict]:
+        """Bir nechta obyektning nomi (va qo'shimcha rekvizitlari) — keshlangan. Ko'p bo'lsa (jonli 1C) — butun
+        katalog bitta sahifalangan so'rov bilan (yuzlab alohida GET o'rniga)."""
+        uniq = [k for k in dict.fromkeys(keys) if not _is_empty_key(k)]
+        if self.mode == "live" and len(uniq) > 15:
+            props = await self.entity_props(entity)
+            cols = ["Ref_Key", "Description", *[f for f in fields or [] if not props or f in props["header"]]]
+
+            async def whole():
+                return {r["Ref_Key"]: r for r in await self.fetch_all(entity, select=cols, limit=50000)}
+            catalog = await self._cached(("catalog", entity, tuple(cols)), whole)
+            return {k: {x: (catalog.get(k) or {}).get(x) for x in ["Description", *(fields or [])]} for k in uniq}
+        return await self._describe_each(entity, uniq, fields)
+
+    async def _describe_each(self, entity: str, keys: list[str], fields: list[str] | None = None) -> dict[str, dict]:
+        async def one(k):
+            async def f():
+                try:
+                    rec = await self.t.get(entity, k)
+                except ODataError:
+                    rec = None
+                return {x: (rec or {}).get(x) for x in ["Description", *(fields or [])]}
+            return k, await self._cached(("describe", entity, k), f)
+        return dict(await asyncio.gather(*(one(k) for k in keys)))
 
     # ---- Tarixdan o'rganish
     @staticmethod

@@ -615,6 +615,12 @@ def build_db(store: dict, firm: dict) -> dict:
             FIELDS["settlement_account"]: ref("acc", acc) if acc else None,
             FIELDS["purpose"]: d.get("purpose", ""), FIELDS["payment_lines"]: [line],
             "Posted": True, "DeletionMark": False})
+    # OSV qoldiqlari (40.10 / 60.10 kontragentlar bo'yicha) — Bosh sahifadagi debitor/kreditorlar uchun
+    db["_balances"] = {code: [{"ExtDimension1": counterparty(v["name"]),
+                               "ExtDimension1_Type": f"StandardODATA.{E_COUNTERPARTY}",
+                               "СуммаBalance": round(v["dt"] - v["kt"], 2), "КоличествоBalance": 0}
+                              for v in items.values()]
+                       for code, items in (store.get("balances") or {}).get("accounts", {}).items()}
     return db
 
 

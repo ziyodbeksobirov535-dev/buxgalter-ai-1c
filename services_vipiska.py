@@ -59,6 +59,13 @@ class Statement:
     source: str = ""
     warnings: list[str] = field(default_factory=list)
     is_sample: bool = False  # namuna (test) vipiska — jonli 1C ga hech qachon yozilmaydi
+    opening_balance: float | None = None  # davr boshidagi qoldiq (vipiska sarlavhasidan), bo'lmasa — None
+
+    @property
+    def closing_balance(self) -> float | None:
+        if self.opening_balance is None:
+            return None
+        return round(self.opening_balance + sum(r.amount if r.direction == "kirim" else -r.amount for r in self.rows), 2)
 
     @property
     def currency_code(self) -> str:
@@ -178,6 +185,19 @@ def classify_header(h) -> str | None:
 
 
 # ---------------------------------------------------------------- parserlar
+OPENING_RE = re.compile(r"начало дня|входящ\w*\s+(?:сальдо|остаток)|начальн\w*\s+остаток|boshlang.ich qoldiq|"
+                        r"kirish qoldig", re.IGNORECASE)
+
+
+def _balance_in(row: list, text: str) -> float | None:
+    """Qoldiq qatoridagi son: alohida katakdagi raqam yoki matndagi "…: 1 000 000,00"."""
+    for c in row:
+        if isinstance(c, (int, float)) and not isinstance(c, bool):
+            return float(c)
+    m = re.search(r"[:=]\s*(-?[\d\s.,]+\d)", text)
+    return parse_amount(m.group(1)) if m else None
+
+
 def _rows_from_table(table: list[list]) -> Statement:
     header_idx, mapping = None, {}
     for i, row in enumerate(table[:40]):
@@ -206,6 +226,8 @@ def _rows_from_table(table: list[list]) -> Statement:
         m = re.search(r"(?:наименование сч[её]та|наименование клиента|mijoz|hisob nomi)[:\s]+(.+)", text, re.IGNORECASE)
         if m and not st.own_name:
             st.own_name = m.group(1).strip()
+        if st.opening_balance is None and OPENING_RE.search(text):
+            st.opening_balance = _balance_in(table[k], text)
 
     def cell(row, kind):
         j = mapping.get(kind)
@@ -319,6 +341,8 @@ def parse_1c_exchange(content: bytes) -> Statement:
             continue
         if line.startswith("РасчСчет=") and not st.own_account:
             st.own_account = clean_code(line.split("=", 1)[1])
+        elif line.startswith("НачальныйОстаток=") and st.opening_balance is None:
+            st.opening_balance = parse_amount(line.split("=", 1)[1])
         elif line.startswith("СекцияДокумент="):
             doc = {}
         elif line == "КонецДокумента" and doc is not None:

@@ -481,6 +481,12 @@ def _clean_firm_value(key: str, value):
     if key == "bank_accounts":
         value = ",".join(sorted({"".join(ch for ch in a if ch.isdigit()) for a in value.replace(";", ",").split(",")}
                                 - {""}))
+    if key == "onec_base_url" and value:
+        if "#" in value or "/a/adm/" in value or "e1cib" in value:
+            raise DBError("Bu 1C ning brauzerdagi sahifa manzili, OData emas. Bazaning manzilini kiriting, masalan: "
+                          "https://1c.uzcloud.uz/a/bpuz/1234 (\"/ru/\" va \"#…\" qismisiz)")
+        if not value.lower().startswith(("http://", "https://")):
+            raise DBError("1C manzili http:// yoki https:// bilan boshlansin")
     return value
 
 
