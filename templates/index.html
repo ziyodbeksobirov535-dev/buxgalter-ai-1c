@@ -724,12 +724,14 @@
 
           <!-- Filtrlar: holat, yo'nalish, qidiruv -->
           <div class="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-200 dark:border-slate-800 text-xs">
-            <template x-for="c in rowCats()" :key="c.id">
-              <button x-show="c.id === 'all' || c.count" @click="setFilter('cat', c.id)" class="rounded-full border px-2.5 py-1 font-medium transition"
-                      :class="flt().cat === c.id ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'"
-                      x-text="c.label + ' ' + c.count"></button>
-            </template>
-            <select :value="flt().dir" @change="setFilter('dir', $event.target.value)" class="ml-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1">
+            <select @change="setFilter('cat', $event.target.value)" title="Holat bo'yicha"
+                    class="rounded-lg border px-2 py-1 font-medium"
+                    :class="flt().cat !== 'all' ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-sky-300' : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800'">
+              <template x-for="c in rowCats().filter(c => c.id === 'all' || c.count || c.id === flt().cat)" :key="c.id">
+                <option :value="c.id" :selected="flt().cat === c.id" x-text="c.label + ' — ' + c.count"></option>
+              </template>
+            </select>
+            <select :value="flt().dir" @change="setFilter('dir', $event.target.value)" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1">
               <option value="">⬇️⬆️ Hammasi</option><option value="kirim">⬇️ Kirim</option><option value="chiqim">⬆️ Chiqim</option>
             </select>
             <input :value="flt().q" @input="setFilter('q', $event.target.value)" placeholder="Qidirish: kontragent, STIR, №, maqsad"
@@ -1825,7 +1827,7 @@ function app() {
     rowCats() {
       const n = (id) => this.rows.filter(r => this.rowCat(r) === id).length;
       return [
-        { id: 'all', label: 'Hammasi', count: this.rows.length },
+        { id: 'all', label: '📋 Hammasi', count: this.rows.length },
         { id: 'new', label: '🟡 Yangi', count: n('new') },
         { id: 'dup', label: "🟢 1C da bor", count: n('dup') },
         { id: 'diff', label: '🔴 Farq', count: n('diff') },
