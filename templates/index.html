@@ -1037,7 +1037,11 @@
         <button x-show="canPost && fileMode() && mode==='vipiska'" @click="exportImportFile()" :disabled="!exportCount() || exporting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="exportLabel()"></button>
-        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="writeAllowed() ? askPost(selectedIds()) : openWriteSettings()" :disabled="writeAllowed() ? (!canWriteSelected() || posting) : !me?.is_owner"
+        <button x-show="canPost && !fileMode() && liveWrite() && mode==='vipiska'" @click="exportImportFile()" :disabled="!exportCount() || exporting"
+                title="1C da: Банк и касса → Банковские выписки → Загрузить"
+                class="ml-auto w-full sm:w-auto rounded-xl border border-sky-400 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold px-4 py-2.5"
+                x-text="exportLabel()"></button>
+        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="writeAllowed() ? askPost(selectedIds()) : openWriteSettings()" :class="liveWrite() ? 'sm:!ml-0' : ''" :disabled="writeAllowed() ? (!canWriteSelected() || posting) : !me?.is_owner"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="postLabel()"></button>
       </div>
