@@ -660,6 +660,8 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     kind, blocker = special_kind(r, org_inn)
     row["special"] = kind
     kontr = await onec.find_counterparty(r.counterparty_inn) or await onec.find_counterparty_by_name(r.counterparty_name)
+    if not kontr and kind == "bank_fee" and onec.mode == "live":
+        kontr = await onec.fee_counterparty()  # buxgalter komissiyalarda ishlatgan kontragent
     row["hard_blockers"] = [b for b in extra_blockers if not b.startswith("⚪")]  # import fayliga ham to'siq
     row["counterparty_key"] = kontr["Ref_Key"] if kontr else None
     row["counterparty_1c_name"] = kontr.get("Description") if kontr else None
@@ -768,7 +770,8 @@ def finalize_row(row: dict) -> None:
     row["selectable"] = row["status"] == "new" and not row["blockers"] and not row["posted"]
     # "Baribir yozish" faqat farqli yoki raqamsiz-mos (weak) qatorlar uchun — to'liq dublikat hech qachon
     row["overridable"] = (not row["posted"] and not row["blockers"] and
-                          (row["status"] == "discrepancy" or (row["status"] == "duplicate" and row.get("dup_kind") == "weak")))
+                          (row["status"] == "discrepancy" or (row["status"] == "duplicate"
+                                                              and row.get("dup_kind") in ("weak", "other_cp"))))
     if row["account_source"] in ("rule", "keyword", "classified") or (row["account_source"] == "history" and row.get("account_reason")):
         row["account_badge"] = row["account_reason"]
     elif row["account_source"] == "history":
@@ -1000,7 +1003,7 @@ async def post_rows(rows: list[dict], ids: list[str], onec: OneCService, builder
         build, recheck = builders[row["kind"]]
         try:
             fresh = await recheck(row, onec)
-            still_ok = fresh["status"] == "new" or (forced and fresh.get("kind") in ("weak", "number"))
+            still_ok = fresh["status"] == "new" or (forced and fresh.get("kind") in ("weak", "number", "other_cp"))
             if not still_ok:
                 row.update(status=fresh["status"], status_reason=fresh["reason"], match=fresh["match"],
                            diffs=fresh["diffs"], dup_kind=fresh.get("kind"))

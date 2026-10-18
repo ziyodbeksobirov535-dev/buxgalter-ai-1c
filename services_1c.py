@@ -825,6 +825,16 @@ class OneCService:
         if same_day:
             return {"status": "duplicate", "kind": "weak", "reason": "Sana + Summa + Kontragent mos keldi (1C da kiruvchi raqamsiz)",
                     "match": await self._brief(entity, same_day[0]), "diffs": []}
+        # Boshqa kontragentga yozilgan bo'lishi mumkin (masalan, soliq: vipiskada G'aznachilik, 1C da tuman DSI):
+        # kiruvchi raqam + sana + summa mos — kontragentdan qat'i nazar "1C da bor" (ikki marta kiritilmasin)
+        if number:
+            for c in await self._q(entity, [Cond("DeletionMark", "eq", False), Cond(FIELDS["in_number"], "eq", number),
+                                            Cond(FIELDS["amount"], "eq", float(amount))], top=20):
+                if _day(c.get(FIELDS["in_date"])) == target_day or _day(c.get("Date")) == (posted or doc_date).isoformat():
+                    name = await self.ref_description(E_COUNTERPARTY, self.counterparty_of(c)) or "—"
+                    return {"status": "duplicate", "kind": "other_cp",
+                            "reason": f"Raqam + Sana + Summa mos keldi, lekin 1C da boshqa kontragentga yozilgan: {name}",
+                            "match": await self._brief(entity, c), "diffs": [f"Kontragent: 1C da {name}"]}
         return {"status": "new", "kind": "none", "reason": "1C da mos hujjat topilmadi", "match": None, "diffs": []}
 
     @staticmethod
@@ -974,6 +984,18 @@ class OneCService:
         if learned and OPERATION_ALIASES.get(learned) == op:  # tarixdagi nom shu operatsiyaning boshqa yozilishi
             return learned
         return op  # boshqa operatsiyaga almashtirilmaydi (masalan, ish haqi "прочее" ga aylanmasin)
+
+    async def fee_counterparty(self) -> dict | None:
+        """Bank komissiyasi uchun 1C da buxgalter ishlatgan kontragent (oxirgi "КомиссияБанка" hujjatidan) —
+        u o'chirishga belgilangan bo'lsa ham (vipiskada kontragent — firmaning o'zi)."""
+        async def f():
+            if "КомиссияБанка" not in await self.known_operations(E_BANK_OUT):
+                return None
+            docs = await self._q(E_BANK_OUT, [Cond("Posted", "eq", True), Cond(FIELDS["operation"], "eq", "КомиссияБанка")],
+                                 top=1, orderby="Date desc")
+            key = self.counterparty_of(docs[0]) if docs else None
+            return await self.t.get(E_COUNTERPARTY, key) if key else None
+        return await self._cached(("fee_counterparty",), f)
 
     async def last_bank_date(self) -> date | None:
         """1C ga oxirgi kiritilgan (o'tkazilgan) bank hujjati sanasi — 51.10 qoldig'i shu kungacha to'liq."""

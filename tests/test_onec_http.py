@@ -286,3 +286,41 @@ def test_nomenclature_found_by_ikpu_in_classifier_field():
     onec = OneCService(UzLive())
     nom = asyncio.run(onec.find_nomenclature("boshqa nom", "07214001001000000"))
     assert nom and nom["Description"] == "Armatura A500C d12"
+
+
+def test_duplicate_found_even_if_1c_used_another_counterparty():
+    """Soliq: vipiskada G'aznachilik, 1C da tuman DSI — raqam + sana + summa mos bo'lsa "1C da bor" (ikki marta emas)."""
+    import asyncio
+    from datetime import date
+    from services_1c import DemoOData, OneCService
+    onec = OneCService(DemoOData())
+    doc = next(d for d in onec.t.db["Document_СписаниеСРасчетногоСчета"] if d["НомерВходящегоДокумента"])
+    other = next(c["Ref_Key"] for c in onec.t.db["Catalog_Контрагенты"] if c["Ref_Key"] != doc["Контрагент_Key"])
+    dup = asyncio.run(onec.check_duplicate("Document_СписаниеСРасчетногоСчета", doc["НомерВходящегоДокумента"],
+                                           date.fromisoformat(doc["ДатаВходящегоДокумента"][:10]), doc["СуммаДокумента"], other))
+    assert dup["status"] == "duplicate" and dup["kind"] == "other_cp" and "boshqa kontragentga" in dup["reason"]
+    new = asyncio.run(onec.check_duplicate("Document_СписаниеСРасчетногоСчета", doc["НомерВходящегоДокумента"],
+                                           date.fromisoformat(doc["ДатаВходящегоДокумента"][:10]), 1.0, other))
+    assert new["status"] == "new"
+
+
+def test_bank_fee_uses_counterparty_from_1c_fee_history_even_if_marked_deleted():
+    import asyncio
+    from services_1c import DemoOData, OneCService
+
+    class UzLive(DemoOData):
+        mode = "live"
+
+        def __init__(self):
+            super().__init__()
+            self.db["Catalog_Контрагенты"].append({"Ref_Key": "self-cp", "Description": "TEST FIRMA (o'zi)", "ИНН": "300000777",
+                                                   "DeletionMark": True})
+            self.db["Document_СписаниеСРасчетногоСчета"].append({"Ref_Key": "fee-1", "Date": "2026-10-12T00:00:00",
+                                                                 "Posted": True, "DeletionMark": False,
+                                                                 "ВидОперации": "КомиссияБанка", "Контрагент_Key": "self-cp"})
+
+        async def metadata_text(self):
+            return ""
+    onec = OneCService(UzLive())
+    assert asyncio.run(onec.find_counterparty("300000777")) is None  # o'chirishga belgilangan — oddiy qidiruvda yo'q
+    assert asyncio.run(onec.fee_counterparty())["Ref_Key"] == "self-cp"
