@@ -263,7 +263,10 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     expected = files_tag(session.firm_id) if files else onec_fingerprint(session.firm_id)
     stale = bool(rows) and not offline and analyzed not in ("", expected)
     st = session.statement if mode == "vipiska" else None
-    return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices,
+    fs = firm_settings(session.firm_id)
+    write = {"enabled": fs["onec_write_enabled"], "limit": fs["onec_write_limit"],
+             "create_contracts": fs["onec_create_contracts"]}
+    return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices, "write": write,
             "onec_mode": onec_for(session).mode, "stale": stale, "offline": offline, "firm_id": session.firm_id,
             "files_mode": files, "files": files1c.summary(files1c.load_store(session.firm_id))["counts"] if files else None,
             "exportable": sum(1 for r in rows if files1c.exportable(r)) if mode == "vipiska" else 0,
@@ -379,16 +382,31 @@ async def change_account(session: Session, mode: str, row_id: str, account: str)
         return row
 
 
+def write_gate(session: Session, count: int) -> dict:
+    """Haqiqiy 1C ga yozish faqat "Egasi" shu firma uchun alohida ruxsat bergan bo'lsa va bir martada limit
+    doirasida. Demo baza — cheklovsiz. Natija: firma sozlamalari."""
+    settings = firm_settings(session.firm_id)
+    if onec_for(session).mode == "live":
+        if not settings["onec_write_enabled"]:
+            raise ODataError("🔒 Faqat tahlil rejimi: bu firma uchun 1C ga yozishga ruxsat berilmagan (hech narsa "
+                             "o'zgartirilmadi). Ruxsatni \"Egasi\" ⚙️ Sozlamalar → Joriy firma → «1C ga yozish» da beradi.")
+        if count > settings["onec_write_limit"]:
+            raise ODataError(f"🔒 Bir martada ko'pi bilan {settings['onec_write_limit']} ta hujjat yoziladi — "
+                             f"{count} ta tanlangan. Bittadan tanlang (limitni \"Egasi\" oshiradi).")
+    return settings
+
+
 async def post(session: Session, mode: str, ids: list[str], force_ids: list[str] | None = None,
-               force_reason: str = "") -> dict:
+               force_reason: str = "", by: str = "") -> dict:
     """Qoralama yozish. force_ids — buxgalter "baribir yozish"ni alohida tasdiqlagan qatorlar
     (faqat "farq bor" yoki "raqamsiz mos kelgan" qatorlar; to'liq dublikat hech qachon yozilmaydi)."""
     if (session.analyzed_with.get(mode) or "").startswith(FILES):
         raise ODataError("📁 Vipiska 1C eksport fayllari bo'yicha tekshirilgan — 1C ga 📤 «1C import fayli» orqali "
                          "kiriting (Банк и касса → Банковские выписки → Загрузить)")
-    # FAQAT TAHLIL: real (demo bo'lmagan) 1C ga hozircha hech narsa yozilmaydi — egasining talabi
-    if onec_for(session).mode in ("live", "file"):
-        raise ODataError("🔒 Faqat tahlil rejimi: real 1C ga yozish hozircha o'chirilgan (hech narsa o'zgartirilmadi)")
+    if onec_for(session).mode == "file":
+        raise ODataError("📁 1C ga to'g'ridan-to'g'ri ulanmagan — 📤 «1C import fayli» orqali kiriting")
+    # Haqiqiy 1C: faqat alohida ruxsat bilan va bir martada limit doirasida (standart — faqat tahlil)
+    settings = write_gate(session, len(set(ids) | set(force_ids or [])))
     if (session.analyzed_with.get(mode) or "").startswith(OFFLINE):
         raise ODataError("Ko'rish rejimi: vipiska 1C bilan tekshirilmagan — 1C ulangach 🔄 \"1C da qayta tekshirish\" ni bosing")
     if session.analyzed_with.get(mode) != onec_fingerprint(session.firm_id):
@@ -396,13 +414,24 @@ async def post(session: Session, mode: str, ids: list[str], force_ids: list[str]
     if mode == "vipiska" and session.statement and session.statement.is_sample and onec_for(session).mode == "live":
         raise ODataError("🧪 Test (namuna) vipiska haqiqiy 1C ga yozilmaydi")
     own = session.statement.own_account if session.statement else ""
+    onec = onec_for(session)
+    # yangi shartnoma: demo bazada — har doim; haqiqiy 1C da — faqat alohida ruxsat bilan
+    create_contracts = onec.mode != "live" or settings["onec_create_contracts"]
 
     async def bank_builder(row, onec):
-        return await build_bank_payload(row, onec, own, create_missing=True)  # faqat yozishda yangi shartnoma
+        return await build_bank_payload(row, onec, own, create_missing=create_contracts)
     builders = {"bank": (bank_builder, recheck_bank), "ehf": (build_purchase_payload, recheck_purchase)}
     async with _post_lock, session.lock:
-        results = await post_rows(rows_of(session, mode), ids, onec_for(session), builders,
+        results = await post_rows(rows_of(session, mode), ids, onec, builders,
                                   force=set(force_ids or []), force_reason=force_reason)
+        by_id = {r["id"]: r for r in rows_of(session, mode)}
+        for res in results:  # dastur yaratgan qoralamalar ro'yxati ("bekor qilish" faqat shular uchun)
+            row = by_id.get(res["id"])
+            if res["ok"] and row and row.get("posted_ref"):
+                db.record_draft(session.firm_id, row["entity"], row["posted_ref"], by, number=row.get("posted_number"),
+                                in_number=row["number"], doc_date=row["date"], amount=row["amount"],
+                                counterparty=row.get("counterparty_1c_name") or row["counterparty_name"],
+                                account=row.get("account"))
         save_session(session)
     return {"results": results, "ok": sum(r["ok"] for r in results), "failed": sum(not r["ok"] for r in results),
             **snapshot(session, mode)}
@@ -499,3 +528,35 @@ def export_client_bank(session: Session, ids: list[str] | None = None) -> tuple[
 def export_filename(firm_id: int, rows: list[dict]) -> str:
     day = max(r.get("posted_date") or r["date"] for r in rows).replace("-", "")
     return f"kl_to_1c_{firm_id}_{day}.txt"
+
+
+async def undo_draft(session: Session, draft_id: int, by: str = "") -> dict:
+    """Dastur yaratgan, hali O'TKAZILMAGAN qoralamani 1C da "o'chirishga belgilash" (DeletionMark). Boshqa
+    hujjatlarga tegilmaydi: faqat ro'yxatimizdagi Ref_Key, izohi "BUXGALTER AI" bilan boshlangan va Posted=false."""
+    draft = db.get_draft(session.firm_id, draft_id)
+    if not draft:
+        raise ValueError("Qoralama topilmadi")
+    if draft["undone_at"]:
+        raise ValueError("Bu qoralama allaqachon bekor qilingan")
+    write_gate(session, 1)
+    onec = onec_for(session)
+    async with _post_lock, session.lock:
+        doc = await onec.t.get(draft["entity"], draft["ref"])
+        if not doc:
+            raise ValueError("1C da bu hujjat topilmadi (o'chirilgan bo'lishi mumkin)")
+        if doc.get("Posted"):
+            raise ValueError("Hujjat 1C da allaqachon O'TKAZILGAN — dastur unga tegmaydi. Kerak bo'lsa 1C ning o'zida "
+                             "o'tkazishni bekor qiling")
+        if not str(doc.get("Комментарий") or "").startswith("BUXGALTER AI"):
+            raise ValueError("Hujjat izohi o'zgartirilgan — dastur yaratgan qoralama ekaniga ishonch yo'q, tegilmadi")
+        if not doc.get("DeletionMark"):
+            await onec.t.patch(draft["entity"], draft["ref"], {"DeletionMark": True})
+        db.mark_draft_undone(draft_id, by)
+        onec.invalidate()
+        for row in session.vipiska + session.didox:  # jadvalda qator yana "yangi" bo'ladi
+            if row.get("posted_ref") == draft["ref"]:
+                row.update(posted=False, posted_ref=None, posted_number=None)
+        save_session(session)
+    if session.statement:
+        await recheck_vipiska(session)
+    return db.get_draft(session.firm_id, draft_id)

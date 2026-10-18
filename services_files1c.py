@@ -541,6 +541,9 @@ class FileOData(DemoOData):
     async def create(self, entity, payload) -> dict:
         raise ODataError("📁 1C eksport fayllari bo'yicha ishlanmoqda — 1C ga 📤 «1C import fayli» orqali kiriting")
 
+    async def patch(self, *a, **kw) -> dict:
+        raise ODataError("📁 1C eksport fayllari bo'yicha ishlanmoqda — 1C ga yozilmaydi")
+
     async def metadata_text(self) -> str:
         return ""
 

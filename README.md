@@ -203,7 +203,9 @@ provodkalaridan aniq o'rganiladi. Dastur bu bazalarga moslangan:
 - bank hujjatlarida kontragent kompozit (`Контрагент` + `Контрагент_Type`) — avtomatik aniqlanadi;
 - "Расшифровка платежа" qatori bor hujjatda schyot qatordan (sarlavhadagi standart 42.20 emas), qatorsiz hujjatda
   (komissiya, soliq) — 1C provodkasidan; uch bo'g'inli schyotlar (`45.30.1`) qo'llab-quvvatlanadi;
-- YaTT uchun 14 xonali JShShIR (`ПИНФЛ`) bo'yicha ham qidiriladi; sahifalab o'qishda `$orderby` majburiy.
+- YaTT uchun 14 xonali JShShIR (`ПИНФЛ`) bo'yicha ham qidiriladi; sahifalab o'qishda `$orderby` majburiy;
+- G'aznachilik to'lovida schyot **shu firmada shu soliq kodi bilan oldin qaysi schyotga olingan** bo'lsa — o'sha
+  (masalan, avans soliq schyotlari 44.10.x / 45.10.x); tarix bo'lmasa — standart kod→schyot jadvali.
 
 **Muhim:** konfiguratsiya relizlariga qarab rekvizit nomlari farq qilishi mumkin (masalan, `Контрагент_Key` o'rniga
 kompozit `Контрагент` + `Контрагент_Type`). Ular `services_1c.py` dagi `FIELDS` lug'atida bir joyda jamlangan.
@@ -240,6 +242,23 @@ Telegram botda ham fayl rejimida «📤 1C import fayli» tugmasi chiqadi — fa
 Загрузить** (Обмен с банком) → faylni tanlang → ro'yxatni ko'rib **Загрузить**. Bu formatda schyot maydoni yo'q —
 1C schyotni shartnoma/kontragent sozlamasidan qo'yadi; yuklagach jadvaldagi schyot bilan solishtiring.
 Chiqarilgan qatorlar "📤 Import fayliga chiqarildi" deb belgilanadi va keyingi faylga qayta tushmaydi.
+
+## ✍️ 1C ga yozish — faqat ruxsat bilan, bittadan
+
+Haqiqiy 1C li firma standart holatda **faqat tahlil**: hech narsa yozilmaydi. Yozishni sinash tartibi:
+
+1. uzcloud "Менеджер сервиса" → firma → **«Резервное копирование»** (zaxira nusxa).
+2. ⚙️ Sozlamalar → Joriy firma → **✍️ 1C ga yozish** (faqat "Egasi"): firma nomini qo'lda yozib tasdiqlang,
+   limit — **1 ta hujjat**; "yangi shartnoma yaratish" o'chiq qoldiring.
+3. Bank sahifasida vipiskadagi **haqiqatan kiritilishi kerak bo'lgan bitta** to'lovni belgilang → qoralama.
+   Haqiqiy 1C da qatorlar avtomatik tanlanmaydi; limitdan ko'p tanlansa tugma ishlamaydi.
+4. 1C da qoralamani tekshiring (kontragent, shartnoma, schyot, avans). To'g'ri bo'lsa — 1C ning o'zida o'tkazing;
+   noto'g'ri bo'lsa — **📝 Dastur yaratgan qoralamalar → ↩️ Bekor qilish**: dastur faqat o'zi yaratgan, izohi
+   "BUXGALTER AI" bilan boshlanadigan va **o'tkazilmagan** hujjatni "o'chirishga belgilaydi" (DeletionMark).
+5. Ruxsatni yoqish/yopish, har bir yozuv va bekor qilish audit jurnaliga yoziladi. Telegram bot ham shu limitga bo'ysunadi.
+
+Yozishdan oldin `ВидОперации` shu bazada haqiqatan ishlatilgan nomga keltiriladi (O'zbekiston BP:
+`ОплатаПокупателя`, `КомиссияБанка`, `ВозвратПокупателю` …), so'm hisoblari uchun kurs/karralik 1 qo'yiladi.
 
 ### Xavfsizlik tamoyillari
 - Bog'langan obyektlar hech qachon matn bilan yuborilmaydi — har doim `Ref_Key` (`$filter=ИНН eq '...'`).
@@ -310,7 +329,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-184 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+193 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

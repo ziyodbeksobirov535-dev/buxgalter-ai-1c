@@ -59,3 +59,28 @@ def test_no_false_positives(purpose, direction):
 
 def test_supplier_payment_with_vat_stays_supplier():
     assert rule_account(row("Оплата за товар, в т.ч. НДС 12%")) == "60.10"
+
+
+def test_tax_code_account_learned_from_firm_history():
+    """G'aznachilik: buxgalter kod 36 ni 45.10.1 (avans) ga olgan bo'lsa — standart 65.20 o'rniga shu taklif qilinadi;
+    faqat soliq to'lovi hujjatlari hisoblanadi, tarix bo'lmasa — None (standart jadval ishlaydi)."""
+    import asyncio
+    from services_vipiska import tax_code_history
+
+    class Fake:
+        mode = "live"
+
+        async def counterparty_docs(self, entity, kontr_key, top=100):
+            return [{"Ref_Key": "a", "ВидОперации": "ПеречислениеНалога", "НазначениеПлатежа": "~10002186042629031~200000001~36 x"},
+                    {"Ref_Key": "b", "ВидОперации": "ПеречислениеНалога", "НазначениеПлатежа": "~10002186042629031~200000001~36 y"},
+                    {"Ref_Key": "c", "ВидОперации": "ОплатаПоставщику", "НазначениеПлатежа": "~10002186042629031~200000001~46 z"}]
+
+        async def bank_postings(self, entity, since):
+            return {"a": "k4510", "b": "k4510", "c": "k6010"}
+
+        async def account_code(self, key):
+            return {"k4510": "45.10.1", "k6010": "60.10"}.get(key)
+
+    hist = asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", "kp", "36"))
+    assert hist["account"] == "45.10.1" and (hist["hits"], hist["total"]) == (2, 2)
+    assert asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", "kp", "46")) is None

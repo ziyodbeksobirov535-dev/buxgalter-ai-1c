@@ -44,6 +44,13 @@ FIRM_BOOLS = ("onec_demo_mode", "didox_demo_mode")
 FIRM_SECRET_BOUND_TO = {"onec_password": ("onec_base_url", "onec_user"),
                         "didox_user_key": ("didox_base_url",), "didox_partner_token": ("didox_base_url",)}
 
+# 1C ga yozish ruxsati — umumiy firma sozlamalaridan ALOHIDA (PUT /api/firms orqali o'zgartirib bo'lmaydi):
+# faqat "Egasi", firma nomini qo'lda yozib tasdiqlaganda (set_write_access).
+WRITE_ACCESS_COLUMNS = {"onec_write_enabled": "INTEGER NOT NULL DEFAULT 0",   # 0 — faqat tahlil
+                        "onec_write_limit": "INTEGER NOT NULL DEFAULT 1",     # bir martada nechta hujjat
+                        "onec_create_contracts": "INTEGER NOT NULL DEFAULT 0"}  # yangi shartnoma yaratish
+WRITE_LIMIT_MAX = 50
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
@@ -116,6 +123,22 @@ CREATE TABLE IF NOT EXISTS account_rules (
     updated_at TEXT NOT NULL,
     updated_by TEXT NOT NULL DEFAULT '',
     UNIQUE (firm_id, kind, match, direction, doc_kind)
+);
+CREATE TABLE IF NOT EXISTS onec_drafts (
+    id INTEGER PRIMARY KEY,
+    firm_id INTEGER NOT NULL REFERENCES firms(id) ON DELETE CASCADE,
+    entity TEXT NOT NULL,                -- Document_СписаниеСРасчетногоСчета …
+    ref TEXT NOT NULL,                   -- 1C dagi Ref_Key (dastur yaratgan qoralama)
+    number TEXT NOT NULL DEFAULT '',     -- 1C hujjat raqami
+    in_number TEXT NOT NULL DEFAULT '',  -- vipiskadagi raqam
+    doc_date TEXT NOT NULL DEFAULT '',
+    amount REAL NOT NULL DEFAULT 0,
+    counterparty TEXT NOT NULL DEFAULT '',
+    account TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    created_by TEXT NOT NULL DEFAULT '',
+    undone_at TEXT,                      -- "bekor qilindi" (1C da o'chirishga belgilangan)
+    undone_by TEXT
 );
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY,
@@ -224,6 +247,10 @@ def init() -> None:
         # eski bazalar uchun ustun qo'shish (migratsiya)
         if "advance_account" not in [r[1] for r in c.execute("PRAGMA table_info(account_rules)")]:
             c.execute("ALTER TABLE account_rules ADD COLUMN advance_account TEXT NOT NULL DEFAULT ''")
+        firm_cols = [r[1] for r in c.execute("PRAGMA table_info(firms)")]
+        for col, ddl in WRITE_ACCESS_COLUMNS.items():  # 1C ga yozish ruxsati (standart — o'chiq)
+            if col not in firm_cols:
+                c.execute(f"ALTER TABLE firms ADD COLUMN {col} {ddl}")
     _chmod600(DB_FILE)
     _fernet()
     migrate_legacy_settings()
@@ -548,6 +575,7 @@ def _firm_public(row: sqlite3.Row) -> dict:
         f[k] = config.MASK if row[k] else ""
     f["bank_accounts"] = row["bank_accounts"]
     f["active"] = bool(row["active"])
+    f.update(_write_access(row))
     return f
 
 
@@ -571,7 +599,52 @@ def firm_settings(firm_id: int) -> dict | None:
     s["id"] = row["id"]
     s["active"] = bool(row["active"])
     s["onec_org_inn"] = row["inn"]
+    s.update(_write_access(row))
     return s
+
+
+def _write_access(row) -> dict:
+    keys = row.keys()
+    return {"onec_write_enabled": bool(row["onec_write_enabled"]) if "onec_write_enabled" in keys else False,
+            "onec_write_limit": int(row["onec_write_limit"]) if "onec_write_limit" in keys else 1,
+            "onec_create_contracts": bool(row["onec_create_contracts"]) if "onec_create_contracts" in keys else False}
+
+
+def set_write_access(firm_id: int, enabled: bool, limit: int = 1, create_contracts: bool = False) -> dict:
+    limit = int(limit or 1)
+    if not 1 <= limit <= WRITE_LIMIT_MAX:
+        raise DBError(f"Bir martada yoziladigan hujjatlar soni 1 dan {WRITE_LIMIT_MAX} gacha bo'lsin")
+    with tx() as c:
+        c.execute("UPDATE firms SET onec_write_enabled = ?, onec_write_limit = ?, onec_create_contracts = ? WHERE id = ?",
+                  (int(bool(enabled)), limit, int(bool(create_contracts)), firm_id))
+    return get_firm(firm_id)
+
+
+# ---------------------------------------------------------------- dastur yaratgan qoralamalar (1C)
+def record_draft(firm_id: int, entity: str, ref: str, by: str, **info) -> None:
+    with tx() as c:
+        c.execute("INSERT INTO onec_drafts (firm_id, entity, ref, number, in_number, doc_date, amount, counterparty, "
+                  "account, created_at, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                  (firm_id, entity, ref, str(info.get("number") or ""), str(info.get("in_number") or ""),
+                   str(info.get("doc_date") or ""), float(info.get("amount") or 0), str(info.get("counterparty") or ""),
+                   str(info.get("account") or ""), _iso(now()), by))
+
+
+def list_drafts(firm_id: int, limit: int = 100) -> list[dict]:
+    with tx() as c:
+        rows = c.execute("SELECT * FROM onec_drafts WHERE firm_id = ? ORDER BY id DESC LIMIT ?", (firm_id, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_draft(firm_id: int, draft_id: int) -> dict | None:
+    with tx() as c:
+        row = c.execute("SELECT * FROM onec_drafts WHERE id = ? AND firm_id = ?", (draft_id, firm_id)).fetchone()
+    return dict(row) if row else None
+
+
+def mark_draft_undone(draft_id: int, by: str) -> None:
+    with tx() as c:
+        c.execute("UPDATE onec_drafts SET undone_at = ?, undone_by = ? WHERE id = ?", (_iso(now()), by, draft_id))
 
 
 def list_firms(user: dict | None = None, include_inactive: bool = False) -> list[dict]:

@@ -156,6 +156,9 @@ def result_keyboard(snap: dict, user: dict, session: core.Session, mode: str = "
                                               callback_data=f"export:{session.firm_id}")])
     else:
         ready_ids = [r["id"] for r in snap["rows"] if r["selectable"]]
+        write = snap.get("write") or {}
+        if snap.get("onec_mode") == "live":  # haqiqiy 1C: faqat ruxsat bilan va limit doirasida
+            ready_ids = ready_ids[:write.get("limit", 1)] if write.get("enabled") else []
         if ready_ids and user["role"] in auth.CAN_POST:
             rows.append([post_button(session, mode, ready_ids, f"✅ Yangilarini 1C ga kiritish ({len(ready_ids)})")])
     btn = webapp_button("📱 Web App'da ko'rish")
@@ -343,7 +346,7 @@ async def cb_post(c: CallbackQuery) -> None:
     await c.answer("1C ga yozilmoqda…")
     await c.message.edit_reply_markup(reply_markup=None)  # ikki marta bosishdan himoya
     try:
-        res = await core.post(session, mode, ids)
+        res = await core.post(session, mode, ids, by=user["username"])
     except ODataError as e:
         await c.message.answer(f"⚠️ {html.escape(str(e))}")
         return

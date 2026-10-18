@@ -119,7 +119,7 @@
     <!-- ---------- SAHIFALAR ---------- -->
     <div class="flex-1 min-w-0 min-h-0 flex flex-col">
     <!-- ===================== 🏠 BOSH SAHIFA ===================== -->
-    <div x-show="page==='home'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 space-y-4">
+    <div x-show="page==='home'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 pb-24 space-y-4">
       <div x-show="noFirms" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm">
         <div class="text-3xl">🏢</div><p class="mt-2">Sizga hali hech qanday firma biriktirilmagan — "Egasi"ga murojaat qiling.</p>
       </div>
@@ -311,7 +311,7 @@
     </div>
 
     <!-- ===================== 📦 SKLAD VA QOLDIQLAR ===================== -->
-    <div x-show="page==='stock'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 space-y-4">
+    <div x-show="page==='stock'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 pb-24 space-y-4">
       <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <div class="col-span-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
           <div class="text-xs text-slate-500 dark:text-slate-400">📦 Ombordagi qoldiq qiymati (UZS)</div>
@@ -363,7 +363,7 @@
       </template>
     </div>
   <!-- ===================== SOZLAMALAR SAHIFASI ===================== -->
-  <div x-show="page==='settings'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4">
+  <div x-show="page==='settings'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 pb-24">
     <div class="max-w-4xl mx-auto flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm">
       <div class="shrink-0 flex items-center px-5 pt-4 pb-2"><h3 class="font-semibold text-base">⚙️ Sozlamalar</h3></div>
       <!-- Tizim holati -->
@@ -416,6 +416,29 @@
               <input x-model="firmForm.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
               <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
               <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            </div>
+          </div>
+          <!-- ✍️ 1C ga yozish ruxsati (faqat Egasi) -->
+          <div x-show="me?.is_owner && !firmForm.onec_demo_mode && firmForm.onec_base_url" class="rounded-xl border p-4 space-y-2"
+               :class="firmForm.onec_write_enabled ? 'border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700'">
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="font-semibold">✍️ 1C ga yozish</div>
+              <span class="text-xs rounded-full px-2 py-0.5" :class="firmForm.onec_write_enabled ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'"
+                    x-text="firmForm.onec_write_enabled ? '⚠️ Yoqilgan — bir martada ' + firmForm.onec_write_limit + ' ta' : '🔒 Faqat tahlil'"></span>
+            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-400">Yoqilsa, tanlangan qatorlar 1C da faqat <b>qoralama</b> (o'tkazilmagan) hujjat sifatida yaratiladi. Har biri "📝 Dastur yaratgan qoralamalar" ro'yxatiga tushadi va o'tkazilmaguncha "↩️ Bekor qilish" mumkin. Oldin uzcloud'da zaxira nusxa oling.</p>
+            <div class="grid sm:grid-cols-[1fr_140px] gap-2">
+              <input x-show="!firmForm.onec_write_enabled" x-model="writeForm.confirm" :placeholder="writeConfirmPlaceholder()" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <select x-model.number="writeForm.limit" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-2" title="Bir martada nechta hujjat">
+                <option value="1">1 ta hujjat</option><option value="5">5 ta</option><option value="10">10 ta</option><option value="50">50 ta</option>
+              </select>
+            </div>
+            <label class="flex items-center gap-2 text-xs"><input type="checkbox" x-model="writeForm.create_contracts" class="rounded"> To'lov maqsadidagi yangi shartnomani 1C da yaratish (o'chiq bo'lsa — qoralamada shartnoma bo'sh qoladi)</label>
+            <div class="flex flex-wrap justify-end gap-2">
+              <button x-show="firmForm.onec_write_enabled" @click="setWriteAccess(true)" class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs">💾 Limitni saqlash</button>
+              <button x-show="firmForm.onec_write_enabled" @click="setWriteAccess(false)" class="rounded-lg bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 text-xs">🔒 Yopish (faqat tahlil)</button>
+              <button x-show="!firmForm.onec_write_enabled" @click="setWriteAccess(true)" :disabled="writeForm.confirm.trim() !== (firmForm.name || '').trim()"
+                      class="rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white px-3 py-1.5 text-xs">⚠️ 1C ga yozishga ruxsat berish</button>
             </div>
           </div>
           <div x-show="onecTest" class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs whitespace-pre-line" x-text="onecTest"></div>
@@ -951,6 +974,28 @@
         </div>
       </div>
 
+      <!-- 📝 Dastur 1C da yaratgan qoralamalar -->
+      <div x-show="mode !== 'rules' && drafts.length" class="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 text-sm">
+        <button @click="draftsOpen = !draftsOpen" class="flex w-full items-center gap-2 text-left">
+          <span class="font-medium" x-text="'📝 Dastur 1C da yaratgan qoralamalar (' + drafts.length + ')'"></span>
+          <span class="text-xs text-slate-500" x-text="draftsActive() + ' ta faol'"></span>
+          <span class="ml-auto text-xs text-slate-400" x-text="draftsOpen ? '▲' : '▼'"></span>
+        </button>
+        <div x-show="draftsOpen" class="mt-2 max-h-56 overflow-y-auto thin-scroll divide-y divide-slate-100 dark:divide-slate-800">
+          <template x-for="d in drafts" :key="d.id">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-xs" :class="d.undone_at ? 'opacity-50 line-through' : ''">
+              <span class="font-medium num" x-text="'1C: ' + (d.number || '—')"></span>
+              <span class="num" x-text="'№' + d.in_number + ' · ' + fmtDate(d.doc_date)"></span>
+              <span class="truncate max-w-[220px]" x-text="d.counterparty"></span>
+              <span class="num" x-text="fmt(d.amount) + ' → ' + d.account"></span>
+              <span class="text-slate-500" x-text="fmtTs(d.created_at) + ' · ' + d.created_by"></span>
+              <button x-show="!d.undone_at && canPost" @click="undoDraft(d)" class="ml-auto rounded-lg border border-rose-300 text-rose-600 dark:border-rose-900 px-2 py-0.5">↩️ Bekor qilish</button>
+              <span x-show="d.undone_at" class="ml-auto text-slate-500 no-underline" x-text="'bekor qilindi: ' + fmtTs(d.undone_at)"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- Ommaviy xavfsiz amal paneli -->
       <div x-show="rows.length" class="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur px-4 py-3 flex flex-wrap items-center gap-3">
         <div class="text-xs text-slate-500 dark:text-slate-400">
@@ -961,9 +1006,9 @@
         <button x-show="canPost && fileMode() && mode==='vipiska'" @click="exportImportFile()" :disabled="!exportCount() || exporting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="exportLabel()"></button>
-        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="askPost(selectedIds())" :disabled="!selCount() || posting"
+        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="askPost(selectedIds())" :disabled="!canWriteSelected() || posting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
-                x-text="posting ? '⏳ 1C ga yozilmoqda…' : '✅ Faqat yangi (dublikat bo\'lmagan) ' + selCount() + ' ta hujjatni 1C ga Qoralama kiritish'"></button>
+                x-text="postLabel()"></button>
       </div>
     </section>
     </div>
@@ -1059,7 +1104,7 @@
 
   <!-- 🤖 AI tugmasi (har bir sahifada) -->
   <button x-show="!chatOpen" @click="openChat()" class="fixed z-30 right-4 bottom-20 rounded-full bg-violet-600 hover:bg-violet-700 text-white shadow-lg px-4 py-3 text-sm font-semibold flex items-center gap-2"
-          :class="isWork() && rows.length ? 'lg:bottom-24' : 'lg:bottom-6'">🤖 <span class="hidden sm:inline">AI Buxgalter Copilot</span></button>
+          :class="aiButtonPos()">🤖 <span class="hidden sm:inline">AI Buxgalter Copilot</span></button>
 
   <!-- Telefon: pastki menyu -->
   <nav class="lg:hidden shrink-0 grid grid-cols-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" style="padding-bottom: env(safe-area-inset-bottom)">
@@ -1255,6 +1300,7 @@ function app() {
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
     dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '',
     balAccount: '40.10', bal: null, balLoading: false, balSearch: '',
+    drafts: [], draftsOpen: false, writeForm: { confirm: '', limit: 1, create_contracts: false },
     data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
@@ -1328,6 +1374,11 @@ function app() {
       else if (page === 'stock' && !this.stock) await this.loadStock();
     },
     openChat() { this.chatOpen = true; this.scrollChat(); },
+    aiButtonPos() {
+      // pastki panellarni (qoralamalar, yozish tugmasi) to'smasin
+      if (this.isWork() && this.draftsOpen && this.drafts.length) return 'lg:bottom-auto lg:top-20';
+      return this.isWork() && this.rows.length ? 'lg:bottom-24' : 'lg:bottom-6';
+    },
 
     // ---------------- 🏠 Bosh sahifa
     async loadDash() {
@@ -1335,6 +1386,43 @@ function app() {
       this.dashLoading = true;
       try { const d = await this.api('/api/dashboard'); if (d) this.dash = d; } finally { this.dashLoading = false; }
       if (this.dash?.debts) await this.loadBalances();
+    },
+
+    // ---------------- ✍️ 1C ga yozish (ruxsat, limit, qoralamalar)
+    liveWrite() { return this.snap?.onec_mode === 'live'; },
+    writeInfo() { return this.snap?.write || {}; },
+    canWriteSelected() {
+      const n = this.selCount();
+      if (!n) return false;
+      if (!this.liveWrite()) return true;
+      return this.writeInfo().enabled && n <= this.writeInfo().limit;
+    },
+    postLabel() {
+      if (this.posting) return '⏳ 1C ga yozilmoqda…';
+      const n = this.selCount(), w = this.writeInfo();
+      if (this.liveWrite() && !w.enabled) return "🔒 Faqat tahlil — 1C ga yozish o'chiq";
+      if (this.liveWrite() && n > w.limit) return "Bir martada ko'pi bilan " + w.limit + " ta tanlang (" + n + " ta tanlangan)";
+      return "✅ " + n + " ta yangi hujjatni 1C ga qoralama kiritish" + (this.liveWrite() ? " (limit " + w.limit + ")" : '');
+    },
+    writeConfirmPlaceholder() { return "Tasdiqlash uchun firma nomini yozing: " + (this.firmForm.name || ''); },
+    async setWriteAccess(enabled) {
+      const body = { enabled, confirm_name: this.writeForm.confirm, limit: this.writeForm.limit, create_contracts: this.writeForm.create_contracts };
+      const f = await this.api('/api/firms/' + this.firmId + '/write-access', { json: body });
+      if (!f) return;
+      this.firmForm = { ...this.firmForm, ...f };
+      this.writeForm.confirm = '';
+      this.toast(enabled ? "⚠️ 1C ga yozish yoqildi — bir martada " + f.onec_write_limit + " ta" : "🔒 1C ga yozish yopildi (faqat tahlil)", enabled ? 'info' : 'ok');
+      const v = await this.api('/api/session?mode=vipiska'); if (v) this.setSnap(v);
+    },
+    async loadDrafts() { const d = await this.api('/api/drafts'); if (d) this.drafts = d; },
+    draftsActive() { return this.drafts.filter(d => !d.undone_at).length; },
+    async undoDraft(d) {
+      if (!confirm("1C dagi qoralama " + (d.number || '') + " (" + this.fmt(d.amount) + ") o'chirishga belgilansinmi? Faqat o'tkazilmagan qoralama bekor qilinadi.")) return;
+      const res = await this.api('/api/drafts/' + d.id + '/undo', { json: {} });
+      if (!res) return;
+      this.setSnap(res.snapshot);
+      await this.loadDrafts();
+      this.toast("↩️ Qoralama 1C da o'chirishga belgilandi", 'ok');
     },
 
     // ---------------- 🤝 hisob-kitoblar (tanlangan schyot bo'yicha kontragentlar)
@@ -1463,6 +1551,7 @@ function app() {
       await this.loadStatus();
       const [v, d] = await Promise.all([this.api('/api/session?mode=vipiska'), this.api('/api/session?mode=didox')]);
       if (v) this.setSnap(v); if (d && d.rows.length) this.setSnap(d);
+      await this.loadDrafts();
     },
     async switchFirm(id) {
       if (!id || id === this.firmId) return;
@@ -1474,6 +1563,7 @@ function app() {
       if (this.isTg) this.api('/api/auth/tg-firm', { json: { firm_id: id }, anyFirm: true });  // bot ham shu firmada
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
       this.dash = null; this.stock = null; this.stockSearch = ''; this.bal = null; this.balSearch = ''; this.balAccount = '40.10';
+      this.drafts = []; this.draftsOpen = false;
       await this.loadFirmData();
       if (this.page !== 'settings') await this.route();
       const f = this.firms.find(x => x.id === id);
@@ -1529,6 +1619,8 @@ function app() {
       // birinchi yuklashda barcha yangi qatorlar tanlanadi; keyin foydalanuvchi tanlovi saqlanadi
       this.selected[s.mode] = prev.size ? selectable.filter(id => prev.has(id)) : selectable;
       if (!this.selected[s.mode].length) this.selected[s.mode] = selectable;
+      // haqiqiy 1C: hech narsa avtomatik tanlanmaydi — buxgalter qatorni o'zi belgilaydi (bittadan)
+      if (s.onec_mode === 'live') this.selected[s.mode] = selectable.filter(id => prev.has(id));
     },
 
     // ---------------- vipiska / didox
@@ -1611,6 +1703,8 @@ function app() {
         const res = await this.api('/api/post', { firm, json: { mode, ids, ...extra, expected_firm_id: firm } });
         if (!res) return null;
         this.setSnap(res);
+        this.loadDrafts();
+        if (res.ok) this.draftsOpen = true;
         const msg = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? ", ⛔ " + res.failed + " ta bloklandi" : '');
         this.toast(msg, res.ok ? 'ok' : 'error');
         if (this.isTg && this.tg.HapticFeedback) this.tg.HapticFeedback.notificationOccurred(res.ok ? 'success' : 'warning');
@@ -1850,7 +1944,10 @@ function app() {
     },
     async openTab(tab) {
       this.settingsTab = tab;
-      if (tab === 'firm') { const f = (await this.api('/api/firms') || []).find(x => x.id === this.firmId); if (f) this.firmForm = { ...f }; }
+      if (tab === 'firm') {
+        const f = (await this.api('/api/firms') || []).find(x => x.id === this.firmId);
+        if (f) { this.firmForm = { ...f }; this.writeForm = { confirm: '', limit: f.onec_write_limit || 1, create_contracts: !!f.onec_create_contracts }; }
+      }
       if (tab === 'firms' || tab === 'users') this.allFirms = await this.api('/api/firms') || [];
       if (tab === 'users') this.users = (await this.api('/api/users') || []).map(u => ({ ...u, new_password: '' }));
       if (tab === 'ai') { const st = await this.api('/api/settings'); if (st) this.settings = st; }

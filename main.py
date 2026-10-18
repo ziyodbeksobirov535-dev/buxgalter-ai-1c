@@ -253,6 +253,27 @@ async def firms_test(firm_id: int, _user: dict = Depends(require_owner)):
     return {"onec": status, "metadata": meta}
 
 
+class WriteAccessIn(BaseModel):
+    enabled: bool
+    confirm_name: str = Field("", max_length=200)
+    limit: int = 1
+    create_contracts: bool = False
+
+
+@app.post("/api/firms/{firm_id}/write-access")
+async def firms_write_access(firm_id: int, body: WriteAccessIn, user: dict = Depends(require_owner)):
+    """1C ga yozishga ruxsat — faqat "Egasi", yoqishda firma nomini qo'lda yozib tasdiqlaydi."""
+    firm = db.get_firm(firm_id)
+    if not firm:
+        raise HTTPException(404, "Firma topilmadi")
+    if body.enabled and body.confirm_name.strip() != firm["name"].strip():
+        raise HTTPException(400, f"Tasdiqlash uchun firma nomini aynan yozing: {firm['name']}")
+    updated = db.set_write_access(firm_id, body.enabled, body.limit, body.create_contracts)
+    db.audit(user["id"], firm_id, "onec_write_access", enabled=body.enabled, limit=updated["onec_write_limit"],
+             create_contracts=updated["onec_create_contracts"])
+    return updated
+
+
 # ---------------------------------------------------------------- foydalanuvchilar (Egasi)
 class UserIn(BaseModel):
     username: str = Field(..., max_length=64)
@@ -458,7 +479,8 @@ async def post_to_1c(body: PostIn, ctx: FirmCtx = Depends(firm_ctx)):
         raise HTTPException(400, "Hech qanday qator tanlanmagan")
     if body.force_ids and len(body.force_reason.strip()) < 5:
         raise HTTPException(400, "Majburan yozish uchun sababini yozing (kamida 5 belgi)")
-    res = await core.post(ctx.session, _mode(body.mode), body.ids, body.force_ids, body.force_reason.strip())
+    res = await core.post(ctx.session, _mode(body.mode), body.ids, body.force_ids, body.force_reason.strip(),
+                          by=ctx.user["username"])
     by_id = {r["id"]: r for r in res["rows"]}
     db.audit(ctx.user["id"], ctx.firm_id, "posted_to_1c", mode=body.mode, ok=res["ok"], failed=res["failed"],
              documents=[{"number": by_id.get(r["id"], {}).get("number"), "1c": r.get("number")}
@@ -629,6 +651,25 @@ async def vipiska_checklist(ctx: FirmCtx = Depends(firm_ctx)):
                                               session.statement.source if session.statement else "")
     return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="tekshiruv_royxati_firma{ctx.firm_id}.xlsx"'})
+
+
+@app.get("/api/drafts")
+async def drafts_list(ctx: FirmCtx = Depends(firm_ctx)):
+    """Dastur 1C da yaratgan qoralamalar (shu firma)."""
+    return db.list_drafts(ctx.firm_id)
+
+
+@app.post("/api/drafts/{draft_id}/undo")
+async def drafts_undo(draft_id: int, ctx: FirmCtx = Depends(firm_ctx)):
+    """Dastur yaratgan, hali o'tkazilmagan qoralamani 1C da "o'chirishga belgilash"."""
+    ctx.require_post()
+    try:
+        draft = await core.undo_draft(ctx.session, draft_id, ctx.user["username"])
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    db.audit(ctx.user["id"], ctx.firm_id, "onec_draft_undone", number=draft["number"], ref=draft["ref"],
+             amount=draft["amount"])
+    return {"draft": draft, "snapshot": _with_context(ctx, core.snapshot(ctx.session, "vipiska"))}
 
 
 class ExportIn(BaseModel):

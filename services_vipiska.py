@@ -12,6 +12,7 @@ import csv
 import hashlib
 import io
 import re
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 
@@ -497,6 +498,39 @@ def is_tax_payee(r: BankRow) -> bool:
     return r.counterparty_inn in TAX_INNS or bool(TAX_NAME.search(r.counterparty_name or ""))
 
 
+def tax_code_of(purpose: str) -> str | None:
+    """G'aznachilik to'lovidagi soliq kodi: "~hisob~STIR~46 …" yoki "101 …" -> "46" / "101"."""
+    m = TAX_CODE_RE.search(" ".join(str(purpose or "").split()))
+    return (m.group(1) or m.group(2)) if m else None
+
+
+async def tax_code_history(onec: OneCService, entity: str, kontr_key: str | None, code: str | None) -> dict | None:
+    """Shu firmada shu soliq kodi bilan oldingi to'lovlar qaysi schyotga olingan (1C provodkasidan).
+    Masalan, buxgalter soliqlarni avans schyotlariga (44.10.x / 45.10.x) olsa — shu taklif qilinadi."""
+    if not kontr_key or not code or onec.mode in ("offline", "file"):
+        return None
+    from services_1c import _has_lines
+    docs = [d for d in await onec.counterparty_docs(entity, kontr_key)  # faqat soliq to'lovi hujjatlari
+            if "Налог" in str(d.get(FIELDS["operation"]) or "") and tax_code_of(d.get(FIELDS["purpose"])) == code]
+    if not docs:
+        return None
+    posted = await onec.bank_postings(entity, datetime.combine(date.today() - timedelta(days=400), datetime.min.time()))
+    votes: Counter = Counter()
+    for d in docs:
+        key = posted.get(d.get("Ref_Key")) if not _has_lines(d) else None
+        key = key or OneCService._extract_pattern(d)["account_key"]
+        if key:
+            votes[key] += 1
+    if not votes:
+        return None
+    key, hits = votes.most_common(1)[0]
+    code_acc = await onec.account_code(key)
+    if not code_acc:
+        return None
+    return {"account": code_acc, "hits": hits, "total": sum(votes.values()),
+            "reason": f"🧾 Soliq kodi {code}: shu firmada oxirgi to'lovlar ({hits}/{sum(votes.values())}) → {code_acc}"}
+
+
 def classify_purpose(r: BankRow) -> dict | None:
     """Aniq belgi bo'yicha schyot: {"account", "reason"} yoki None (unda 1C tarixi / qoidalar / standart)."""
     purpose = " ".join(str(r.purpose or "").split())
@@ -672,6 +706,12 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         row["operation"] = operation_for(row["account"], r.direction)
     elif locked:
         apply_rule(row, locked)
+    elif tax_hist := (await tax_code_history(onec, entity, row["counterparty_key"], tax_code_of(r.purpose))
+                      if r.direction == "chiqim" and is_tax_payee(r) else None):
+        # G'aznachilik: soliq kodi bo'yicha firmaning o'z amaliyoti (standart kod->schyot jadvalidan ustun)
+        row["account"], row["account_source"], row["account_reason"] = tax_hist["account"], "history", tax_hist["reason"]
+        row["operation"] = "ПеречислениеНалога"
+        row["class_account"], row["class_reason"] = tax_hist["account"], tax_hist["reason"]
     elif classified := classify_purpose(r):
         # aniq belgi (soliq kodi, ish haqi, kredit …) 1C tarixidan ustun: bitta kontragent — turli schyotlar
         row["account"], row["account_source"], row["account_reason"] = classified["account"], "classified", classified["reason"]
@@ -687,6 +727,8 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         row["account"] = rule_account(r)
         row["account_source"] = "rules"
         row["operation"] = operation_for(row["account"], r.direction)
+    # ВидОперации — shu baza qabul qiladigan nom (O'zbekiston BP: ОплатаПокупателя, КомиссияБанка …)
+    row["operation"] = await onec.valid_operation(entity, row.get("operation"), kind, (learned or {}).get("operation"))
     if prev and prev.get("posted"):
         row.update(posted=True, posted_ref=prev["posted_ref"], posted_number=prev["posted_number"], status="posted")
     if not row["contract"].get("source") and row.get("counterparty_key") and row["status"] != "duplicate":
@@ -851,11 +893,13 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
     kontr_bank = await onec.find_bank_account(row["counterparty_key"], E_COUNTERPARTY, row.get("account_no") or None)
     cfi = learned.get("cash_flow_key") if learned.get("account_code") == row["account"] else None
     cfi = cfi or (rule.get("cash_flow_key") if rule_fits else None) or None
+    operation = await onec.valid_operation(row["entity"], row["operation"], row.get("special"), learned.get("operation"))
     payload = {
         "Date": f"{row.get('posted_date') or row['date']}T12:00:00",  # bank o'tkazgan kun
+        "КурсДокумента": 1, "КратностьДокумента": 1,  # so'm hisobi (valyuta hisoblari bloklanadi)
         "Организация_Key": org["Ref_Key"],
         "СчетОрганизации_Key": org_acc["Ref_Key"],
-        FIELDS["operation"]: row["operation"],
+        FIELDS["operation"]: operation,
         **await onec.counterparty_payload(row["entity"], row["counterparty_key"]),
         FIELDS["contract"]: contract_key,
         "СчетКонтрагента_Key": kontr_bank["Ref_Key"] if kontr_bank else None,
@@ -867,6 +911,7 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
         FIELDS["cash_flow_item"]: cfi,
         FIELDS["payment_lines"]: [{
             "LineNumber": "1", FIELDS["contract"]: contract_key, "СуммаПлатежа": row["amount"],
+            "СуммаВзаиморасчетов": row["amount"], "КурсВзаиморасчетов": 1, "КратностьВзаиморасчетов": 1,
             FIELDS["settlement_account"]: acc_key, FIELDS["cash_flow_item"]: cfi,
             # qarz bo'lsa — acc_key yopiladi, ortgani avansga; taqsimotni 1C o'tkazishda o'zi qiladi
             FIELDS["advance_account"]: await advance_key(row, onec),

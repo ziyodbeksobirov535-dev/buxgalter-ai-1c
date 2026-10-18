@@ -78,6 +78,10 @@ COMMON_HEADER_FIELDS = ("ВалютаДокумента_Key", "СчетБанк_
 # (40.10 / 60.10) yopadi, ortgan summani avansga (63.10 — olingan, 43.10 — berilgan) o'tkazadi.
 ADVANCE_FOR = {"40.10": "63.10", "60.10": "43.10"}
 REPAYMENT_AUTO = "Автоматически"
+# ВидОперации: RF konfiguratsiyasi nomi -> O'zbekiston BP 3.0 nomi (qaysi biri bazada ishlatilganiga qarab tanlanadi)
+OPERATION_ALIASES = {"ОплатаОтПокупателя": "ОплатаПокупателя", "ВозвратДенежныхСредствПокупателю": "ВозвратПокупателю",
+                     "ВозвратДенежныхСредствПоставщиком": "ВозвратОтПоставщика",
+                     "ПрочиеРасчетыСКонтрагентами": "ПрочиеРасчетыСКонтрагентами"}
 
 # Tarixda topilmasa — standart qoidalar (O'zbekiston BHMS 21 hisoblar rejasi)
 from accounts_uz import UZ_ACCOUNTS  # noqa: E402 — to'liq hisoblar rejasi (BHMS 21)
@@ -346,6 +350,10 @@ class HttpOData:
     async def create(self, entity: str, payload: dict) -> dict:
         return await self._request("POST", entity, params={"$format": "json"}, json=payload)
 
+    async def patch(self, entity: str, key: str, payload: dict) -> dict:
+        """Mavjud obyektni o'zgartirish — faqat dastur yaratgan qoralamani "o'chirishga belgilash" uchun."""
+        return await self._request("PATCH", f"{entity}(guid'{key}')", params={"$format": "json"}, json=payload)
+
     async def ping(self) -> bool:
         await self._request("GET", "", params={"$format": "json"})
         return True
@@ -382,6 +390,9 @@ class OfflineOData:
         return None
 
     async def create(self, *a, **kw) -> dict:
+        raise ODataError("Ko'rish rejimi: 1C ga ulanmagan — yozib bo'lmaydi")
+
+    async def patch(self, *a, **kw) -> dict:
         raise ODataError("Ko'rish rejimi: 1C ga ulanmagan — yozib bo'lmaydi")
 
     async def balance_rows(self, *a, **kw) -> list[dict]:
@@ -452,6 +463,13 @@ class DemoOData:
         rec.setdefault("DeletionMark", False)
         self.db.setdefault(entity, []).append(rec)
         return copy.deepcopy(rec)
+
+    async def patch(self, entity, key, payload) -> dict:
+        for r in self.db.get(entity, []):
+            if r.get("Ref_Key") == key:
+                r.update(copy.deepcopy(payload))
+                return copy.deepcopy(r)
+        raise ODataError("Hujjat topilmadi")
 
     async def ping(self) -> bool:
         return True
@@ -852,10 +870,21 @@ class OneCService:
             return [k for k, _v in parts.most_common()]
         return await self._cached(("posted", ref), f)
 
+    async def counterparty_docs(self, entity: str, kontr_key: str, top: int = 100) -> list[dict]:
+        """Kontragentning oxirgi o'tkazilgan hujjatlari (keshlangan) — soliq kodi bo'yicha o'rganish uchun."""
+        async def f():
+            return await self._q(entity, [await self.counterparty_cond(entity, kontr_key), Cond("Posted", "eq", True),
+                                          Cond("DeletionMark", "eq", False)], top=top, orderby="Date desc")
+        return await self._cached(("cp_docs", entity, kontr_key, top), f)
+
     async def bank_postings(self, entity: str, since: datetime) -> dict[str, str]:
         """Ommaviy: davr ichidagi barcha bank hujjatlari -> asosiy qarshi schyot (bitta sahifalangan so'rov)."""
         if entity not in (E_BANK_IN, E_BANK_OUT) or not await self._register_on():
             return {}
+        return await self._cached(("bank_postings", entity, since.date().isoformat()),
+                                  lambda: self._bank_postings(entity, since))
+
+    async def _bank_postings(self, entity: str, since: datetime) -> dict[str, str]:
         bank = await self.account_key(BANK_ACCOUNT_CODE)
         if not bank:
             return {}
@@ -918,6 +947,33 @@ class OneCService:
                 rec = days.setdefault(day, {"date": day, "kirim": 0.0, "chiqim": 0.0})
                 rec[side] = round(rec[side] + float(d.get(FIELDS["amount"]) or 0), 2)
         return sorted(days.values(), key=lambda x: x["date"])
+
+    async def known_operations(self, entity: str) -> set[str]:
+        """Shu bazada haqiqatan ishlatilgan ВидОперации qiymatlari (konfiguratsiyalar orasida nomlar farq qiladi:
+        RF — ОплатаОтПокупателя, O'zbekiston BP 3.0 — ОплатаПокупателя)."""
+        async def f():
+            try:
+                docs = await self.fetch_all(entity, [Cond("DeletionMark", "eq", False)],
+                                            select=["Ref_Key", FIELDS["operation"]], limit=3000)
+            except ODataError:
+                return set()
+            return {d.get(FIELDS["operation"]) for d in docs if d.get(FIELDS["operation"])}
+        return await self._cached(("operations", entity), f)
+
+    async def valid_operation(self, entity: str, op: str | None, special: str | None = None,
+                              learned: str | None = None) -> str | None:
+        """ВидОперации ni shu baza qabul qiladigan qiymatga keltirish (1C noma'lum qiymatli hujjatni rad etadi)."""
+        known = await self.known_operations(entity)
+        if not known or (op in known and not (special == "bank_fee" and "КомиссияБанка" in known)):
+            return op
+        if special == "bank_fee" and "КомиссияБанка" in known:
+            return "КомиссияБанка"
+        alias = OPERATION_ALIASES.get(op or "")
+        if alias in known:
+            return alias
+        if learned and OPERATION_ALIASES.get(learned) == op:  # tarixdagi nom shu operatsiyaning boshqa yozilishi
+            return learned
+        return op  # boshqa operatsiyaga almashtirilmaydi (masalan, ish haqi "прочее" ga aylanmasin)
 
     async def last_bank_date(self) -> date | None:
         """1C ga oxirgi kiritilgan (o'tkazilgan) bank hujjati sanasi — 51.10 qoldig'i shu kungacha to'liq."""
