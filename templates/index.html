@@ -815,7 +815,7 @@
                       <div class="flex flex-col items-end gap-1 whitespace-nowrap">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 hover:bg-slate-50 dark:hover:bg-slate-800">👁 Tekshirish</button>
                       <button x-show="r.missing_counterparty && canPost && !fileMode()" @click="openCreateCp(r)" class="text-xs rounded-lg border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-2 py-1 hover:bg-violet-50 dark:hover:bg-violet-900/30">➕ Kontragent yaratish</button>
-                      <button x-show="r.selectable && canPost && !fileMode()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      <button x-show="r.selectable && canPost && !fileMode() && writeAllowed()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 hover:bg-brand-700 text-white px-2 py-1">➕ 1C ga yozish</button>
                       </div>
                     </td>
                   </tr>
@@ -859,7 +859,7 @@
                     <div class="mt-2 flex gap-2">
                       <button @click="openInspect(r)" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1">👁 Tekshirish</button>
                       <button x-show="r.missing_counterparty && canPost && !fileMode()" @click="openCreateCp(r)" class="text-xs rounded-lg border border-violet-300 dark:border-violet-800 text-violet-700 dark:text-violet-300 px-2 py-1">➕ Kontragent</button>
-                      <button x-show="r.selectable && canPost && !fileMode()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
+                      <button x-show="r.selectable && canPost && !fileMode() && writeAllowed()" @click="askPost([r.id])" class="text-xs rounded-lg bg-brand-600 text-white px-2 py-1">➕ 1C ga yozish</button>
                     </div>
                   </div>
                 </div>
@@ -1366,7 +1366,7 @@
 
           <div class="flex flex-wrap justify-end gap-2 pt-2">
             <button @click="inspect=null" class="rounded-lg border border-slate-300 dark:border-slate-700 text-sm px-4 py-2">Yopish</button>
-            <button x-show="inspect.row.selectable && canPost && !fileMode()" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
+            <button x-show="inspect.row.selectable && canPost && !fileMode() && writeAllowed()" @click="askPost([inspect.row.id]); inspect=null" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">➕ 1C ga yozish</button>
             <button x-show="inspect.row.overridable && canPost" @click="doForce(inspect.row.id)" :disabled="!forceAck || forceReason.trim().length < 5 || posting"
                     class="rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2">⚠️ Baribir 1C ga yozish</button>
           </div>
@@ -1482,6 +1482,7 @@ function app() {
 
     // ---------------- ✍️ 1C ga yozish (ruxsat, limit, qoralamalar)
     liveWrite() { return this.snap?.onec_mode === 'live'; },
+    writeAllowed() { return !this.liveWrite() || !!this.writeInfo().enabled; },
     writeInfo() { return this.snap?.write || {}; },
     canWriteSelected() {
       const n = this.selCount();
