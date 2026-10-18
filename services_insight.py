@@ -23,7 +23,9 @@ DOC_TYPES = {  # agent tanlaydigan hujjat turlari
     "bank_kirim": E_BANK_IN,
     "bank_chiqim": E_BANK_OUT,
     "xarid": E_PURCHASE,                                  # kirim fakturasi (tovar/xizmat)
-    "sotuv": "Document_РеализацияТоваровУслуг",
+    "sotuv": "Document_РеализацияТоваровУслуг",          # chiqim (sotuv) — tovar/xizmat realizatsiyasi
+    "chiqim_faktura": "Document_СчетФактураВыданный",     # berilgan (chiqim) hisob-fakturalar
+    "kirim_faktura": "Document_СчетФактураПолученный",    # olingan hisob-fakturalar
     "kassa_kirim": "Document_ПриходныйКассовыйОрдер",
     "kassa_chiqim": "Document_РасходныйКассовыйОрдер",
 }

@@ -39,7 +39,7 @@ Qoidalar:
 - 1C dan ma'lumot kerak bo'lsa (o'qish): bank qoldig'i / sverka / oylik aylanma / qarzlar umumiy — firm_overview;
   bitta schyot bo'yicha kontragentlar (40.10, 60.10, 43.10, 63.10, 64.xx, 67.10 …) — account_balance;
   ombor / sklad / tovar qoldig'i — stock_overview (source: 1c, notion yoki compare); bitta kontragent haqida —
-  counterparty_card; hujjatlar ro'yxati (bank, xarid/kirim faktura, sotuv, kassa) — list_documents; boshqa
+  counterparty_card; hujjatlar ro'yxati (bank, xarid/kirim faktura, sotuv/chiqim faktura, kassa) — list_documents; boshqa
   narsa (masalan asosiy vositalar, xodimlar, shartnomalar, registrlar) — onec_read (OData, faqat o'qish).
 - Vipiska yoki dublikat haqida so'ralsa — analyze_and_deduplicate_vipiska chaqir.
 - Didox / EHF / hisob-faktura haqida — check_didox_vs_1c chaqir.
@@ -98,7 +98,9 @@ TOOL_DECLARATIONS = [
      "parameters": {"type": "OBJECT", "properties": {
          "query": {"type": "STRING", "description": "STIR (9 xonali) yoki nomining bir qismi"}}, "required": ["query"]}},
     {"name": "list_documents",
-     "description": "1C hujjatlari ro'yxati (yangi → eski): bank kirim/chiqim, xarid (kirim fakturasi), sotuv, kassa.",
+     "description": "1C hujjatlari ro'yxati (yangi → eski): bank kirim/chiqim, xarid (kirim — ПоступлениеТоваровУслуг), "
+                    "sotuv (chiqim — РеализацияТоваровУслуг), chiqim_faktura (berilgan hisob-fakturalar), "
+                    "kirim_faktura (olingan hisob-fakturalar), kassa.",
      "parameters": {"type": "OBJECT", "properties": {
          "doc_type": {"type": "STRING", "enum": list(insight.DOC_TYPES)},
          "date_from": {"type": "STRING", "description": "YYYY-MM-DD (ixtiyoriy)"},
