@@ -372,3 +372,19 @@ def test_write_403_shows_1c_text_and_does_not_block_reads():
         asyncio.run(svc.t.create("Document_СписаниеСРасчетногоСчета", {"a": 1}))
     assert svc.t.auth_error is None
     assert asyncio.run(svc.t.query("Catalog_Контрагенты", top=1)) == [{"Ref_Key": "x"}]  # o'qish ishlayveradi
+
+
+def test_write_403_from_hosting_nginx_is_explained():
+    """So'rov 1C gacha yetmay hosting proksi-serveri (nginx) yozishni yopsa — HTML emas, tushunarli sabab."""
+    import pytest
+    from services_1c import ODataError
+    html = "<html><head><title>403 Forbidden</title></head><body><center><h1>403 Forbidden</h1></center><hr><center>nginx</center></body></html>"
+
+    def handler(req):
+        if req.method == "POST":
+            return httpx.Response(403, text=html, headers={"content-type": "text/html"})
+        return httpx.Response(200, json={"value": []})
+    svc = service(handler)
+    with pytest.raises(ODataError, match="Hosting serveri \\(nginx\\).*1C gacha") as e:
+        asyncio.run(svc.t.create("Document_СписаниеСРасчетногоСчета", {"a": 1}))
+    assert "<html" not in str(e.value) and svc.t.auth_error is None

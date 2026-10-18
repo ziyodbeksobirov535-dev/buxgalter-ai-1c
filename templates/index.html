@@ -1891,16 +1891,23 @@ function app() {
         this.setSnap(res);
         this.loadDrafts();
         if (res.ok) this.draftsOpen = true;
-        const msg = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? ", ⛔ " + res.failed + " ta bloklandi" : '');
+        const msg = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? ", ⛔ " + res.failed + " ta yozilmadi" : '')
+          + ((res.results || []).find(r => !r.ok) ? " — " + this.postFailText(res.results.find(r => !r.ok).message) : '');
         this.toast(msg, res.ok ? 'ok' : 'error');
         if (this.isTg && this.tg.HapticFeedback) this.tg.HapticFeedback.notificationOccurred(res.ok ? 'success' : 'warning');
         return res;
       } finally { this.posting = false; }
     },
+    postFailText(m) {
+      // nginx HTML sahifasini ko'rsatmaymiz — qisqa, tushunarli sabab
+      m = String(m || '');
+      if (/403/.test(m) && /nginx/i.test(m)) return "uzcloud serveri 1C ga yozish so'rovini o'tkazmadi (403, nginx). 1C da hech narsa o'zgarmadi";
+      return m.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
+    },
     async confirmCard(c) {
       const res = await this.doPost(c.ids, c.mode, {}, c.firm_id);
       if (res) {
-        c.done = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? " · ⛔ " + res.failed + " ta bloklandi" : '') + ". 1C da tekshirib o'tkazing.";
+        c.done = "✅ " + res.ok + " ta qoralama yaratildi" + (res.failed ? " · ⛔ " + res.failed + " ta yozilmadi" : '') + ". 1C da tekshirib o'tkazing.";
         this.chat = [...this.chat];
       }
     },
@@ -2238,7 +2245,7 @@ function app() {
         onec_draft_undone: "↩️ 1C da bekor qilindi (o'chirishga belgilandi): " + (d.number || ''),
         onec_write_access: d.enabled ? "⚠️ 1C ga yozish yoqildi (limit " + d.limit + ")" : "🔒 1C ga yozish yopildi",
         onec_import_file: '📤 1C import fayli: ' + (d.rows ?? 0) + ' ta qator, ' + this.fmt(d.sum || 0) + " so'm",
-        posted_to_1c: '✅ 1C ga qoralama: ' + (d.ok ?? 0) + ' ta' + (d.failed ? ', bloklandi ' + d.failed : '') + (d.forced ? ' · ⚠️ majburan: ' + (d.reason || '') : ''),
+        posted_to_1c: '✅ 1C ga qoralama: ' + (d.ok ?? 0) + ' ta' + (d.failed ? ', yozilmadi ' + d.failed : '') + (d.forced ? ' · ⚠️ majburan: ' + (d.reason || '') : ''),
       };
       return map[a.action] || a.action;
     },

@@ -299,6 +299,11 @@ class HttpOData:
             # login to'g'ri, lekin bu amalga 1C ruxsat bermadi (masalan, yozish) — o'qish to'xtatilmaydi
             log.warning("1C 403 %s %s: %s", r.request.method, urllib.parse.unquote(r.request.url.path)[-80:], text[:300])
             action = "yozishga (hujjat yaratish/o'zgartirish)" if r.request.method != "GET" else "bu ma'lumotni o'qishga"
+            if "nginx" in low and "<html" in low:
+                # so'rov 1C gacha yetmagan: hosting (uzcloud) proksi-serveri yozish usulini yopgan
+                raise ODataError(f"Hosting serveri (nginx) 1C {action} so'rovini o'tkazmadi (403) — so'rov 1C gacha "
+                                 "yetmadi, 1C da hech narsa o'zgarmadi. O'qish ishlaydi. Yozishni hosting (uzcloud) "
+                                 "qo'llab-quvvatlash xizmati ochishi kerak; hozircha '📤 1C import fayli' orqali kiriting.")
             raise ODataError(f"1C {action} ruxsat bermadi (403)" + (f": {text[:400]}" if text else "") +
                              ". 1C da shu foydalanuvchining huquqlarini tekshiring (REST-servis sozlamasi / "
                              "foydalanuvchi rollari). 1C da hech narsa o'zgarmadi.")
