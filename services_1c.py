@@ -41,6 +41,9 @@ E_ORG = "Catalog_Организации"
 E_CASH_FLOW = "Catalog_СтатьиДвиженияДенежныхСредств"
 E_ACCOUNTS = "ChartOfAccounts_Хозрасчетный"
 E_BANKS = "Catalog_Банки"  # banklar (Code = MFO)
+E_TAXES = "Catalog_ВидыНалоговИПлатежейВБюджет"  # soliq turlari: soliq to'lovining schyoti shu turdan (СчетУчета)
+# Namuna hujjatdan qoralamaga ko'chiriladigan "holat" maydonlari (konfiguratsiyada bo'lmasa — tashlab yuboriladi)
+TEMPLATE_HEADER_FIELDS = ("СпособПогашенияЗадолженности", "СтатусВыписки", "ВидНалоговогоОбязательства")
 # Yangi shartnomada shu turdagi oxirgi shartnomadan ko'chiriladigan rekvizitlar
 CONTRACT_TEMPLATE_FIELDS = ("ВалютаВзаиморасчетов_Key", "Организация_Key", "Руководитель_Key", "ДолжностьРуководителя_Key",
                             "ПредъявляетНДС", "ПорядокРегистрацииСчетовФактурНаАвансПоДоговору")
@@ -936,6 +939,22 @@ class OneCService:
                                                      Cond(FIELDS["operation"], "eq", op)], limit=2000)
             return out
         return await self._cached(("tax_docs", entity), f)
+
+    async def template_doc(self, entity: str, operation: str | None, kontr_key: str | None) -> dict | None:
+        """Namuna: shu turdagi (ВидОперации) eng so'nggi o'tkazilgan hujjat — avval shu kontragentniki, bo'lmasa
+        istalgani. Qoralama shu namunadagidek tuziladi (qatorli/qatorsiz, holat maydonlari) — provodka bir xil chiqsin."""
+        if not operation:
+            return None
+
+        async def f():
+            base = [Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False), Cond(FIELDS["operation"], "eq", operation)]
+            if kontr_key:
+                rows = await self._q(entity, base + [await self.counterparty_cond(entity, kontr_key)], top=1, orderby="Date desc")
+                if rows:
+                    return rows[0]
+            rows = await self._q(entity, base, top=1, orderby="Date desc")
+            return rows[0] if rows else None
+        return await self._cached(("template_doc", entity, operation, kontr_key), f)
 
     async def counterparty_docs(self, entity: str, kontr_key: str, top: int = 100) -> list[dict]:
         """Kontragentning oxirgi o'tkazilgan hujjatlari (keshlangan) — soliq kodi bo'yicha o'rganish uchun."""

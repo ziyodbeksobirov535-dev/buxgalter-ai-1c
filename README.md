@@ -264,6 +264,12 @@ rahbar oxirgi shartnomadan) oldindan to'ldiriladi. Shu STIR bilan kontragent 1C 
 belgilangan bo'lsa ham** — yangisi yaratilmaydi. Faqat yozish ruxsati bilan; yaratilganlar "📝 Dastur yaratganlar"
 ro'yxatida, o'tkazilgan hujjatlarda ishlatilmaguncha "↩️ Bekor qilish" (bank hisobi va shartnoma bilan birga).
 
+**Qoralama 1C dagi haqiqiy hujjat namunasida:** provodkani 1C o'zi tuzadi ("Провести"), shuning uchun qoralama shu
+operatsiyaning 1C dagi oxirgi o'tkazilgan hujjatidek to'ldiriladi — qatorli yoki qatorsiz (komissiya, soliq), shartnoma,
+holat maydonlari, kurs/karralik. Soliq to'lovida schyotni **soliq turi** (`Налог_Key`) belgilaydi: u, kontragent (1C da —
+tuman soliq inspeksiyasi), soliq davri va tahliliy maydonlar shu soliq kodli oxirgi hujjatdan olinadi; tarixda bir kod
+uchun turli soliq turi bo'lsa — ⚠️ ogohlantirish.
+
 Yozishdan oldin `ВидОперации` shu bazada haqiqatan ishlatilgan nomga keltiriladi (O'zbekiston BP:
 `ОплатаПокупателя`, `КомиссияБанка`, `ВозвратПокупателю` …), so'm hisoblari uchun kurs/karralik 1 qo'yiladi.
 
@@ -337,7 +343,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-201 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+202 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

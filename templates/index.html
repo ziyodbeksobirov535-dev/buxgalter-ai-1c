@@ -796,6 +796,9 @@
                       </select>
                       <div x-show="r.kind === 'ehf' && r.posting_note" class="mt-0.5 text-[11px] text-sky-700 dark:text-sky-400" title="Provodka" x-text="'🧾 ' + r.posting_note"></div>
                       <div class="mt-1 text-[11px] leading-tight" :class="['history','rule','keyword','classified'].includes(r.account_source) ? 'text-violet-600 dark:text-violet-400' : 'text-slate-500'" x-text="r.account_badge"></div>
+                      <template x-for="w in (r.warnings || [])" :key="w">
+                        <div class="mt-0.5 text-[11px] leading-tight" :class="w.startsWith('⚠️') ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-sky-700 dark:text-sky-400'" x-text="w"></div>
+                      </template>
                       <div x-show="r.advance_account && r.status !== 'duplicate'" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400"
                            :title="r.settlement_note" x-text="advanceLine(r)"></div>
                       <button x-show="r.account_source==='manual' && canPost && r.counterparty_inn && !r.posted" @click="remember(r)"

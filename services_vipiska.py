@@ -505,31 +505,43 @@ def tax_code_of(purpose: str) -> str | None:
 
 
 async def tax_code_history(onec: OneCService, entity: str, kontr_key: str | None, code: str | None) -> dict | None:
-    """Shu firmada shu soliq kodi bilan to'lovlar qaysi schyotga olingan (1C provodkasidan) — BARCHA soliq to'lovlari
-    bo'yicha (1C da ular tuman DSI ga yozilgan bo'lishi mumkin), ENG OXIRGISI: buxgalter amaliyotni o'zgartirsa
-    (masalan, JShDS 44.20.1 -> 44.30), dastur ham yangisiga o'tadi."""
+    """Shu soliq kodi bilan firmadagi to'lovlar (BARCHA soliq to'lovlari, qaysi soliq organiga yozilganidan qat'i nazar):
+    eng oxirgisi — namuna (soliq turi Налог_Key, kontragent, schyot provodkadan). 1C da soliq to'lovining schyotini
+    SOLIQ TURI belgilaydi; tarixda bir kod uchun turli soliq turi/schyot bo'lsa — ogohlantirish (adashib tanlangan
+    bo'lishi mumkin)."""
     if not code or onec.mode in ("offline", "file"):
         return None
-    from services_1c import _has_lines
+    from services_1c import E_TAXES, _has_lines, _is_empty_key
     docs = [d for d in await onec.tax_docs(entity) if tax_code_of(d.get(FIELDS["purpose"])) == code]
     if not docs:
         return None
     posted = await onec.bank_postings(entity, datetime.combine(date.today() - timedelta(days=400), datetime.min.time()))
-    history = []  # (sana, schyot kodi) — yangisi birinchi
+    history = []  # (sana, schyot, soliq turi, hujjat) — yangisi birinchi
     for d in sorted(docs, key=lambda x: x.get("Date") or "", reverse=True):
         key = posted.get(d.get("Ref_Key")) if not _has_lines(d) else None
         key = key or OneCService._extract_pattern(d)["account_key"]
         acc = await onec.account_code(key) if key else None
         if acc:
-            history.append((str(d.get("Date") or "")[:10], acc))
+            tax = d.get("Налог_Key")
+            history.append((str(d.get("Date") or "")[:10], acc, None if _is_empty_key(tax) else tax, d))
     if not history:
         return None
-    last_day, account = history[0]
-    others = Counter(a for _d, a in history[1:] if a != account)
+    names = await onec.describe(E_TAXES, [t for _d, _a, t, _doc in history if t])
+    tax_name = lambda t: (names.get(t) or {}).get("Description") or "—"  # noqa: E731
+    last_day, account, tax_key, doc = history[0]
     when = f"{last_day[8:10]}.{last_day[5:7]}.{last_day[:4]}"
-    note = (" (oldin: " + ", ".join(f"{a}×{n}" for a, n in others.most_common(2)) + ")") if others else ""
-    return {"account": account, "hits": sum(1 for _d, a in history if a == account), "total": len(history),
-            "reason": f"🧾 Soliq kodi {code}: shu firmadagi oxirgi to'lov {when} → {account}{note}"}
+    others = Counter((tax_name(t), a) for _d, a, t, _doc in history[1:] if (t, a) != (tax_key, account))
+    note = (" (oldin: " + ", ".join(f"{a}×{n}" for (_t, a), n in others.most_common(2)) + ")") if others else ""
+    warning = None
+    if others:
+        (o_name, o_acc), o_n = others.most_common(1)[0]
+        warning = (f"⚠️ Soliq kodi {code}: oxirgi to'lov ({when}) 1C da «{tax_name(tax_key)}» turi bilan → {account}, "
+                   f"oldingi {o_n} tasida «{o_name}» → {o_acc}. Qaysi biri to'g'ri ekanini tekshiring.")
+    return {"account": account, "hits": sum(1 for _d, a, _t, _x in history if a == account), "total": len(history),
+            "tax_key": tax_key, "tax_name": tax_name(tax_key) if tax_key else "", "template_ref": doc.get("Ref_Key"),
+            "counterparty_key": OneCService.counterparty_of(doc), "warning": warning,
+            "reason": f"🧾 Soliq kodi {code}: shu firmadagi oxirgi to'lov {when} → {account}"
+                      + (f" («{tax_name(tax_key)}»)" if tax_key else "") + note}
 
 
 def classify_purpose(r: BankRow) -> dict | None:
@@ -719,6 +731,17 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
         row["account"], row["account_source"], row["account_reason"] = tax_hist["account"], "history", tax_hist["reason"]
         row["operation"] = "ПеречислениеНалога"
         row["class_account"], row["class_reason"] = tax_hist["account"], tax_hist["reason"]
+        # qoralama shu kodli oxirgi 1C hujjati namunasida: soliq turi (schyotni u belgilaydi), kontragent (1C da —
+        # tuman soliq inspeksiyasi bo'lishi mumkin), holat maydonlari
+        row["tax_template"] = {k: tax_hist[k] for k in ("template_ref", "tax_key", "tax_name", "counterparty_key")}
+        if tax_hist["warning"]:
+            row.setdefault("warnings", []).append(tax_hist["warning"])
+        if tax_hist["counterparty_key"] and tax_hist["counterparty_key"] != row.get("counterparty_key"):
+            name = await onec.ref_description(E_COUNTERPARTY, tax_hist["counterparty_key"])
+            row["counterparty_key"], row["counterparty_1c_name"] = tax_hist["counterparty_key"], name
+            row["blockers"] = [b for b in row["blockers"] if "Kontragent 1C da topilmadi" not in b]
+            row.pop("missing_counterparty", None)
+            row.setdefault("warnings", []).append(f"ℹ️ 1C da soliq to'lovlari «{name}» kontragentiga yoziladi — shunday qilinadi")
     elif classified := classify_purpose(r):
         # aniq belgi (soliq kodi, ish haqi, kredit …) 1C tarixidan ustun: bitta kontragent — turli schyotlar
         row["account"], row["account_source"], row["account_reason"] = classified["account"], "classified", classified["reason"]
@@ -937,7 +960,56 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
     for k, v in (await onec.common_fields(row["entity"])).items():
         payload.setdefault(k, v)
     payload[FIELDS["payment_lines"]][0] = {k: v for k, v in payload[FIELDS["payment_lines"]][0].items() if v is not None}
+    await mirror_template(row, payload, onec, operation, acc_key)
     return payload
+
+
+async def mirror_template(row: dict, payload: dict, onec: OneCService, operation: str | None, acc_key: str | None) -> None:
+    """Qoralamani 1C dagi shu turdagi oxirgi haqiqiy hujjatdek tuzish — 1C provodkani shu maydonlarga qarab
+    tuzgani uchun natija bir xil chiqadi: qatorsiz ishlatiladigan operatsiyada (komissiya, soliq) — qatorsiz,
+    holat maydonlari, soliq turi/davri, soliq kontragenti."""
+    from services_1c import TEMPLATE_HEADER_FIELDS, _has_lines, _is_empty_key
+    tax = row.get("tax_template") or {}
+    tmpl = None
+    if tax.get("template_ref"):
+        tmpl = await onec.t.get(row["entity"], tax["template_ref"])
+    if not tmpl:
+        tmpl = await onec.template_doc(row["entity"], operation, row.get("counterparty_key"))
+    if not tmpl:
+        return
+    same_cp = OneCService.counterparty_of(tmpl) == row.get("counterparty_key")
+    for k in TEMPLATE_HEADER_FIELDS:
+        if tmpl.get(k) not in (None, ""):
+            payload[k] = tmpl[k]
+    if tax:
+        payload["Налог_Key"] = tax.get("tax_key") or tmpl.get("Налог_Key")
+        d = date.fromisoformat(row["date"]).replace(day=1) - timedelta(days=1)  # soliq davri — o'tgan oy
+        payload["НалоговыйПериод"] = f"{d.replace(day=1).isoformat()}T00:00:00"
+    if same_cp and not _is_empty_key(tmpl.get("СчетКонтрагента_Key")) and (tax or not payload.get("СчетКонтрагента_Key")):
+        payload["СчетКонтрагента_Key"] = tmpl["СчетКонтрагента_Key"]  # soliq organining hisobi — 1C dagidek
+    for k in ("КурсДокумента", "КратностьДокумента"):  # 1C dagi qiymat va turi (masalan, "1")
+        if tmpl.get(k) not in (None, "", 0):
+            payload[k] = tmpl[k]
+    if tax:  # soliq hujjatidagi tahliliy maydonlar (Субконто: soliq turi) — provodka analitikasi shundan
+        for k, v in tmpl.items():
+            if k.startswith("СубконтоДт") and "@" not in k and v not in (None, ""):
+                payload[k] = v
+    if _has_lines(tmpl):  # provodkani "Расшифровка платежа" qatori belgilaydi
+        header = tmpl.get(FIELDS["settlement_account"])
+        line_acc = (tmpl[FIELDS["payment_lines"]][0] or {}).get(FIELDS["settlement_account"])
+        if header != line_acc:  # bu bazada sarlavha qatordan mustaqil (masalan, doim 42.20 yoki bo'sh) — 1C dagidek
+            payload[FIELDS["settlement_account"]] = None if _is_empty_key(header) else header
+        for k in ("КурсВзаиморасчетов", "КратностьВзаиморасчетов"):
+            v = (tmpl[FIELDS["payment_lines"]][0] or {}).get(k)
+            if v not in (None, "", 0) and payload.get(FIELDS["payment_lines"]):
+                payload[FIELDS["payment_lines"]][0][k] = v
+    if not _has_lines(tmpl):  # bu operatsiya 1C da "Расшифровка платежа"siz yuritiladi
+        payload.pop(FIELDS["payment_lines"], None)
+        tmpl_contract = tmpl.get(FIELDS["contract"])
+        payload[FIELDS["contract"]] = (tmpl_contract if same_cp and not _is_empty_key(tmpl_contract)
+                                       else None if _is_empty_key(tmpl_contract) else payload.get(FIELDS["contract"]))
+        if not _is_empty_key(tmpl.get(FIELDS["settlement_account"])):
+            payload[FIELDS["settlement_account"]] = tmpl[FIELDS["settlement_account"]]
 
 
 async def advance_key(row: dict, onec: OneCService) -> str | None:

@@ -324,3 +324,35 @@ def test_bank_fee_uses_counterparty_from_1c_fee_history_even_if_marked_deleted()
     onec = OneCService(UzLive())
     assert asyncio.run(onec.find_counterparty("300000777")) is None  # o'chirishga belgilangan — oddiy qidiruvda yo'q
     assert asyncio.run(onec.fee_counterparty())["Ref_Key"] == "self-cp"
+
+
+def test_draft_mirrors_latest_real_document_of_same_operation():
+    """Komissiya: 1C da qatorsiz, shartnomasiz, sarlavha 42.20 (provodka 94.30 ni 1C sozlamasidan oladi) — qoralama
+    ham xuddi shunday; soliq: soliq turi (Налог_Key) va davri (o'tgan oy) namunadan."""
+    import asyncio
+    from services_1c import DemoOData, OneCService
+    from services_vipiska import mirror_template
+    onec = OneCService(DemoOData())
+    onec.t.db["Document_СписаниеСРасчетногоСчета"].append({
+        "Ref_Key": "fee-t", "Date": "2026-10-12T00:00:00", "Posted": True, "DeletionMark": False,
+        "ВидОперации": "КомиссияБанка", "Контрагент_Key": "self", "ДоговорКонтрагента_Key": "00000000-0000-0000-0000-000000000000",
+        "СчетУчетаРасчетовСКонтрагентом_Key": "acc-4220", "СпособПогашенияЗадолженности": "НеПогашать",
+        "СтатусВыписки": "Обработан", "КратностьДокумента": "1", "СчетКонтрагента_Key": "self-acc", "РасшифровкаПлатежа": []})
+    payload = {"ДоговорКонтрагента_Key": "ctr", "СчетУчетаРасчетовСКонтрагентом_Key": "acc-9430",
+               "РасшифровкаПлатежа": [{"СчетУчетаРасчетовСКонтрагентом_Key": "acc-9430"}], "КратностьДокумента": 1}
+    row = {"entity": "Document_СписаниеСРасчетногоСчета", "counterparty_key": "self", "date": "2026-10-16"}
+    asyncio.run(mirror_template(row, payload, onec, "КомиссияБанка", "acc-9430"))
+    assert "РасшифровкаПлатежа" not in payload and payload["ДоговорКонтрагента_Key"] is None
+    assert payload["СчетУчетаРасчетовСКонтрагентом_Key"] == "acc-4220" and payload["СтатусВыписки"] == "Обработан"
+    assert payload["КратностьДокумента"] == "1" and payload["СчетКонтрагента_Key"] == "self-acc"
+
+    onec.t.db["Document_СписаниеСРасчетногоСчета"].append({
+        "Ref_Key": "tax-t", "Date": "2026-10-15T00:00:00", "Posted": True, "DeletionMark": False,
+        "ВидОперации": "ПеречислениеНалога", "Контрагент_Key": "gni", "Налог_Key": "ndfl", "СубконтоДт1": "Налог",
+        "РасшифровкаПлатежа": []})
+    payload = {"РасшифровкаПлатежа": [{}]}
+    row = {"entity": "Document_СписаниеСРасчетногоСчета", "counterparty_key": "gni", "date": "2026-11-15",
+           "tax_template": {"template_ref": "tax-t", "tax_key": "ndfl"}}
+    asyncio.run(mirror_template(row, payload, onec, "ПеречислениеНалога", None))
+    assert payload["Налог_Key"] == "ndfl" and payload["НалоговыйПериод"] == "2026-10-01T00:00:00"
+    assert payload["СубконтоДт1"] == "Налог" and "РасшифровкаПлатежа" not in payload

@@ -72,10 +72,18 @@ def test_tax_code_account_learned_from_firm_history():
 
         async def tax_docs(self, entity):
             p = "~10002186042629031~200000001~{} x"
-            return [{"Ref_Key": "a", "Date": "2026-08-17T10:00:00", "НазначениеПлатежа": p.format(46)},
-                    {"Ref_Key": "b", "Date": "2026-09-15T10:00:00", "НазначениеПлатежа": p.format(46)},
-                    {"Ref_Key": "c", "Date": "2026-10-15T10:00:00", "НазначениеПлатежа": p.format(46)},
-                    {"Ref_Key": "d", "Date": "2026-10-15T10:00:00", "НазначениеПлатежа": "08102 101 Fuqarolarning pensiya"}]
+            return [{"Ref_Key": "a", "Date": "2026-08-17T10:00:00", "НазначениеПлатежа": p.format(46), "Налог_Key": "ndfl",
+                     "Контрагент_Key": "gni"},
+                    {"Ref_Key": "b", "Date": "2026-09-15T10:00:00", "НазначениеПлатежа": p.format(46), "Налог_Key": "ndfl",
+                     "Контрагент_Key": "gni"},
+                    {"Ref_Key": "c", "Date": "2026-10-15T10:00:00", "НазначениеПлатежа": p.format(46), "Налог_Key": "profit",
+                     "Контрагент_Key": "gni"},
+                    {"Ref_Key": "d", "Date": "2026-10-15T10:00:00", "НазначениеПлатежа": "08102 101 Fuqarolarning pensiya",
+                     "Налог_Key": "inps", "Контрагент_Key": "gni"}]
+
+        async def describe(self, entity, keys, fields=None):
+            names = {"ndfl": "НДФЛ с рабочих и служащих", "profit": "Налог на прибыль", "inps": "Отчисления в ИНПС"}
+            return {k: {"Description": names[k]} for k in keys}
 
         async def bank_postings(self, entity, since):
             return {"a": "k4420", "b": "k4420", "c": "k4430", "d": "k4530"}
@@ -85,7 +93,11 @@ def test_tax_code_account_learned_from_firm_history():
 
     hist = asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "46"))
     assert hist["account"] == "44.30" and "15.10.2026" in hist["reason"] and "44.20.1×2" in hist["reason"]
-    assert asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "101"))["account"] == "45.30.1"
+    # 1C da schyotni soliq turi belgilaydi: oxirgi to'lovda boshqa tur tanlangan — ogohlantirish, namuna va kontragent
+    assert (hist["tax_key"], hist["template_ref"], hist["counterparty_key"]) == ("profit", "c", "gni")
+    assert "Налог на прибыль" in hist["warning"] and "НДФЛ" in hist["warning"]
+    inps = asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "101"))
+    assert inps["account"] == "45.30.1" and inps["warning"] is None
     assert asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "36")) is None
 
 
