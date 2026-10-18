@@ -419,7 +419,7 @@
             </div>
           </div>
           <!-- ✍️ 1C ga yozish ruxsati (faqat Egasi) -->
-          <div x-show="me?.is_owner && !firmForm.onec_demo_mode && firmForm.onec_base_url" class="rounded-xl border p-4 space-y-2"
+          <div id="write-access" x-show="me?.is_owner && !firmForm.onec_demo_mode && firmForm.onec_base_url" class="rounded-xl border p-4 space-y-2"
                :class="firmForm.onec_write_enabled ? 'border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20' : 'border-slate-200 dark:border-slate-700'">
             <div class="flex flex-wrap items-center gap-2">
               <div class="font-semibold">✍️ 1C ga yozish</div>
@@ -1037,7 +1037,7 @@
         <button x-show="canPost && fileMode() && mode==='vipiska'" @click="exportImportFile()" :disabled="!exportCount() || exporting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="exportLabel()"></button>
-        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="askPost(selectedIds())" :disabled="!canWriteSelected() || posting"
+        <button x-show="canPost && !(fileMode() && mode==='vipiska')" @click="writeAllowed() ? askPost(selectedIds()) : openWriteSettings()" :disabled="writeAllowed() ? (!canWriteSelected() || posting) : !me?.is_owner"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="postLabel()"></button>
       </div>
@@ -1483,6 +1483,10 @@ function app() {
     // ---------------- ✍️ 1C ga yozish (ruxsat, limit, qoralamalar)
     liveWrite() { return this.snap?.onec_mode === 'live'; },
     writeAllowed() { return !this.liveWrite() || !!this.writeInfo().enabled; },
+    async openWriteSettings() {
+      await this.openSettings('firm');
+      setTimeout(() => document.getElementById('write-access')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+    },
     writeInfo() { return this.snap?.write || {}; },
     canWriteSelected() {
       const n = this.selCount();
@@ -1493,7 +1497,7 @@ function app() {
     postLabel() {
       if (this.posting) return '⏳ 1C ga yozilmoqda…';
       const n = this.selCount(), w = this.writeInfo();
-      if (this.liveWrite() && !w.enabled) return "🔒 Faqat tahlil — 1C ga yozish o'chiq";
+      if (this.liveWrite() && !w.enabled) return this.me?.is_owner ? "🔒 Faqat tahlil — 1C ga yozishni yoqish ⚙️" : "🔒 Faqat tahlil — 1C ga yozish o'chiq";
       if (this.liveWrite() && n > w.limit) return "Bir martada ko'pi bilan " + w.limit + " ta tanlang (" + n + " ta tanlangan)";
       return "✅ " + n + " ta yangi hujjatni 1C ga qoralama kiritish" + (this.liveWrite() ? " (limit " + w.limit + ")" : '');
     },
