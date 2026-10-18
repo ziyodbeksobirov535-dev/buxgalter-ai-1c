@@ -262,11 +262,17 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     files = analyzed.startswith(FILES)
     expected = files_tag(session.firm_id) if files else onec_fingerprint(session.firm_id)
     stale = bool(rows) and not offline and analyzed not in ("", expected)
+    outdated = bool(rows) and session.analyzed_with.get(f"{mode}_ver") != ANALYSIS_VERSION
     st = session.statement if mode == "vipiska" else None
     fs = firm_settings(session.firm_id)
     write = {"enabled": fs["onec_write_enabled"], "limit": fs["onec_write_limit"],
              "create_contracts": fs["onec_create_contracts"]}
+    period = None
+    if st and st.rows:
+        days = [r.posted_date or r.date for r in st.rows]
+        period = {"from": min(r.date for r in st.rows).isoformat(), "to": max(days).isoformat()}
     return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices, "write": write,
+            "outdated": outdated, "period": period,
             "onec_mode": onec_for(session).mode, "stale": stale, "offline": offline, "firm_id": session.firm_id,
             "files_mode": files, "files": files1c.summary(files1c.load_store(session.firm_id))["counts"] if files else None,
             "exportable": sum(1 for r in rows if files1c.exportable(r)) if mode == "vipiska" else 0,
@@ -296,6 +302,7 @@ async def _analyze_vipiska(session: Session, previous: list[dict] | None = None)
             offline = OneCService(OfflineOData(str(e)))
             session.vipiska = await analyze_statement(session.statement, offline, previous, blockers, rules)
             session.analyzed_with["vipiska"] = OFFLINE + onec_fingerprint(session.firm_id)
+    session.analyzed_with["vipiska_ver"] = ANALYSIS_VERSION
     if (session.analyzed_with.get("vipiska") or "").startswith(FILES):
         files1c.apply_balances(session.vipiska, files1c.load_store(session.firm_id))
         for row in session.vipiska:
@@ -305,6 +312,8 @@ async def _analyze_vipiska(session: Session, previous: list[dict] | None = None)
 
 OFFLINE = "offline:"
 FILES = "files:"
+# Tahlil qoidalari o'zgarganda oshiriladi — eski tahlil qilingan jadvalda "qayta tekshiring" ogohlantirishi chiqadi
+ANALYSIS_VERSION = "2026-10-18.4"
 
 
 async def load_statement(session: Session, filename: str, content: bytes, is_sample: bool = False) -> dict:
@@ -331,6 +340,19 @@ async def load_sample(session: Session) -> dict:
         build_sample_xlsx(config.SAMPLE_VIPISKA)
     return await load_statement(session, config.SAMPLE_VIPISKA.name, config.SAMPLE_VIPISKA.read_bytes(),
                                 is_sample=True)
+
+
+async def clear_statement(session: Session) -> dict:
+    """Yuklangan vipiskani jadvaldan olib tashlash (faqat dasturdagi ko'rinish; 1C ga tegilmaydi,
+    "Dastur yaratganlar" ro'yxati saqlanadi)."""
+    async with session.lock:
+        session.statement = None
+        session.vipiska = []
+        session.batches.clear()
+        for k in ("vipiska", "vipiska_ver"):
+            session.analyzed_with.pop(k, None)
+        save_session(session)
+    return snapshot(session, "vipiska")
 
 
 async def recheck_vipiska(session: Session) -> dict:
@@ -366,6 +388,7 @@ async def load_didox(session: Session) -> dict:
             session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
             session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
         session.didox_source = "Didox (demo)" if source == "demo" else "Didox API"
+        session.analyzed_with["didox_ver"] = ANALYSIS_VERSION
         save_session(session)
     return snapshot(session, "didox")
 

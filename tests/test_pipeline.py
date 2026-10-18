@@ -197,3 +197,15 @@ def test_sample_chart_of_accounts_rows():
     new_docs = [d for e in ("Document_ПоступлениеНаРасчетныйСчет", "Document_СписаниеСРасчетногоСчета")
                 for d in onec.t.db[e] if d.get("Комментарий", "").startswith("BUXGALTER AI")]
     assert sorted(acc[d["СчетУчетаРасчетовСКонтрагентом_Key"]] for d in new_docs) == ["5520", "5710", "6520"]
+
+
+def test_clear_statement_and_outdated_analysis_flag():
+    s = core.get_session("clr", DEMO_FIRM)
+    snap = run(core.load_sample(s))
+    assert snap["period"] == {"from": "2026-10-01", "to": "2026-10-16"} and not snap["outdated"]
+    s.analyzed_with["vipiska_ver"] = "eski"  # dastur yangilangandan keyin — qayta tekshirish taklif qilinadi
+    assert core.snapshot(s)["outdated"]
+    assert run(core.recheck_vipiska(s))["outdated"] is False
+    cleared = run(core.clear_statement(s))
+    assert cleared["rows"] == [] and cleared["period"] is None and s.statement is None
+    assert core._load_session("clr", DEMO_FIRM).statement is None  # diskda ham tozalangan

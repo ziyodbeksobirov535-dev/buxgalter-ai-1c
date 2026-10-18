@@ -425,6 +425,15 @@ async def analyze_sample(ctx: FirmCtx = Depends(firm_ctx)):
     return _with_context(ctx, await core.load_sample(ctx.session))
 
 
+@app.delete("/api/vipiska")
+async def clear_vipiska(ctx: FirmCtx = Depends(firm_ctx)):
+    """Jadvalni tozalash (xato yoki eski vipiska yuklanganda) — 1C ga tegilmaydi."""
+    source = ctx.session.statement.source if ctx.session.statement else ""
+    snap = await core.clear_statement(ctx.session)
+    db.audit(ctx.user["id"], ctx.firm_id, "vipiska_cleared", file=source)
+    return _with_context(ctx, snap)
+
+
 @app.post("/api/vipiska/recheck")
 async def recheck(ctx: FirmCtx = Depends(firm_ctx)):
     return _with_context(ctx, await core.recheck_vipiska(ctx.session))

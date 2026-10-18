@@ -316,6 +316,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 | POST | `/api/auth/login`, `/api/auth/logout`, `/api/auth/setup` | Kirish / chiqish / birinchi Egasi |
 | GET | `/api/auth/me` | Joriy foydalanuvchi va uning firmalari |
 | POST | `/api/vipiska/upload`, `/api/vipiska/sample`, `/api/vipiska/recheck` | Vipiska tahlili |
+| DELETE | `/api/vipiska` | Jadvalni tozalash (xato/eski vipiska; 1C ga tegilmaydi) |
 | POST | `/api/post` | Qoralama yozish (Buxgalter/Egasi) |
 | GET/POST/PUT/DELETE | `/api/firms…` | Firmalar (Egasi) |
 | GET/POST/PUT | `/api/users…` | Foydalanuvchilar (Egasi) |
@@ -336,7 +337,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-199 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+200 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli, Bosh sahifa (qoldiq, sverka, aylanma, qarzlar) va Sklad, sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.
