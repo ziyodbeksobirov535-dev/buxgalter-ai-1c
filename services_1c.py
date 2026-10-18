@@ -880,6 +880,17 @@ class OneCService:
             return [k for k, _v in parts.most_common()]
         return await self._cached(("posted", ref), f)
 
+    async def tax_docs(self, entity: str) -> list[dict]:
+        """O'tkazilgan soliq to'lovlari (ВидОперации "…Налог…") — soliq kodi bo'yicha o'rganish uchun (keshlangan)."""
+        async def f():
+            ops = [o for o in await self.known_operations(entity) if "Налог" in o]
+            out = []
+            for op in ops:
+                out += await self.fetch_all(entity, [Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False),
+                                                     Cond(FIELDS["operation"], "eq", op)], limit=2000)
+            return out
+        return await self._cached(("tax_docs", entity), f)
+
     async def counterparty_docs(self, entity: str, kontr_key: str, top: int = 100) -> list[dict]:
         """Kontragentning oxirgi o'tkazilgan hujjatlari (keshlangan) — soliq kodi bo'yicha o'rganish uchun."""
         async def f():

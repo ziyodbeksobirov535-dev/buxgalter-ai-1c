@@ -62,25 +62,35 @@ def test_supplier_payment_with_vat_stays_supplier():
 
 
 def test_tax_code_account_learned_from_firm_history():
-    """G'aznachilik: buxgalter kod 36 ni 45.10.1 (avans) ga olgan bo'lsa — standart 65.20 o'rniga shu taklif qilinadi;
-    faqat soliq to'lovi hujjatlari hisoblanadi, tarix bo'lmasa — None (standart jadval ishlaydi)."""
+    """G'aznachilik: schyot — shu firmadagi shu soliq kodli ENG OXIRGI to'lovdan (barcha soliq to'lovlari bo'yicha,
+    qaysi soliq organiga yozilganidan qat'i nazar); amaliyot o'zgarsa (JShDS 44.20.1 -> 44.30) yangisi olinadi."""
     import asyncio
     from services_vipiska import tax_code_history
 
     class Fake:
         mode = "live"
 
-        async def counterparty_docs(self, entity, kontr_key, top=100):
-            return [{"Ref_Key": "a", "ВидОперации": "ПеречислениеНалога", "НазначениеПлатежа": "~10002186042629031~200000001~36 x"},
-                    {"Ref_Key": "b", "ВидОперации": "ПеречислениеНалога", "НазначениеПлатежа": "~10002186042629031~200000001~36 y"},
-                    {"Ref_Key": "c", "ВидОперации": "ОплатаПоставщику", "НазначениеПлатежа": "~10002186042629031~200000001~46 z"}]
+        async def tax_docs(self, entity):
+            p = "~10002186042629031~200000001~{} x"
+            return [{"Ref_Key": "a", "Date": "2026-08-17T10:00:00", "НазначениеПлатежа": p.format(46)},
+                    {"Ref_Key": "b", "Date": "2026-09-15T10:00:00", "НазначениеПлатежа": p.format(46)},
+                    {"Ref_Key": "c", "Date": "2026-10-15T10:00:00", "НазначениеПлатежа": p.format(46)},
+                    {"Ref_Key": "d", "Date": "2026-10-15T10:00:00", "НазначениеПлатежа": "08102 101 Fuqarolarning pensiya"}]
 
         async def bank_postings(self, entity, since):
-            return {"a": "k4510", "b": "k4510", "c": "k6010"}
+            return {"a": "k4420", "b": "k4420", "c": "k4430", "d": "k4530"}
 
         async def account_code(self, key):
-            return {"k4510": "45.10.1", "k6010": "60.10"}.get(key)
+            return {"k4420": "44.20.1", "k4430": "44.30", "k4530": "45.30.1"}.get(key)
 
-    hist = asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", "kp", "36"))
-    assert hist["account"] == "45.10.1" and (hist["hits"], hist["total"]) == (2, 2)
-    assert asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", "kp", "46")) is None
+    hist = asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "46"))
+    assert hist["account"] == "44.30" and "15.10.2026" in hist["reason"] and "44.20.1×2" in hist["reason"]
+    assert asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "101"))["account"] == "45.30.1"
+    assert asyncio.run(tax_code_history(Fake(), "Document_СписаниеСРасчетногоСчета", None, "36")) is None
+
+
+def test_tax_code_with_leading_payment_code():
+    from services_vipiska import tax_code_of
+    assert tax_code_of("08102 101 Fuqarolarning jamg'arib boriladigan pensiya") == "101"
+    assert tax_code_of("~10002186042629031~201122919~46 Jismoniy shaxslar") == "46"
+    assert tax_code_of("08102 ~10002286042629031411020") is None

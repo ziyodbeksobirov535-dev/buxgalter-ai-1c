@@ -474,7 +474,7 @@ TAX_CODE_ACCOUNTS = {
     "101": ("65.20", "jamg'arib boriladigan pensiya badali / INPS (kod 101)"),
 }
 QQS_RE = re.compile(r"\bqqs\b|\bндс\b|\bnds\b|ққс|ққс", re.IGNORECASE)  # faqat soliq organiga to'lovda
-TAX_CODE_RE = re.compile(r"~\d{9,}~\d{9}~(\d{1,3})\b|^\s*(\d{2,3})\s+\D")
+TAX_CODE_RE = re.compile(r"~\d{9,}~\d{9}~(\d{1,3})\b|^\s*(?:\d{5}\s+)?(\d{2,3})\s+\D")  # "08102 101 …" ham
 CLASSIFIERS = [  # (regex, schyot, izoh, yo'nalishlar)
     (r"ижтимоий|ijtimoiy soliq|соц\.?\s*налог|социальн\w*\s+налог|yagona ijtimoiy|\bесп\b", "65.20", "ijtimoiy soliq",
      ("chiqim",)),
@@ -505,30 +505,31 @@ def tax_code_of(purpose: str) -> str | None:
 
 
 async def tax_code_history(onec: OneCService, entity: str, kontr_key: str | None, code: str | None) -> dict | None:
-    """Shu firmada shu soliq kodi bilan oldingi to'lovlar qaysi schyotga olingan (1C provodkasidan).
-    Masalan, buxgalter soliqlarni avans schyotlariga (44.10.x / 45.10.x) olsa — shu taklif qilinadi."""
-    if not kontr_key or not code or onec.mode in ("offline", "file"):
+    """Shu firmada shu soliq kodi bilan to'lovlar qaysi schyotga olingan (1C provodkasidan) — BARCHA soliq to'lovlari
+    bo'yicha (1C da ular tuman DSI ga yozilgan bo'lishi mumkin), ENG OXIRGISI: buxgalter amaliyotni o'zgartirsa
+    (masalan, JShDS 44.20.1 -> 44.30), dastur ham yangisiga o'tadi."""
+    if not code or onec.mode in ("offline", "file"):
         return None
     from services_1c import _has_lines
-    docs = [d for d in await onec.counterparty_docs(entity, kontr_key)  # faqat soliq to'lovi hujjatlari
-            if "Налог" in str(d.get(FIELDS["operation"]) or "") and tax_code_of(d.get(FIELDS["purpose"])) == code]
+    docs = [d for d in await onec.tax_docs(entity) if tax_code_of(d.get(FIELDS["purpose"])) == code]
     if not docs:
         return None
     posted = await onec.bank_postings(entity, datetime.combine(date.today() - timedelta(days=400), datetime.min.time()))
-    votes: Counter = Counter()
-    for d in docs:
+    history = []  # (sana, schyot kodi) — yangisi birinchi
+    for d in sorted(docs, key=lambda x: x.get("Date") or "", reverse=True):
         key = posted.get(d.get("Ref_Key")) if not _has_lines(d) else None
         key = key or OneCService._extract_pattern(d)["account_key"]
-        if key:
-            votes[key] += 1
-    if not votes:
+        acc = await onec.account_code(key) if key else None
+        if acc:
+            history.append((str(d.get("Date") or "")[:10], acc))
+    if not history:
         return None
-    key, hits = votes.most_common(1)[0]
-    code_acc = await onec.account_code(key)
-    if not code_acc:
-        return None
-    return {"account": code_acc, "hits": hits, "total": sum(votes.values()),
-            "reason": f"🧾 Soliq kodi {code}: shu firmada oxirgi to'lovlar ({hits}/{sum(votes.values())}) → {code_acc}"}
+    last_day, account = history[0]
+    others = Counter(a for _d, a in history[1:] if a != account)
+    when = f"{last_day[8:10]}.{last_day[5:7]}.{last_day[:4]}"
+    note = (" (oldin: " + ", ".join(f"{a}×{n}" for a, n in others.most_common(2)) + ")") if others else ""
+    return {"account": account, "hits": sum(1 for _d, a in history if a == account), "total": len(history),
+            "reason": f"🧾 Soliq kodi {code}: shu firmadagi oxirgi to'lov {when} → {account}{note}"}
 
 
 def classify_purpose(r: BankRow) -> dict | None:
@@ -699,6 +700,10 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     learned = row["learned"]
     match_code = await onec.account_code((dup["match"] or {}).get("account_key"))
     locked = rules.locked(r.counterparty_inn, r.direction, "bank", r.purpose) if rules else None
+    # G'aznachilik: soliq kodi bo'yicha firmaning o'z amaliyoti — bitta G'aznachilik turli soliqlarni oladi, shuning
+    # uchun u kontragent bo'yicha qat'iy qoidadan ustun (kalit so'z bo'yicha qat'iy qoida esa ustun qoladi)
+    tax_hist = (await tax_code_history(onec, entity, row["counterparty_key"], tax_code_of(r.purpose))
+                if r.direction == "chiqim" and is_tax_payee(r) else None)
     stored = rules.learned(r.counterparty_inn, r.direction, "bank", r.purpose) if rules else None
     if dup["status"] == "duplicate" and match_code:
         row["account"], row["account_source"] = match_code, "onec"
@@ -706,10 +711,9 @@ async def analyze_bank_row(r: BankRow, onec: OneCService, prev: dict | None = No
     elif prev and prev.get("account_source") == "manual" and not (locked and locked.rule["account"] == prev["account"]):
         row["account"], row["account_source"] = prev["account"], "manual"
         row["operation"] = operation_for(row["account"], r.direction)
-    elif locked:
+    elif locked and not (tax_hist and locked.rule["kind"] == "counterparty"):
         apply_rule(row, locked)
-    elif tax_hist := (await tax_code_history(onec, entity, row["counterparty_key"], tax_code_of(r.purpose))
-                      if r.direction == "chiqim" and is_tax_payee(r) else None):
+    elif tax_hist:
         # G'aznachilik: soliq kodi bo'yicha firmaning o'z amaliyoti (standart kod->schyot jadvalidan ustun)
         row["account"], row["account_source"], row["account_reason"] = tax_hist["account"], "history", tax_hist["reason"]
         row["operation"] = "ПеречислениеНалога"
