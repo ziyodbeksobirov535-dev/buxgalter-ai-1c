@@ -716,12 +716,29 @@
             </div>
           </div>
 
+          <!-- Filtrlar: holat, yo'nalish, qidiruv -->
+          <div class="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-slate-200 dark:border-slate-800 text-xs">
+            <template x-for="c in rowCats()" :key="c.id">
+              <button x-show="c.id === 'all' || c.count" @click="setFilter('cat', c.id)" class="rounded-full border px-2.5 py-1 font-medium transition"
+                      :class="flt().cat === c.id ? 'bg-brand-600 border-brand-600 text-white' : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'"
+                      x-text="c.label + ' ' + c.count"></button>
+            </template>
+            <select :value="flt().dir" @change="setFilter('dir', $event.target.value)" class="ml-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1">
+              <option value="">⬇️⬆️ Hammasi</option><option value="kirim">⬇️ Kirim</option><option value="chiqim">⬆️ Chiqim</option>
+            </select>
+            <input :value="flt().q" @input="setFilter('q', $event.target.value)" placeholder="Qidirish: kontragent, STIR, №, maqsad"
+                   class="flex-1 min-w-[180px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1">
+            <button x-show="filterActive()" @click="resetFilter()" class="rounded-lg px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">✕ Tozalash</button>
+            <span x-show="filterActive()" class="text-slate-500" x-text="visibleRows().length + ' / ' + rows.length + ' qator · ' + fmt(visibleSum()) + ' so\'m'"></span>
+          </div>
+          <div x-show="!visibleRows().length" class="px-4 py-6 text-center text-sm text-slate-500">Bu filtr bo'yicha qator yo'q</div>
+
           <!-- Desktop jadval -->
           <div class="hidden md:block overflow-x-auto thin-scroll">
             <table class="w-full text-sm">
               <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 text-left">
                 <tr>
-                  <th class="px-2 py-2 w-8"><input type="checkbox" class="rounded" :checked="allSelected()" :disabled="!selectableRows().length" @change="toggleAll($event.target.checked)" title="Barcha yangi qatorlarni tanlash"></th>
+                  <th class="px-2 py-2 w-8"><input type="checkbox" class="rounded" :checked="allSelected()" :disabled="!visibleRows().some(r => r.selectable)" @change="toggleAll($event.target.checked)" title="Barcha yangi qatorlarni tanlash"></th>
                   <th class="px-2 py-2 whitespace-nowrap">Sana & №</th>
                   <th class="px-2 py-2">Kontragent & STIR</th>
                   <th class="px-2 py-2">Turi</th>
@@ -733,7 +750,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                <template x-for="r in rows" :key="r.id">
+                <template x-for="r in visibleRows()" :key="r.id">
                   <tr :class="rowClass(r)">
                     <td class="px-2 py-2.5 align-top">
                       <input type="checkbox" class="rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)"
@@ -797,7 +814,7 @@
 
           <!-- Mobil kartalar -->
           <div class="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-            <template x-for="r in rows" :key="r.id">
+            <template x-for="r in visibleRows()" :key="r.id">
               <div class="p-3" :class="rowClass(r)">
                 <div class="flex items-start gap-2">
                   <input type="checkbox" class="mt-1 rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)">
@@ -1300,7 +1317,7 @@ function app() {
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
     dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '',
     balAccount: '40.10', bal: null, balLoading: false, balSearch: '',
-    drafts: [], draftsOpen: false, writeForm: { confirm: '', limit: 1, create_contracts: false },
+    drafts: [], draftsOpen: false, writeForm: { confirm: '', limit: 1, create_contracts: false }, filters: {},
     data: { vipiska: null, didox: null }, selected: { vipiska: [], didox: [] },
     status: { onec: {}, ai: {} }, loading: false, busyMsg: '', posting: false,
     chat: [], chatInput: '', chatBusy: false, toasts: [],
@@ -1674,10 +1691,54 @@ function app() {
 
     // ---------------- tanlash
     selectableRows() { return this.rows.filter(r => r.selectable); },
+    // ---------------- filtrlar (holat, yo'nalish, qidiruv) — har sahifa uchun alohida, eslab qolinadi
+    flt() {
+      if (!this.filters[this.mode]) {
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem('bx_flt_' + this.mode) || 'null'); } catch (e) {}
+        this.filters[this.mode] = { cat: 'all', dir: '', q: '', ...(saved || {}) };
+      }
+      return this.filters[this.mode];
+    },
+    setFilter(k, v) {
+      this.flt()[k] = v;
+      try { localStorage.setItem('bx_flt_' + this.mode, JSON.stringify({ cat: this.flt().cat, dir: this.flt().dir })); } catch (e) {}
+    },
+    resetFilter() { this.filters[this.mode] = { cat: 'all', dir: '', q: '' }; this.setFilter('cat', 'all'); },
+    filterActive() { const f = this.flt(); return f.cat !== 'all' || !!f.dir || !!f.q.trim(); },
+    rowCat(r) {
+      if (r.posted) return 'posted';
+      if (['new', 'unchecked'].includes(r.status) && (r.blockers || []).length) return 'blocked';
+      return { new: 'new', duplicate: 'dup', discrepancy: 'diff', unchecked: 'unchecked' }[r.status] || 'other';
+    },
+    rowCats() {
+      const n = (id) => this.rows.filter(r => this.rowCat(r) === id).length;
+      return [
+        { id: 'all', label: 'Hammasi', count: this.rows.length },
+        { id: 'new', label: '🟡 Yangi', count: n('new') },
+        { id: 'dup', label: "🟢 1C da bor", count: n('dup') },
+        { id: 'diff', label: '🔴 Farq', count: n('diff') },
+        { id: 'blocked', label: "⛔ To'siq", count: n('blocked') },
+        { id: 'posted', label: '✅ Yozilgan', count: n('posted') },
+        { id: 'unchecked', label: '⚪ Tekshirilmagan', count: n('unchecked') },
+      ];
+    },
+    visibleRows() {
+      const f = this.flt(), q = f.q.trim().toLowerCase();
+      return this.rows.filter(r => (f.cat === 'all' || this.rowCat(r) === f.cat) && (!f.dir || r.direction === f.dir)
+        && (!q || [r.counterparty_name, r.counterparty_1c_name, r.counterparty_inn, r.number, r.purpose]
+              .some(v => String(v || '').toLowerCase().includes(q))));
+    },
+    visibleSum() { return this.visibleRows().reduce((a, r) => a + r.amount, 0); },
     isSel(id) { return (this.selected[this.mode] || []).includes(id); },
     toggleSel(id) { const s = this.selected[this.mode]; const i = s.indexOf(id); i >= 0 ? s.splice(i, 1) : s.push(id); },
-    toggleAll(on) { this.selected[this.mode] = on ? this.selectableRows().map(r => r.id) : []; },
-    allSelected() { const s = this.selectableRows(); return s.length > 0 && s.every(r => this.isSel(r.id)); },
+    toggleAll(on) {
+      // faqat ko'rinib turgan (filtrlangan) qatorlar
+      const vis = this.visibleRows().filter(r => r.selectable).map(r => r.id);
+      const cur = (this.selected[this.mode] || []).filter(id => !vis.includes(id));
+      this.selected[this.mode] = on ? [...cur, ...vis] : cur;
+    },
+    allSelected() { const s = this.visibleRows().filter(r => r.selectable); return s.length > 0 && s.every(r => this.isSel(r.id)); },
     selectedIds() { const ok = new Set(this.selectableRows().map(r => r.id)); return (this.selected[this.mode] || []).filter(id => ok.has(id)); },
     selCount() { return this.selectedIds().length; },
     selSum() { const ids = new Set(this.selectedIds()); return this.rows.filter(r => ids.has(r.id)).reduce((a, r) => a + r.amount, 0); },
