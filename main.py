@@ -246,6 +246,7 @@ async def firms_deactivate(firm_id: int, user: dict = Depends(require_owner)):
 async def firms_test(firm_id: int, _user: dict = Depends(require_owner)):
     """1C ulanishini tekshirish — bitta urinish (xato login takrorlanmaydi)."""
     onec = core.get_onec(firm_id)
+    onec.drop_metadata()  # sozlama o'zgargan bo'lishi mumkin — $metadata qayta o'qiladi
     status = await onec.status()
     meta = await onec.check_metadata() if status["ok"] else None
     return {"onec": status, "metadata": meta}

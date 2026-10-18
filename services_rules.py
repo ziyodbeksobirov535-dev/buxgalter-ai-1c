@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from services_1c import (DT, E_ACCOUNTS, E_BANK_IN, E_BANK_OUT, E_COUNTERPARTY, E_PURCHASE, FIELDS, PURPOSE_KEYWORDS,
-                         Cond, OneCService, fmt_account)
+                         Cond, OneCService, _has_lines, fmt_account)
 
 # To'lov maqsadida qidiriladigan kalit so'zlar — tarixda shu so'z bilan kelgan to'lovlar qaysi schyotga olingan
 KEYWORD_CANDIDATES = sorted({kw for kw, _acc, _dir in PURPOSE_KEYWORDS} | {
@@ -91,6 +91,8 @@ class RuleSet:
 async def _fetch_all(onec: OneCService, entity: str, conds: list[Cond], orderby: str | None = None,
                      select: list[str] | None = None, limit: int = MAX_DOCS_PER_TYPE) -> list[dict]:
     out: list[dict] = []
+    # Tartib barqaror bo'lishi shart: $orderby siz bulutli 1C $skip sahifalarini takrorlab beradi (yozuvlar yo'qoladi)
+    orderby = f"{orderby},Ref_Key" if orderby else "Ref_Key"
     while len(out) < limit:
         page = await onec.t.query(entity, conds, top=PAGE, skip=len(out) or None, orderby=orderby, select=select)
         out.extend(page)
@@ -121,15 +123,18 @@ async def learn_from_1c(onec: OneCService, months: int = 12) -> tuple[list[dict]
                                         (E_PURCHASE, "", "ehf")):
         docs = await _fetch_all(onec, entity, base, orderby="Date desc")
         summary["documents"] += len(docs)
+        posted = await onec.bank_postings(entity, cutoff)  # qatorsiz hujjatlar uchun — 1C provodkasidagi schyot
         groups: dict[str, list[tuple[dict, dict]]] = defaultdict(list)
         kw_votes: dict[str, Counter] = defaultdict(Counter)
         kw_ops: dict[tuple, Counter] = defaultdict(Counter)
         for d in docs:
             p = OneCService._extract_pattern(d)
+            if not _has_lines(d) and posted.get(d.get("Ref_Key")):
+                p["account_key"] = posted[d["Ref_Key"]]
             code = accounts.get(p["account_key"]) if p["account_key"] else None
             if not code:
                 continue
-            groups[d.get(FIELDS["counterparty"]) or ""].append((d, {**p, "code": code}))
+            groups[OneCService.counterparty_of(d) or ""].append((d, {**p, "code": code}))
             if doc_kind == "bank":
                 low = str(d.get(FIELDS["purpose"]) or "").lower()
                 for kw in KEYWORD_CANDIDATES:

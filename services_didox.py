@@ -208,7 +208,7 @@ async def build_purchase_payload(row: dict, onec: OneCService) -> dict:
     return {
         **common,
         "Date": f"{row['date']}T12:00:00", "Организация_Key": org["Ref_Key"], FIELDS["operation"]: row["operation"],
-        FIELDS["counterparty"]: row["counterparty_key"], FIELDS["contract"]: contract_key,
+        **await onec.counterparty_payload(E_PURCHASE, row["counterparty_key"]), FIELDS["contract"]: contract_key,
         FIELDS["amount"]: row["amount"], FIELDS["in_number"]: row["number"],
         FIELDS["in_date"]: f"{row['date']}T00:00:00", FIELDS["settlement_account"]: acc_key,
         "СуммаВключаетНДС": True,

@@ -18,6 +18,7 @@ import asyncio
 import copy
 import json
 import re
+import time
 import urllib.parse
 from collections import Counter
 from dataclasses import dataclass
@@ -39,12 +40,20 @@ E_NOMENCLATURE = "Catalog_Номенклатура"
 E_ORG = "Catalog_Организации"
 E_CASH_FLOW = "Catalog_СтатьиДвиженияДенежныхСредств"
 E_ACCOUNTS = "ChartOfAccounts_Хозрасчетный"
+E_REGISTER = "AccountingRegister_Хозрасчетный"  # provodkalar (ixtiyoriy: nashr qilingan bo'lsa — schyot shundan)
+E_REGISTER_ROWS = "AccountingRegister_Хозрасчетный_RecordType"
+BANK_ACCOUNT_CODE = "51.10"
 REQUIRED_ENTITIES = [E_BANK_IN, E_BANK_OUT, E_PURCHASE, E_COUNTERPARTY, E_CONTRACT, E_BANK_ACCOUNT,
-                     E_NOMENCLATURE, E_ORG, E_CASH_FLOW, E_ACCOUNTS]
+                     E_NOMENCLATURE, E_ORG, E_ACCOUNTS]
+# E_CASH_FLOW ixtiyoriy: ba'zi bazalarda ДДС moddalari ishlatilmaydi (Constant_ИспользоватьСтатьиДвиженияДенежныхСредств)
+META_TTL = 1800  # $metadata (bulutli bazada ~8 MB) — 30 daqiqada bir marta o'qiladi
 
 FIELDS = {
     "inn": "ИНН",
-    "counterparty": "Контрагент_Key",
+    "counterparty": "Контрагент_Key",  # O'zbekiston konfiguratsiyasida bank hujjatlarida kompozit: Контрагент + _Type
+    "counterparty_composite": "Контрагент",
+    "pinfl": "ПИНФЛ",       # YaTT (yakka tadbirkor) — 14 xonali JShShIR
+    "ikpu": "КодИКПУ",      # nomenklatura MXIK kodi (konfiguratsiyada bo'lmasa — nomi bo'yicha qidiriladi)
     "contract": "ДоговорКонтрагента_Key",
     "in_number": "НомерВходящегоДокумента",
     "in_date": "ДатаВходящегоДокумента",
@@ -85,16 +94,21 @@ PURPOSE_KEYWORDS = [
 ]
 
 
+ACCOUNT_RE = re.compile(r"^\s*(\d{2})\.?(\d{2})((?:\.\d+)*)\s*$")
+
+
 def fmt_account(code: str | None) -> str | None:
-    """'6010' -> '60.10' (1C kodini UI ko'rinishiga)."""
+    """1C kodini UI ko'rinishiga: '6010' -> '60.10', '4530.1' (uch bo'g'inli subschyot) -> '45.30.1'."""
     if not code:
         return None
-    c = code.replace(".", "").strip()
-    return f"{c[:2]}.{c[2:]}" if len(c) == 4 and c.isdigit() else code
+    m = ACCOUNT_RE.match(str(code))
+    return f"{m.group(1)}.{m.group(2)}{m.group(3)}" if m else code
 
 
 def norm_account(code: str) -> str:
-    return code.replace(".", "").strip()
+    """UI ko'rinishidan 1C kodiga: '60.10' -> '6010', '45.30.1' -> '4530.1'."""
+    m = ACCOUNT_RE.match(str(code))
+    return f"{m.group(1)}{m.group(2)}{m.group(3)}" if m else str(code).strip()
 
 
 # ---------------------------------------------------------------- filter qiymat turlari
@@ -134,6 +148,13 @@ def _render_value(v: Any) -> str:
     if isinstance(v, (int, float)):
         return repr(round(float(v), 2)) if isinstance(v, float) else str(v)
     return "'" + str(v).replace("'", "''") + "'"
+
+
+def encode_query(params: dict[str, str]) -> str:
+    """OData so'rov qatori: bo'sh joy %20 bilan (httpx "+" qo'yadi — bulutli 1C (uzcloud) kirillcha rekvizitli
+    $filter da "+" ni bo'sh joy deb o'qimaydi va xato qaytaradi)."""
+    safe = "',()$"
+    return "&".join(f"{k}={urllib.parse.quote(v, safe=safe)}" for k, v in params.items())
 
 
 def render_filter(conds: list[Cond]) -> str:
@@ -306,7 +327,7 @@ class HttpOData:
             params["$orderby"] = orderby
         if select:
             params["$select"] = ",".join(select)
-        data = await self._request("GET", entity, params=params)
+        data = await self._request("GET", entity + "?" + encode_query(params))
         return data.get("value", [])
 
     async def get(self, entity: str, key: str) -> dict | None:
@@ -326,6 +347,12 @@ class HttpOData:
 
     async def metadata_text(self) -> str:
         return (await self._send("GET", f"{self.base}/$metadata")).text
+
+    async def register_records(self, entity: str, ref: str) -> list[dict]:
+        """Hujjatning buxgalteriya provodkalari (AccountingRegister_Хозрасчетный, Recorder bo'yicha) — faqat o'qish."""
+        path = f"{E_REGISTER}(Recorder=guid'{ref}', Recorder_Type='StandardODATA.{entity}')"
+        data = await self._request("GET", urllib.parse.quote(path, safe="(),='") + "?$format=json")
+        return data.get("RecordSet") or []
 
 
 class OfflineOData:
@@ -445,12 +472,19 @@ def _is_empty_key(v: Any) -> bool:
     return not v or v == EMPTY_GUID
 
 
+def _has_lines(doc: dict) -> bool:
+    """"Расшифровка платежа" qatorida schyot ko'rsatilganmi (bo'lsa — schyot o'sha qatordan olinadi)."""
+    lines = doc.get(FIELDS["payment_lines"]) or []
+    return bool(lines) and not _is_empty_key((lines[0] or {}).get(FIELDS["settlement_account"]))
+
+
 # ---------------------------------------------------------------- servis
 class OneCService:
     def __init__(self, transport: HttpOData | DemoOData, org_inn: str = ""):
         self.t = transport
         self.org_inn = org_inn
         self._cache: dict[tuple, Any] = {}
+        self._meta: tuple[float, dict] | None = None  # invalidate() da tozalanmaydi — katta fayl
         self._sem = asyncio.Semaphore(6)
 
     @property
@@ -487,10 +521,44 @@ class OneCService:
         except ODataError as e:
             return {"ok": False, "mode": self.mode, "label": "1C OData", "error": str(e)}
 
-    async def check_metadata(self) -> dict:
+    def drop_metadata(self) -> None:
+        self._meta = None
+        self._cache.pop(("metadata",), None)
+
+    async def _metadata(self) -> dict:
+        """$metadata: nashr qilingan obyektlar va har birining rekvizitlari (bir marta o'qib, xotirada)."""
+        if self._meta and time.monotonic() - self._meta[0] < META_TTL:
+            return self._meta[1]
         text = await self.t.metadata_text()
-        missing = [e for e in REQUIRED_ENTITIES if f'"{e}"' not in text]
-        return {"ok": not missing, "missing": missing, "published": text.count("<EntitySet ") or text.count("EntitySet Name="),
+        meta = {"sets": set(re.findall(r'EntitySet Name="([^"]+)"', text)), "types": {}}
+        if self.mode == "live" and text:
+            import xml.etree.ElementTree as ET
+            try:
+                root = ET.fromstring(text)
+            except ET.ParseError:
+                root = None
+            if root is not None:
+                types = {el.get("Name"): el for el in root.iter() if el.tag.endswith(("EntityType", "ComplexType"))}
+                for name, et in types.items():
+                    header, tables = set(), {}
+                    for prop in et:
+                        if not prop.tag.endswith("Property"):
+                            continue
+                        pname, typ = prop.get("Name"), prop.get("Type") or ""
+                        header.add(pname)
+                        if typ.startswith("Collection("):
+                            row_type = types.get(typ[len("Collection("):-1].split(".")[-1])
+                            tables[pname] = {p.get("Name") for p in (row_type if row_type is not None else [])
+                                             if p.tag.endswith("Property")}
+                    meta["types"][name] = {"header": header, "tables": tables}
+        if meta["sets"]:  # hali nashr qilinmagan bo'lsa — keyingi safar qayta o'qiladi
+            self._meta = (time.monotonic(), meta)
+        return meta
+
+    async def check_metadata(self) -> dict:
+        sets = (await self._metadata())["sets"]
+        missing = [e for e in REQUIRED_ENTITIES if e not in sets]
+        return {"ok": not missing, "missing": missing, "published": len(sets),
                 "hint": ("1C da (administrator huquqi bilan): Администрирование → Общие настройки → Интеграция с "
                          "другими программами → \"Настройка стандартного интерфейса OData\" (yoki Все функции → "
                          "Обработки → \"Настройка стандартного интерфейса OData\") → kerakli obyektlarni belgilab "
@@ -513,10 +581,44 @@ class OneCService:
             return None
 
         async def f():
-            rows = await self._q(E_COUNTERPARTY, [Cond(FIELDS["inn"], "eq", inn), Cond("DeletionMark", "eq", False)],
+            field = FIELDS["inn"]
+            if len(inn) == 14:  # yakka tadbirkor — JShShIR (PINFL)
+                props = await self.entity_props(E_COUNTERPARTY)
+                if props is None or FIELDS["pinfl"] in props["header"]:
+                    field = FIELDS["pinfl"]
+            rows = await self._q(E_COUNTERPARTY, [Cond(field, "eq", inn), Cond("DeletionMark", "eq", False)],
                                  top=2, select=["Ref_Key", "Description", FIELDS["inn"]])
+            if not rows and field != FIELDS["inn"]:
+                rows = await self._q(E_COUNTERPARTY, [Cond(FIELDS["inn"], "eq", inn), Cond("DeletionMark", "eq", False)],
+                                     top=2, select=["Ref_Key", "Description", FIELDS["inn"]])
             return rows[0] if rows else None
         return await self._cached(("kontr", inn), f)
+
+    # ---- kontragent rekviziti: oddiy (Контрагент_Key) yoki kompozit (Контрагент + Контрагент_Type)
+    async def counterparty_field(self, entity: str) -> str:
+        props = await self.entity_props(entity)
+        if props and FIELDS["counterparty"] not in props["header"] and FIELDS["counterparty_composite"] in props["header"]:
+            return FIELDS["counterparty_composite"]
+        return FIELDS["counterparty"]
+
+    async def counterparty_cond(self, entity: str, kontr_key: str) -> Cond:
+        field = await self.counterparty_field(entity)
+        if field == FIELDS["counterparty_composite"]:
+            return Cond(field, "eq", Cast(kontr_key, E_COUNTERPARTY))
+        return Cond(field, "eq", Guid(kontr_key))
+
+    async def counterparty_payload(self, entity: str, kontr_key: str) -> dict:
+        field = await self.counterparty_field(entity)
+        if field == FIELDS["counterparty_composite"]:
+            return {field: kontr_key, f"{field}_Type": f"StandardODATA.{E_COUNTERPARTY}"}
+        return {field: kontr_key}
+
+    @staticmethod
+    def counterparty_of(doc: dict) -> str | None:
+        v = doc.get(FIELDS["counterparty"])
+        if _is_empty_key(v) and str(doc.get(FIELDS["counterparty_composite"] + "_Type") or "").endswith(E_COUNTERPARTY):
+            v = doc.get(FIELDS["counterparty_composite"])
+        return None if _is_empty_key(v) else v
 
     async def find_counterparty_by_name(self, name: str) -> dict | None:
         """Faqat fayl rejimida: eksportda STIR bo'lmasa — nomi bo'yicha (tashkiliy shakl va qo'shtirnoqsiz)."""
@@ -591,8 +693,9 @@ class OneCService:
 
     async def find_nomenclature(self, name: str, ikpu: str | None = None) -> dict | None:
         async def f():
-            if ikpu:
-                rows = await self._q(E_NOMENCLATURE, [Cond("КодИКПУ", "eq", ikpu), Cond("DeletionMark", "eq", False)],
+            props = await self.entity_props(E_NOMENCLATURE)
+            if ikpu and (props is None or FIELDS["ikpu"] in props["header"]):
+                rows = await self._q(E_NOMENCLATURE, [Cond(FIELDS["ikpu"], "eq", ikpu), Cond("DeletionMark", "eq", False)],
                                      top=1)
                 if rows:
                     return rows[0]
@@ -603,7 +706,7 @@ class OneCService:
 
     async def account_key(self, code: str) -> str | None:
         async def f():
-            for c in (norm_account(code), fmt_account(norm_account(code))):
+            for c in dict.fromkeys((norm_account(code), fmt_account(norm_account(code)), code)):
                 rows = await self._q(E_ACCOUNTS, [Cond("Code", "eq", c)], top=1)
                 if rows:
                     return rows[0]["Ref_Key"]
@@ -624,7 +727,10 @@ class OneCService:
             return None
 
         async def f():
-            rec = await self.t.get(entity, key)
+            try:
+                rec = await self.t.get(entity, key)
+            except ODataError:  # obyekt nashr qilinmagan (masalan, ДДС moddalari) — nomi ko'rsatilmaydi, xolos
+                return None
             return rec.get("Description") if rec else None
         return await self._cached(("descr", entity, key), f)
 
@@ -639,9 +745,17 @@ class OneCService:
               number — shu raqamli hujjat bor, lekin summa/sana farqli
               none   — mos hujjat yo'q"""
         if not kontr_key:
-            return {"status": "new", "kind": "none", "reason": "Kontragent 1C da topilmadi — dublikat tekshiruvi faqat raqam bo'yicha",
-                    "match": None, "diffs": []}
-        base = [Cond("DeletionMark", "eq", False), Cond(FIELDS["counterparty"], "eq", Guid(kontr_key))]
+            # Kontragentsiz (masalan, bank komissiyasi: vipiskada firmaning o'zi) — kiruvchi raqam + sana + summa
+            if number:
+                for c in await self._q(entity, [Cond("DeletionMark", "eq", False), Cond(FIELDS["in_number"], "eq", number),
+                                                Cond(FIELDS["amount"], "eq", float(amount))], top=20):
+                    if _day(c.get(FIELDS["in_date"])) == doc_date.isoformat():
+                        return {"status": "duplicate", "kind": "exact",
+                                "reason": "Raqam + Sana + Summa mos keldi (kontragent 1C da topilmagan)",
+                                "match": await self._brief(entity, c), "diffs": []}
+            return {"status": "new", "kind": "none", "reason": "Kontragent 1C da topilmadi — dublikat raqam, sana va summa "
+                    "bo'yicha tekshirildi, mos hujjat yo'q", "match": None, "diffs": []}
+        base = [Cond("DeletionMark", "eq", False), await self.counterparty_cond(entity, kontr_key)]
         target_day = doc_date.isoformat()
 
         if number:
@@ -652,7 +766,7 @@ class OneCService:
             for c in near:
                 if _day(c.get(FIELDS["in_date"])) == target_day and _same_amount(c.get(FIELDS["amount"]), amount):
                     return {"status": "duplicate", "kind": "exact", "reason": "Raqam + Sana + Summa + Kontragent to'liq mos keldi",
-                            "match": self._doc_brief(c), "diffs": []}
+                            "match": await self._brief(entity, c), "diffs": []}
             if near:
                 c = near[0]
                 diffs = []
@@ -661,7 +775,7 @@ class OneCService:
                 if _day(c.get(FIELDS["in_date"])) != target_day:
                     diffs.append(f"Sana: faylda {_fmt_date(target_day)}, 1C da {_fmt_date(c.get(FIELDS['in_date']))}")
                 return {"status": "discrepancy", "kind": "number", "reason": "Shu raqamli hujjat 1C da bor, lekin rekvizitlar farq qiladi",
-                        "match": self._doc_brief(c), "diffs": diffs}
+                        "match": await self._brief(entity, c), "diffs": diffs}
 
         # Raqamsiz kiritilgan bo'lishi mumkin: Sana + Summa + Kontragent
         start = datetime.combine(posted or doc_date, datetime.min.time())  # 1C hujjat sanasi = bank o'tkazgan kun
@@ -670,7 +784,7 @@ class OneCService:
             Cond("Date", "ge", DT(start)), Cond("Date", "le", DT(start + timedelta(days=1, seconds=-1)))], top=5)
         if same_day:
             return {"status": "duplicate", "kind": "weak", "reason": "Sana + Summa + Kontragent mos keldi (1C da kiruvchi raqamsiz)",
-                    "match": self._doc_brief(same_day[0]), "diffs": []}
+                    "match": await self._brief(entity, same_day[0]), "diffs": []}
         return {"status": "new", "kind": "none", "reason": "1C da mos hujjat topilmadi", "match": None, "diffs": []}
 
     @staticmethod
@@ -678,22 +792,80 @@ class OneCService:
         return {"ref": d.get("Ref_Key"), "number": d.get("Number"), "date": _day(d.get("Date")),
                 "in_number": d.get(FIELDS["in_number"]), "in_date": _day(d.get(FIELDS["in_date"])),
                 "amount": d.get(FIELDS["amount"]), "posted": d.get("Posted"), "operation": d.get(FIELDS["operation"]),
-                "account_key": d.get(FIELDS["settlement_account"]) or
-                ((d.get(FIELDS["payment_lines"]) or [{}])[0] or {}).get(FIELDS["settlement_account"])}
+                "account_key": OneCService._extract_pattern(d)["account_key"]}
+
+    async def _brief(self, entity: str, d: dict) -> dict:
+        brief = self._doc_brief(d)
+        if not _has_lines(d) and (posted := await self.posted_accounts(entity, d)):
+            brief["account_key"] = posted[0]
+        return brief
+
+    # ---- provodkalar: qatorsiz hujjatlarda (komissiya, soliq) sarlavhadagi schyot standart qiymatda qoladi
+    async def _register_on(self) -> bool:
+        if self.mode != "live":
+            return False
+        try:
+            return E_REGISTER in (await self._metadata())["sets"]
+        except ODataError:
+            return False
+
+    async def posted_accounts(self, entity: str, doc: dict) -> list[str]:
+        """Bank hujjatining 51.10 ga qarshi schyot(lar)i 1C provodkasidan (katta summa birinchi). Bo'lmasa — []."""
+        ref = doc.get("Ref_Key")
+        if not ref or entity not in (E_BANK_IN, E_BANK_OUT) or not await self._register_on():
+            return []
+
+        async def f():
+            bank = await self.account_key(BANK_ACCOUNT_CODE)
+            try:
+                records = await self.t.register_records(entity, ref)
+            except ODataError:
+                return []
+            parts: Counter = Counter()
+            for r in records:
+                dr, cr = r.get("AccountDr_Key"), r.get("AccountCr_Key")
+                corr = dr if (entity == E_BANK_OUT and cr == bank) else cr if (entity == E_BANK_IN and dr == bank) else None
+                if not _is_empty_key(corr):
+                    parts[corr] += float(r.get("Сумма") or 0)
+            return [k for k, _v in parts.most_common()]
+        return await self._cached(("posted", ref), f)
+
+    async def bank_postings(self, entity: str, since: datetime) -> dict[str, str]:
+        """Ommaviy: davr ichidagi barcha bank hujjatlari -> asosiy qarshi schyot (bitta sahifalangan so'rov)."""
+        if entity not in (E_BANK_IN, E_BANK_OUT) or not await self._register_on():
+            return {}
+        bank = await self.account_key(BANK_ACCOUNT_CODE)
+        if not bank:
+            return {}
+        side, other = ("AccountCr_Key", "AccountDr_Key") if entity == E_BANK_OUT else ("AccountDr_Key", "AccountCr_Key")
+        sums: dict[str, Counter] = {}
+        skip = 0
+        while skip < 50000:
+            page = await self._q(E_REGISTER_ROWS, [Cond(side, "eq", Guid(bank)), Cond("Period", "ge", DT(since))],
+                                 top=1000, skip=skip or None, orderby="Period,Recorder,LineNumber",
+                                 select=["Recorder", "Recorder_Type", other, "Сумма"])
+            for r in page:
+                if str(r.get("Recorder_Type") or "").endswith(entity) and not _is_empty_key(r.get(other)):
+                    sums.setdefault(r["Recorder"], Counter())[r[other]] += float(r.get("Сумма") or 0)
+            if len(page) < 1000:
+                break
+            skip += 1000
+        return {ref: c.most_common(1)[0][0] for ref, c in sums.items()}
 
     # ---- Tarixdan o'rganish
     @staticmethod
     def _extract_pattern(doc: dict) -> dict:
+        """Hujjatdan rekvizitlar. "Расшифровка платежа" qatori bo'lsa — schyot/shartnoma/avans o'sha qatordan:
+        O'zbekiston konfiguratsiyasida sarlavhadagi СчетУчетаРасчетовСКонтрагентом standart qiymatda qoladi
+        (masalan 42.20), provodka esa qatordagi schyot bo'yicha tuziladi. Qatorsiz hujjatda (soliq) — sarlavha."""
         line = (doc.get(FIELDS["payment_lines"]) or [{}])[0] if doc.get(FIELDS["payment_lines"]) else {}
-        acc = doc.get(FIELDS["settlement_account"])
-        if _is_empty_key(acc):
-            acc = line.get(FIELDS["settlement_account"])
-        cfi = doc.get(FIELDS["cash_flow_item"])
-        if _is_empty_key(cfi):
-            cfi = line.get(FIELDS["cash_flow_item"])
-        contract = doc.get(FIELDS["contract"])
-        if _is_empty_key(contract):
-            contract = line.get(FIELDS["contract"])
+
+        def pick(field):
+            v = line.get(field)
+            return doc.get(field) if _is_empty_key(v) else v
+        acc = pick(FIELDS["settlement_account"])
+        cfi = pick(FIELDS["cash_flow_item"])
+        contract = pick(FIELDS["contract"])
         extra = {k: doc[k] for k in ACCOUNT_BOUND_FIELDS if k in doc and not _is_empty_key(doc[k])}
         goods = doc.get("Товары") or doc.get("Услуги") or []
         if goods and goods[0].get("СтавкаНДС"):
@@ -704,9 +876,7 @@ class OneCService:
                 extra["item_account_key"] = item_acc
             if not _is_empty_key(goods[0].get("СчетУчетаНДС_Key")):
                 extra["vat_account_key"] = goods[0]["СчетУчетаНДС_Key"]
-        adv = doc.get(FIELDS["advance_account"])
-        if _is_empty_key(adv):
-            adv = line.get(FIELDS["advance_account"])
+        adv = pick(FIELDS["advance_account"])
         repayment = line.get(FIELDS["repayment"]) or doc.get(FIELDS["repayment"]) or ""
         return {"operation": doc.get(FIELDS["operation"]), "account_key": None if _is_empty_key(acc) else acc,
                 "contract_key": None if _is_empty_key(contract) else contract,
@@ -718,7 +888,7 @@ class OneCService:
         """Shu kontragent (yoki to'lov maqsadi kalit so'zi) bo'yicha oxirgi o'tkazilgan hujjatlardan rekvizitlar."""
         docs, basis = [], ""
         if kontr_key:
-            docs = await self._q(entity, [Cond(FIELDS["counterparty"], "eq", Guid(kontr_key)),
+            docs = await self._q(entity, [await self.counterparty_cond(entity, kontr_key),
                                           Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False)],
                                  top=top, orderby="Date desc")
             basis = "kontragent"
@@ -735,6 +905,9 @@ class OneCService:
         if not docs:
             return None
         patterns = [self._extract_pattern(d) for d in docs]
+        for d, p in zip(docs, patterns):  # qatorsiz hujjat: schyot — 1C provodkasidan
+            if not _has_lines(d) and (posted := await self.posted_accounts(entity, d)):
+                p["account_key"] = posted[0]
         votes = Counter((p["operation"], p["account_key"]) for p in patterns)
         (op, acc_key), hits = votes.most_common(1)[0]
         best = next(p for p in patterns if (p["operation"], p["account_key"]) == (op, acc_key))
@@ -769,29 +942,10 @@ class OneCService:
         Demo yoki $metadata o'qilmasa — None (filtrlanmaydi)."""
         if self.mode != "live":
             return None
-
-        async def f():
-            import xml.etree.ElementTree as ET
-            try:
-                root = ET.fromstring(await self.t.metadata_text())
-            except (ODataError, ET.ParseError):
-                return None
-            types = {el.get("Name"): el for el in root.iter() if el.tag.endswith(("EntityType", "ComplexType"))}
-            et = types.get(entity)
-            if et is None:
-                return None
-            header, tables = set(), {}
-            for prop in et:
-                if not prop.tag.endswith("Property"):
-                    continue
-                name, typ = prop.get("Name"), prop.get("Type") or ""
-                header.add(name)
-                if typ.startswith("Collection("):
-                    row_type = types.get(typ[len("Collection("):-1].split(".")[-1])
-                    tables[name] = {p.get("Name") for p in (row_type if row_type is not None else [])
-                                    if p.tag.endswith("Property")}
-            return {"header": header, "tables": tables}
-        return await self._cached(("props", entity), f)
+        try:
+            return (await self._metadata())["types"].get(entity)
+        except ODataError:
+            return None
 
     async def filter_payload(self, entity: str, payload: dict) -> tuple[dict, list[str]]:
         """Konfiguratsiyada yo'q rekvizitlarni olib tashlash (aks holda 1C butun hujjatni rad etadi)."""

@@ -654,15 +654,21 @@ def _norm_rule(data: dict) -> dict:
     doc_kind = data.get("doc_kind", "bank") or "bank"
     if doc_kind not in ("bank", "ehf"):
         raise DBError("Hujjat turi: bank yoki ehf")
-    account = str(data.get("account") or "").replace(" ", "")
-    digits = account.replace(".", "")
-    if not (len(digits) == 4 and digits.isdigit()):
-        raise DBError(f"Schyot formati: 60.10 ko'rinishida (berilgan: {account or '—'})")
-    adv = str(data.get("advance_account") or "").replace(" ", "").replace(".", "")
-    if adv and not (len(adv) == 4 and adv.isdigit()):
+    account = _account_code(data.get("account"))
+    if not account:
+        raise DBError(f"Schyot formati: 60.10 (yoki 45.30.1) ko'rinishida (berilgan: {data.get('account') or '—'})")
+    adv = _account_code(data.get("advance_account")) if data.get("advance_account") else ""
+    if data.get("advance_account") and not adv:
         raise DBError(f"Avans schyoti formati: 63.10 ko'rinishida (berilgan: {data.get('advance_account')})")
     return {"kind": kind, "match": match, "direction": direction, "doc_kind": doc_kind,
-            "account": f"{digits[:2]}.{digits[2:]}", "advance_account": f"{adv[:2]}.{adv[2:]}" if adv else ""}
+            "account": account, "advance_account": adv}
+
+
+def _account_code(value) -> str:
+    """'6010' / '60.10' -> '60.10'; uch bo'g'inli subschyot '4530.1' -> '45.30.1'; noto'g'ri — ''."""
+    import re
+    m = re.match(r"^(\d{2})\.?(\d{2})((?:\.\d+)*)$", str(value or "").replace(" ", ""))
+    return f"{m.group(1)}.{m.group(2)}{m.group(3)}" if m else ""
 
 
 def list_rules(firm_id: int) -> list[dict]:

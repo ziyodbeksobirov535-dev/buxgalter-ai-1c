@@ -25,7 +25,7 @@ from pathlib import Path
 import config
 from accounts_uz import UZ_ACCOUNTS
 from services_1c import (E_ACCOUNTS, E_BANK_ACCOUNT, E_BANK_IN, E_BANK_OUT, E_CASH_FLOW, E_CONTRACT, E_COUNTERPARTY,
-                         E_NOMENCLATURE, E_ORG, E_PURCHASE, FIELDS, DemoOData, ODataError, OneCService)
+                         E_NOMENCLATURE, E_ORG, E_PURCHASE, FIELDS, DemoOData, ODataError, OneCService, norm_account)
 from services_vipiska import clean_code, operation_for, parse_amount, parse_date
 
 FILES_DIR = config.DATA_DIR / "onec_files"
@@ -65,8 +65,8 @@ def norm_code(v) -> str:
         return ""
     if isinstance(v, float) and v.is_integer():
         v = int(v)
-    m = re.match(r"^\s*(\d{2})\.?(\d{2})\b", str(v))
-    return f"{m.group(1)}.{m.group(2)}" if m else ""
+    m = re.match(r"^\s*(\d{2})\.?(\d{2})((?:\.\d+)*)(?![\d.])", str(v))
+    return f"{m.group(1)}.{m.group(2)}{m.group(3)}" if m else ""
 
 
 # ---------------------------------------------------------------- jadvalni o'qish
@@ -557,7 +557,7 @@ def build_db(store: dict, firm: dict) -> dict:
     codes = set(UZ_ACCOUNTS) | {d["account"] for d in store["docs"] if d.get("account")} | \
         {a for d in store["docs"] for a in d.get("accounts", {})}
     for code in sorted(c for c in codes if c):
-        db[E_ACCOUNTS].append({"Ref_Key": ref("acc", code), "Code": code.replace(".", ""),
+        db[E_ACCOUNTS].append({"Ref_Key": ref("acc", code), "Code": norm_account(code),
                                "Description": UZ_ACCOUNTS.get(code, ("", code))[1]})
 
     by_inn, by_name = {}, {}

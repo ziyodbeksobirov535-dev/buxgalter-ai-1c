@@ -426,10 +426,10 @@
                     </td>
                     <td class="px-2 py-2 align-top text-xs whitespace-nowrap" x-text="{kirim: '⬇️ Kirim', chiqim: '⬆️ Chiqim', '': 'Har ikkisi'}[r.direction]"></td>
                     <td class="px-2 py-2 align-top">
-                      <input x-model="r.account" list="acc-list" :disabled="!rulesCanEdit" maxlength="5" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
+                      <input x-model="r.account" list="acc-list" :disabled="!rulesCanEdit" maxlength="9" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
                     </td>
                     <td class="px-2 py-2 align-top">
-                      <input x-model="r.advance_account" list="acc-list" :disabled="!rulesCanEdit" maxlength="5" placeholder="—" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
+                      <input x-model="r.advance_account" list="acc-list" :disabled="!rulesCanEdit" maxlength="9" placeholder="—" class="w-20 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-sm num disabled:opacity-70">
                     </td>
                     <td class="px-2 py-2 align-top">
                       <input x-model="r.operation" :disabled="!rulesCanEdit" placeholder="(schyotdan)" class="w-44 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs disabled:opacity-70">
@@ -475,8 +475,8 @@
               <select x-model="newRule.doc_kind" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1.5">
                 <option value="bank">🏦 Bank</option><option value="ehf">📑 EHF</option>
               </select>
-              <input x-model="newRule.account" list="acc-list" required placeholder="60.10" maxlength="5" @change="newRule.advance_account = newRule.advance_account || ({'40.10': '63.10', '60.10': '43.10'})[newRule.account] || ''" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
-              <input x-model="newRule.advance_account" list="acc-list" placeholder="avans" title="Qarz bo'lmasa: 63.10 / 43.10" maxlength="5" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
+              <input x-model="newRule.account" list="acc-list" required placeholder="60.10" maxlength="9" @change="newRule.advance_account = newRule.advance_account || ({'40.10': '63.10', '60.10': '43.10'})[newRule.account] || ''" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
+              <input x-model="newRule.advance_account" list="acc-list" placeholder="avans" title="Qarz bo'lmasa: 63.10 / 43.10" maxlength="9" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1.5 num">
               <button class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-medium px-3 py-1.5">Qo'shish</button>
             </div>
             <label class="flex items-center gap-2 text-xs"><input type="checkbox" x-model="newRule.locked" class="rounded"> 🔒 Qat'iy qoida (1C tarixidan ustun)</label>

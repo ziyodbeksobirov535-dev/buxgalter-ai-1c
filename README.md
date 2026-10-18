@@ -166,10 +166,21 @@ Dt 44.10 (QQS 12%) — Kt 60.10**.
 2. 1C:Предприятие: **Все функции → Обработки → Настройка автоматического REST-сервиса**
    (`Настройка стандартного интерфейса OData`) — quyidagilarni yoqing:
    `Catalog_Контрагенты`, `Catalog_ДоговорыКонтрагентов`, `Catalog_БанковскиеСчета`, `Catalog_Номенклатура`,
-   `Catalog_Организации`, `Catalog_СтатьиДвиженияДенежныхСредств`, `ChartOfAccounts_Хозрасчетный`,
+   `Catalog_Организации`, `ChartOfAccounts_Хозрасчетный` (ixtiyoriy: `Catalog_СтатьиДвиженияДенежныхСредств`, `AccountingRegister_Хозрасчетный`),
    `Document_ПоступлениеНаРасчетныйСчет`, `Document_СписаниеСРасчетногоСчета`, `Document_ПоступлениеТоваровУслуг`.
 3. ⚙️ Sozlamalar → **🏢 Joriy firma** → "Demo 1C bazasi" belgisini olib tashlang → URL
    (masalan `https://1c.uzcloud.uz/a/bpuz/1234`), 1C bazasidagi login, parol → **🔌 Saqlash va 1C ni tekshirish**. Tizim `$metadata` ni o'qib, nashr qilinmagan obyektlarni ko'rsatadi.
+
+**Bulutli 1C (uzcloud, 1C:Fresh):** OData obyektlari bazaning o'zida yoqiladi — qidiruvga "REST" yozing →
+**"Настройка автоматического REST-сервиса"** → «Состав» → «Загрузить метаданные» → kerakli obyektlar
+(1C bog'liqlarini o'zi qo'shadi — "Зависимости объекта" so'ralsa **«Нет»**) → «Авторизация» da alohida `odata.user`
+→ «Сохранить и закрыть». Ixtiyoriy, lekin tavsiya: **Регистры бухгалтерии → Хозрасчетный** ham — schyotlar 1C
+provodkalaridan aniq o'rganiladi. Dastur bu bazalarga moslangan:
+- `$filter` da bo'sh joy `%20` bilan yuboriladi (uzcloud kirillcha filtrda `+` ni tushunmaydi);
+- bank hujjatlarida kontragent kompozit (`Контрагент` + `Контрагент_Type`) — avtomatik aniqlanadi;
+- "Расшифровка платежа" qatori bor hujjatda schyot qatordan (sarlavhadagi standart 42.20 emas), qatorsiz hujjatda
+  (komissiya, soliq) — 1C provodkasidan; uch bo'g'inli schyotlar (`45.30.1`) qo'llab-quvvatlanadi;
+- YaTT uchun 14 xonali JShShIR (`ПИНФЛ`) bo'yicha ham qidiriladi; sahifalab o'qishda `$orderby` majburiy.
 
 **Muhim:** konfiguratsiya relizlariga qarab rekvizit nomlari farq qilishi mumkin (masalan, `Контрагент_Key` o'rniga
 kompozit `Контрагент` + `Контрагент_Type`). Ular `services_1c.py` dagi `FIELDS` lug'atida bir joyda jamlangan.
@@ -272,7 +283,7 @@ Firma ichidagi so'rovlar `X-Firm-Id` sarlavhasi bilan yuboriladi; hammasi login 
 .venv/bin/python -m pytest -q
 ```
 
-167 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
+172 ta test: parser (summa/yo'nalish formatlari, o'tkazib yuborilgan qatorlar), dublikat va majburan yozish qoidalari,
 test vipiskaning jonli 1C ga tushmasligi, parallel yozishda ikki marta kiritilmaslik, uzcloud 401/404 javoblari,
 bloklangan login'ga qayta urinmaslik, Host/parol himoyasi, Telegram imzosi, Gemini model zaxirasi, login/blok, rollar, firmalar izolyatsiyasi, boshqa firmaning vipiskasi, hisob qoidalari (o'rganish, ustuvorlik, Excel), 1C Excel eksportlari (turini aniqlash, kartochka, OSV, qarz/avans), 1C import fayli va sahifadagi JS satrlari.
 Testlar internetga chiqmaydi va `data/` papkasiga tegmaydi.

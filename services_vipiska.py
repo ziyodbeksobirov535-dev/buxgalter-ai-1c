@@ -832,7 +832,7 @@ async def build_bank_payload(row: dict, onec: OneCService, own_account: str = ""
         "Организация_Key": org["Ref_Key"],
         "СчетОрганизации_Key": org_acc["Ref_Key"],
         FIELDS["operation"]: row["operation"],
-        FIELDS["counterparty"]: row["counterparty_key"],
+        **await onec.counterparty_payload(row["entity"], row["counterparty_key"]),
         FIELDS["contract"]: contract_key,
         "СчетКонтрагента_Key": kontr_bank["Ref_Key"] if kontr_bank else None,
         FIELDS["amount"]: row["amount"],
@@ -876,10 +876,10 @@ async def recheck_bank(row: dict, onec: OneCService) -> dict:
 
 
 def set_account(row: dict, account: str) -> None:
-    digits = account.replace(".", "").replace(" ", "")
-    if not (len(digits) == 4 and digits.isdigit()):
-        raise ValueError(f"Schyot formati 60.10 ko'rinishida bo'lsin: {account}")
-    acc = fmt_account(digits)
+    from services_1c import ACCOUNT_RE
+    if not ACCOUNT_RE.match(account or ""):
+        raise ValueError(f"Schyot formati 60.10 (yoki 45.30.1) ko'rinishida bo'lsin: {account}")
+    acc = fmt_account(account)
     learned = row.get("learned") or {}
     rule = row.get("rule") or {}
     row["account"] = acc
