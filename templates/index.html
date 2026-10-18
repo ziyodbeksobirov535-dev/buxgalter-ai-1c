@@ -321,6 +321,23 @@
           </template>
         </div>
         <span class="text-xs text-slate-500" x-text="stockMetaLabel()"></span>
+        <button x-show="stockSrc!=='1c'" @click="loadStock(true)" :disabled="stockLoading"
+                class="ml-auto rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium px-3 py-1.5 shadow-sm"
+                x-text="stockLoading ? '⏳ Yangilanmoqda…' : '🔄 Notion\'dan yangilash'"></button>
+      </div>
+      <!-- token yo'q: dastur Notion'ni o'zi o'qiy olmaydi -->
+      <div x-show="notionHelp" x-cloak class="rounded-2xl border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 p-4 text-sm space-y-2">
+        <div class="flex items-start gap-2">
+          <div class="font-semibold">📓 Notion'dan avtomatik yangilash hali ulanmagan</div>
+          <button @click="notionHelp=false" class="ml-auto text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">✕</button>
+        </div>
+        <p class="text-slate-700 dark:text-slate-300" x-text="'Hozir oxirgi yuklangan nusxa ko\'rsatilmoqda (' + (stockMetaLabel() || '—') + '). Tugma Notion\'dagi eng yangi holatni olishi uchun dasturga bir marta Notion kaliti (token) beriladi — 2 daqiqalik ish:'"></p>
+        <ol class="list-decimal pl-5 space-y-1 text-slate-700 dark:text-slate-300">
+          <li><a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener" class="text-sky-700 dark:text-sky-400 underline">notion.so/my-integrations</a> → <b>New integration</b> → nomi: "Buxgalter AI", turi Internal, ruxsat: faqat <b>Read content</b> → Save → <b>Internal Integration Secret</b> ni nusxalang.</li>
+          <li>Notion'da <b>"Sklad"</b> bazasini oching → o'ng yuqorida <b>•••</b> → <b>Connections</b> → "Buxgalter AI" ni qo'shing.</li>
+          <li>Pastdagi tugma → <b>📓 Notion sklad</b> bo'limiga tokenni va baza havolasini qo'yib, <b>💾 Saqlash</b>.</li>
+        </ol>
+        <button @click="openNotionSettings()" class="rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-medium px-3 py-1.5">⚙️ Sozlamalarga o'tish</button>
       </div>
       <div x-show="stock && stock.warning" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2" x-text="'⚠️ Notion jonli o\'qilmadi: ' + (stock?.warning || '') + '. Oxirgi nusxa ko\'rsatilmoqda.'"></div>
       <div x-show="stockSrc==='compare' && stock?.notion?.warning" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm px-3 py-2" x-text="'⚠️ Notion jonli o\'qilmadi: ' + (stock?.notion?.warning || '') + '. Oxirgi nusxa bilan solishtirildi.'"></div>
@@ -336,7 +353,7 @@
         </div>
         <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 flex flex-col gap-2">
           <input x-model="stockSearch" placeholder="Qidirish: nomi yoki MXIK" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5">
-          <button @click="loadStock(true)" :disabled="stockLoading" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5" x-text="stockLoading ? '⏳ O\'qilmoqda…' : (stockSrc==='notion' ? '🔄 Notion dan yangilash' : '🔄 1C dan yangilash')"></button>
+          <button @click="loadStock(true)" :disabled="stockLoading" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5" x-show="stockSrc==='1c'" x-text="stockLoading ? '⏳ O\'qilmoqda…' : '🔄 1C dan yangilash'"></button>
         </div>
       </div>
       <div x-show="stockLoading && !stock" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-500">
@@ -420,7 +437,6 @@
                     x-text="o[1] + ' (' + (o[0]==='all' ? (stock?.rows?.length || 0) : (stock?.counts?.[o[0]] || 0)) + ')'"></button>
           </template>
           <input x-model="stockSearch" placeholder="Qidirish" class="ml-auto w-full sm:w-56 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2.5 py-1.5">
-          <button @click="loadStock(true)" :disabled="stockLoading" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-3 py-1.5" x-text="stockLoading ? '⏳' : '🔄 Yangilash'"></button>
         </div>
         <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-x-auto thin-scroll">
           <table class="w-full text-sm">
@@ -436,7 +452,7 @@
                     <div x-show="r.notion_name && r.notion_name !== r.name" class="text-xs text-slate-500" x-text="'Notion: ' + r.notion_name"></div>
                     <div x-show="r.note" class="text-xs text-slate-500 truncate max-w-[360px]" :title="r.note" x-text="r.note"></div>
                     <a x-show="r.similar" :href="r.similar?.url" target="_blank" rel="noopener" class="block text-xs text-sky-700 dark:text-sky-400 hover:underline"
-                       x-text="r.similar ? '≈ Notion\'da o\'xshash nom: ' + r.similar.name + ' — ' + fmtQty(r.similar.qty) : ''"></a>
+                       x-text="r.similar ? '≈ Notion\'da o\'xshash nom: ' + r.similar.name + ' — ' + fmtQty(r.similar.qty) + (r.similar.same_qty ? ' ✅ miqdori mos' : '') : ''"></a>
                   </td>
                   <td class="px-3 py-2 text-xs" x-text="(r.unit || '—') + (r.unit_mismatch ? ' ⚠️' : '')" :title="r.unit_mismatch ? 'Birliklar 1C va Notion da har xil' : ''"></td>
                   <td class="px-3 py-2 text-right num whitespace-nowrap" x-text="r.qty_1c === null ? '—' : fmtQty(r.qty_1c)"></td>
@@ -513,7 +529,7 @@
             </div>
           </div>
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-            <div class="font-semibold">📓 Notion sklad (ixtiyoriy)</div>
+            <div class="font-semibold" id="notion-settings">📓 Notion sklad (ixtiyoriy)</div>
             <input x-model="firmForm.notion_stock_db" placeholder="Sklad bazasi havolasi yoki ID (https://www.notion.so/…)" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
             <input type="password" x-model="firmForm.notion_token" placeholder="Integratsiya tokeni (ntn_… yoki secret_…)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
             <p class="text-xs text-slate-500">Dastur Notion'dan faqat o'qiydi. Token: notion.so/my-integrations → New integration (faqat "Read content"). Keyin sklad bazasida ••• → Connections → shu integratsiyani qo'shing. Token bo'lmasa, oxirgi yuklangan nusxa ko'rsatiladi.</p>
@@ -1494,7 +1510,7 @@ const WELCOME = "Salom! Men **AI Buxgalter Copilot**man 👋\n\n- 🏦 Vipiskani
 function app() {
   return {
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
-    dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '', stockCache: {}, cmpFilter: 'all',
+    dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '', stockCache: {}, cmpFilter: 'all', notionHelp: false,
     stockSrc: (() => { try { return localStorage.getItem('stockSrc') || '1c'; } catch (e) { return '1c'; } })(),
     balAccount: '40.10', bal: null, balLoading: false, balSearch: '',
     drafts: [], draftsOpen: false, cpBox: null, cpSaving: false, writeForm: { confirm: '', limit: 1, create_contracts: false }, filters: {},
@@ -1761,11 +1777,25 @@ function app() {
       if (this.stockLoading) return;
       const src = this.stockSrc;
       if (!force && this.stockCache[src]) { this.stock = this.stockCache[src]; return; }
+      if (force) this.stockCache = {};  // yangilanganda boshqa ko'rinishlar ham yangidan o'qiladi
       this.stockLoading = true;
       try {
         const s = await this.api('/api/stock?source=' + src);
-        if (s) { this.stockCache[src] = s; if (this.stockSrc === src) this.stock = s; }
+        if (s) {
+          this.stockCache[src] = s; if (this.stockSrc === src) this.stock = s;
+          const n = src === 'compare' ? s.notion : s;
+          if (force && src !== '1c' && n) {
+            if (n.live) this.toast("✅ Notion'dan yangilandi: " + (n.count ?? '') + " ta tovar", 'ok');
+            else if (!n.token) this.notionHelp = true;
+            else this.toast("⚠️ Notion'dan o'qib bo'lmadi — oxirgi nusxa ko'rsatildi", 'error');
+          }
+        }
       } finally { this.stockLoading = false; }
+    },
+    async openNotionSettings() {
+      this.notionHelp = false;
+      await this.openSettings('firm');
+      setTimeout(() => document.getElementById('notion-settings')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
     },
     setStockSrc(src) {
       this.stockSrc = src;

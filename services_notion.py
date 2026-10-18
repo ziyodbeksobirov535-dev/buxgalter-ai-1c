@@ -229,9 +229,9 @@ async def stock(firm: dict, client: httpx.AsyncClient | None = None) -> dict:
             snap["live"] = False
     if snap is None:
         return {"configured": bool(token and db_id), "error": warning or "Notion sklad bazasi ulanmagan", "groups": [],
-                "total": 0, "count": 0}
+                "total": 0, "count": 0, "token": bool(token and db_id)}
     return {**build(snap["rows"]), "configured": True, "live": snap["live"], "fetched_at": snap["fetched_at"],
-            "snapshot_source": snap.get("source", ""), "warning": warning}
+            "snapshot_source": snap.get("source", ""), "warning": warning, "token": bool(token and db_id)}
 
 
 def build(rows: list[dict]) -> dict:
@@ -284,7 +284,8 @@ def compare(onec: dict, notion: dict) -> dict:
         best = max(same_digits, key=lambda n: difflib.SequenceMatcher(None, k, name_key(n["name"])).ratio())
         ratio = difflib.SequenceMatcher(None, k, name_key(best["name"])).ratio()
         if ratio >= SIMILAR:
-            r["similar"] = {"name": best["name"], "qty": best["qty_notion"], "url": best["url"]}
+            r["similar"] = {"name": best["name"], "qty": best["qty_notion"], "url": best["url"],
+                            "same_qty": abs((best["qty_notion"] or 0) - r["qty_1c"]) < 0.001}
     order = {"diff": 0, "only_1c": 1, "only_notion": 2, "ok": 3}
     rows.sort(key=lambda r: (order[r["state"]], -abs(r["diff"]), r["name"].lower()))
     counts = {s: sum(r["state"] == s for r in rows) for s in order}

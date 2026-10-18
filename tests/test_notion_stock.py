@@ -63,7 +63,8 @@ def test_falls_back_to_snapshot_with_warning_when_api_fails():
     sn.save_snapshot(DEMO_FIRM, [{"Tovar": "A", "Miqdor": 5, "Birlik": "dona", "Kirim narxi NDSsiz": 10}], "claude")
     c, _ = notion_client([], status=401)
     s = asyncio.run(sn.stock(firm(), c))
-    assert not s["live"] and s["count"] == 1 and "401" in s["warning"]
+    assert not s["live"] and s["count"] == 1 and "401" in s["warning"] and s["token"] is True
+    assert asyncio.run(sn.stock({"id": DEMO_FIRM}))["token"] is False  # tokensiz — faqat nusxa
     assert asyncio.run(sn.stock({"id": 999}))["error"] == "Notion sklad bazasi ulanmagan"
 
 
@@ -123,4 +124,5 @@ def test_similar_hint_only_when_digits_match():
                        {"Tovar": "ПУГНП 2Х2,5", "Miqdor": 3, "Birlik": "m"}])
     by = {r["name"]: r for r in sn.compare(onec, notion)["rows"]}
     assert by["Сип 3*50+1*54,6 nex"]["similar"]["name"] == "Кабел СИП 350+154,6"
+    assert by["Сип 3*50+1*54,6 nex"]["similar"]["same_qty"] is False
     assert "similar" not in by["ПУГНП 2х1,5"]  # 1,5 ≠ 2,5

@@ -413,7 +413,7 @@ async def stock(source: str = "1c", ctx: FirmCtx = Depends(firm_ctx)):
         return {**onec, "source": "1c"}
     cmp = services_notion.compare(onec, notion) if notion.get("_items") is not None else {"rows": [], "counts": {}}
     return {"source": "compare", **cmp, "onec_mode": onec.get("onec_mode"),
-            "notion": {k: notion.get(k) for k in ("configured", "live", "fetched_at", "warning", "error", "count")}}
+            "notion": {k: notion.get(k) for k in ("configured", "live", "fetched_at", "warning", "error", "count", "token")}}
 
 
 @app.get("/api/1c/metadata")
