@@ -78,6 +78,11 @@ REQUIRED_ENTITIES = [E_BANK_IN, E_BANK_OUT, E_PURCHASE, E_COUNTERPARTY, E_CONTRA
                      E_NOMENCLATURE, E_ORG, E_ACCOUNTS]
 # E_CASH_FLOW ixtiyoriy: ba'zi bazalarda ДДС moddalari ishlatilmaydi (Constant_ИспользоватьСтатьиДвиженияДенежныхСредств)
 META_TTL = 1800  # $metadata (bulutli bazada ~8 MB) — 30 daqiqada bir marta o'qiladi
+# 1C dan o'qilgan ma'lumot qancha vaqt eskirmagan hisoblanadi: buxgalter 1C da o'zgartirsa, dastur va AI agent
+# ko'pi bilan shuncha vaqtdan keyin yangisini ko'radi (bitta tahlil ichida takror so'rovlar tejaladi)
+CACHE_TTL = 120
+CACHE_TTL_STATIC = 3600
+STATIC_CACHE_KEYS = frozenset({"metadata", "org", "acc_by_code", "acc_by_key", "operations"})
 
 FIELDS = {
     "inn": "ИНН",
@@ -584,9 +589,14 @@ class OneCService:
             return await self.t.query(*a, **kw)
 
     async def _cached(self, key: tuple, factory):
-        if key not in self._cache:
-            self._cache[key] = await factory()
-        return self._cache[key]
+        """Kesh muddati: 1C da o'zgarib turadigan ma'lumot (qoldiqlar, hujjatlar, kontragentlar) — CACHE_TTL;
+        hisoblar rejasi va operatsiya turlari kabi deyarli o'zgarmaydiganlar — CACHE_TTL_STATIC."""
+        hit = self._cache.get(key)
+        ttl = CACHE_TTL_STATIC if key[0] in STATIC_CACHE_KEYS else CACHE_TTL
+        if hit is None or time.monotonic() - hit[0] > ttl:
+            hit = (time.monotonic(), await factory())
+            self._cache[key] = hit
+        return hit[1]
 
     def invalidate(self) -> None:
         self._cache.clear()

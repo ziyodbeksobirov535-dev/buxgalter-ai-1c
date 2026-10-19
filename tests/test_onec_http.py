@@ -435,3 +435,23 @@ def test_when_opened_only_bank_and_purchase_documents_allowed(monkeypatch):
             asyncio.run(svc.t.create(entity, {"a": 1}))
     asyncio.run(svc.t.create("Document_ПоступлениеТоваровУслуг", {"a": 1}))
     assert sent == ["Document_ПоступлениеТоваровУслуг"]
+
+
+def test_cache_expires_so_changes_in_1c_are_seen(monkeypatch):
+    """1C da o'zgargan qoldiq ko'pi bilan CACHE_TTL dan keyin dastur va agentga ko'rinadi."""
+    import services_1c
+    clock = [1000.0]
+    monkeypatch.setattr(services_1c.time, "monotonic", lambda: clock[0])
+    calls = []
+
+    async def factory():
+        calls.append(1)
+        return len(calls)
+    svc = service(lambda req: httpx.Response(200, json={"value": []}))
+    assert asyncio.run(svc._cached(("balance", "51.10"), factory)) == 1
+    assert asyncio.run(svc._cached(("balance", "51.10"), factory)) == 1   # bir tahlil ichida — keshdan
+    clock[0] += services_1c.CACHE_TTL + 1
+    assert asyncio.run(svc._cached(("balance", "51.10"), factory)) == 2   # muddati o'tdi — 1C dan qayta
+    assert asyncio.run(svc._cached(("acc_by_code", "51.10"), factory)) == 3
+    clock[0] += services_1c.CACHE_TTL + 1
+    assert asyncio.run(svc._cached(("acc_by_code", "51.10"), factory)) == 3  # hisoblar rejasi — uzoqroq saqlanadi
