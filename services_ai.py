@@ -136,6 +136,20 @@ def _brief(r: dict) -> dict:
             "schyot_manbasi": r.get("account_source"), "to'siqlar": r.get("blockers")}
 
 
+def compact_result(value):
+    """JSON tuzilishini buzmasdan katta natijalarni chegaralash."""
+    if isinstance(value, dict):
+        return {k: compact_result(v) for k, v in value.items()}
+    if isinstance(value, list):
+        rows = [compact_result(v) for v in value[:50]]
+        if len(value) > 50:
+            rows.append({"qisqartirilgan": True, "jami_qator": len(value), "qaytarilgan": 50})
+        return rows
+    if isinstance(value, str) and len(value) > 2000:
+        return value[:2000] + "… [qisqartirilgan]"
+    return value
+
+
 class ToolContext:
     def __init__(self, session: core.Session, mode: str):
         self.session = session
@@ -151,7 +165,7 @@ class ToolContext:
         if not fn:
             return {"xato": f"Noma'lum vosita: {name}"}
         try:
-            return await fn(**(args or {}))
+            return compact_result(await fn(**(args or {})))
         except ValueError as e:  # noto'g'ri argument (schyot, obyekt nomi …) — agentga tushunarli xato
             return {"xato": str(e)}
         except Exception as e:  # noqa: BLE001
@@ -483,11 +497,7 @@ async def chat(session: core.Session, message: str, mode: str = "vipiska") -> di
         if engine == "gemini":
             reply = await _gemini(ctx, message, settings)
         elif engine in ("openai", "claude"):
-            calls = route_intent(message)
-            results = [await ctx.run(n, a) for n, a in calls]
-            payload = json.dumps([{"tool": n, "result": r} for (n, _), r in zip(calls, results)],
-                                 ensure_ascii=False, default=str)[:12000]
-            reply = await _phrase_with_llm(engine, settings, message, payload)
+            reply = await _provider_tools(ctx, engine, settings, message)
     except Exception as e:  # noqa: BLE001 — AI xatosi tizimni to'xtatmasligi kerak
         log.warning("AI provider %s failed: %s", engine, e)
         note = f"⚠️ {info['label']} javob bermadi ({type(e).__name__}: {str(e)[:160]}). Demo AI javobi:"
@@ -508,79 +518,61 @@ async def chat(session: core.Session, message: str, mode: str = "vipiska") -> di
 
 
 async def chat_stream(session: core.Session, message: str, mode: str = "vipiska"):
-    """Server-Sent Events (SSE) oqimi: AI javobi va vositalar natijalari real vaqtda keladi."""
-    message = (message or "").strip()[:4000]
-    settings = config.get_settings()
-    info = engine_info(settings)
-    ctx = ToolContext(session, mode)
-    engine = info["provider"]
+    """Barcha provayderlar uchun bir xil yakuniy javob oqimi."""
+    yield json.dumps({"type": "start", **engine_info()}) + "\n"
+    result = await chat(session, message, mode)
+    yield json.dumps({"type": "token", "content": result["reply"]}) + "\n"
+    yield json.dumps({"type": "done", **result}) + "\n"
 
-    yield json.dumps({"type": "start", "engine": engine, "engine_label": info["label"]}) + "\n"
 
-    if engine == "gemini":
-        try:
-            from google import genai
-            from google.genai import errors, types
-            client = genai.Client(api_key=settings["gemini_api_key"])
-            cfg = types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT + f"\nJoriy rejim: {ctx.mode}.",
-                tools=[types.Tool(function_declarations=[types.FunctionDeclaration(**d) for d in TOOL_DECLARATIONS])],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
-            contents = [types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part.from_text(text=m["text"])])
-                        for m in ctx.session.chat[-8:]]
-            contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
-            model = settings["gemini_model"]
+def _schema(value):
+    if isinstance(value, dict):
+        return {k: (v.lower() if k == "type" and isinstance(v, str) else _schema(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_schema(v) for v in value]
+    return value
 
-            reply_accum = ""
-            for _ in range(5):
-                try:
-                    resp = await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
-                except errors.ClientError as e:
-                    if e.code == 404 and model != GEMINI_FALLBACK_MODEL:
-                        model = GEMINI_FALLBACK_MODEL
-                        resp = await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
-                    else:
-                        raise
-                calls = resp.function_calls or []
+
+async def _provider_tools(ctx, provider, settings, message):
+    """OpenAI va Claude vositalarni o'zi tanlaydi; chaqiruvlar ketma-ket."""
+    messages = [{"role": "user" if m["role"] == "user" else "assistant", "content": m["text"]}
+                for m in ctx.session.chat[-8:]]
+    messages.append({"role": "user", "content": message})
+    declarations = [{"name": d["name"], "description": d["description"],
+                     "parameters": _schema(d.get("parameters", {"type": "object", "properties": {}}))}
+                    for d in TOOL_DECLARATIONS]
+    async with httpx.AsyncClient(timeout=60) as client:
+        for _ in range(5):
+            if provider == "openai":
+                response = await client.post("https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": "Bearer " + settings["openai_api_key"]},
+                    json={"model": settings["openai_model"], "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+                          "tools": [{"type": "function", "function": d} for d in declarations]})
+                response.raise_for_status()
+                answer = response.json()["choices"][0]["message"]
+                calls = answer.get("tool_calls") or []
                 if not calls:
-                    reply_accum = (resp.text or "").strip() or "…"
-                    yield json.dumps({"type": "token", "content": reply_accum}) + "\n"
-                    break
-                contents.append(resp.candidates[0].content)
-                parts = []
-                for fc in calls:
-                    yield json.dumps({"type": "tool_start", "tool": fc.name}) + "\n"
-                    result = await ctx.run(fc.name, dict(fc.args or {}))
-                    yield json.dumps({"type": "tool_end", "tool": fc.name, "cards": ctx.cards}) + "\n"
-                    parts.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
-                contents.append(types.Content(role="user", parts=parts))
-
-            session.chat += [{"role": "user", "text": message}, {"role": "model", "text": reply_accum}]
-            session.chat = session.chat[-20:]
-            yield json.dumps({"type": "done", "reply": reply_accum, "cards": ctx.cards,
-                              "refresh": sorted(ctx.refresh), "tools": ctx.used}) + "\n"
-            return
-        except Exception as e:
-            log.warning("Stream failed with Gemini, fallback to mock: %s", e)
-            engine = "mock"
-
-    calls = route_intent(message)
-    results = []
-    for n, a in calls:
-        yield json.dumps({"type": "tool_start", "tool": n}) + "\n"
-        r = await ctx.run(n, a)
-        results.append(r)
-        yield json.dumps({"type": "tool_end", "tool": n, "cards": ctx.cards}) + "\n"
-
-    reply = mock_reply(calls, results, mode)
-    words = reply.split(" ")
-    chunk_size = 4
-    for i in range(0, len(words), chunk_size):
-        chunk = " ".join(words[i:i + chunk_size]) + (" " if i + chunk_size < len(words) else "")
-        yield json.dumps({"type": "token", "content": chunk}) + "\n"
-        await asyncio.sleep(0.01)
-
-    session.chat += [{"role": "user", "text": message}, {"role": "model", "text": reply}]
-    session.chat = session.chat[-20:]
-    yield json.dumps({"type": "done", "reply": reply, "cards": ctx.cards,
-                      "refresh": sorted(ctx.refresh), "tools": ctx.used}) + "\n"
+                    return answer.get("content") or "Javob olinmadi."
+                messages.append(answer)
+                for call in calls:
+                    fn = call["function"]
+                    result = await ctx.run(fn["name"], json.loads(fn["arguments"]))
+                    messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(result, ensure_ascii=False)})
+            else:
+                response = await client.post("https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": settings["anthropic_api_key"], "anthropic-version": "2023-06-01"},
+                    json={"model": settings["anthropic_model"], "max_tokens": 1500, "system": SYSTEM_PROMPT,
+                          "messages": messages, "tools": [{"name": d["name"], "description": d["description"],
+                          "input_schema": d["parameters"]} for d in declarations]})
+                response.raise_for_status()
+                blocks = response.json()["content"]
+                calls = [b for b in blocks if b["type"] == "tool_use"]
+                if not calls:
+                    return "".join(b.get("text", "") for b in blocks) or "Javob olinmadi."
+                messages.append({"role": "assistant", "content": blocks})
+                results = []
+                for call in calls:
+                    result = await ctx.run(call["name"], call["input"])
+                    results.append({"type": "tool_result", "tool_use_id": call["id"], "content": json.dumps(result, ensure_ascii=False)})
+                messages.append({"role": "user", "content": results})
+    return "Vositalar limiti tugadi — savolni aniqroq yozing."

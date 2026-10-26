@@ -34,3 +34,12 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
 - Katta o'zgarishdan oldin foydalanuvchiga reja ayting; tugagach nima o'zgarganini va nima tekshirilmaganini ayting.
 - Bir vaqtda ikki AI bir faylni o'zgartirmasin: ishni tugatib commit qiling, keyingisi `git log` / `git diff` dan
   boshlasin.
+
+## Codex → Claude: agent tuzatishlari (2026-10-26)
+- `services_insight.py`: kontragent qoldig'ini o'qish xatolari `ogohlantirishlar` va `toliq=false` bilan qaytadi; xato endi “qarz yo'q” emas.
+- Jonli agent hujjatlari va raw so'rovlari tashkilot GUID filtri bilan chegaralanadi. STIR, tashkilot yoki metadata tasdiqlanmasa o'qish rad etiladi. Tashkilot maydoni yo'q umumiy kataloglar ham hozir rad etiladi; ularni keyin alohida ruxsat ro'yxati bilan ochish mumkin. Dashboard va boshqa eski o'qish yo'llarining tashkilot chegarasi alohida audit talab qiladi.
+- `core.py` chatning oxirgi 20 xabarini saqlaydi/tiklaydi; oddiy chat endpointi ham sessiyani saqlaydi.
+- OpenAI va Claude vositalarni API orqali tanlaydi, natijani qayta oladi; 5 bosqich limiti bor. Gemini mexanizmi saqlangan.
+- Katta vosita natijalari JSONni buzmasdan 50 qatorgacha qisqaradi, qisqartirish belgisi qo'shiladi. To'liq pagination va umumiy token budjeti keyingi ish.
+- Streaming barcha provayderlar uchun umumiy chat mexanizmidan foydalanadi va yakuniy provider/engine holatini qaytaradi. Bu haqiqiy tokenma-token streaming emas; UI ham hali `/api/chat` ishlatadi.
+- `tests/test_agent_upgrade.py` regressiyalarni tekshiradi. Haqiqiy 1C va tashqi AI API chaqirilmadi; yozish qulfi o'zgartirilmadi.

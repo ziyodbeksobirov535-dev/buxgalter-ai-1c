@@ -772,6 +772,7 @@ class ChatIn(BaseModel):
 @app.post("/api/chat")
 async def chat(body: ChatIn, ctx: FirmCtx = Depends(firm_ctx)):
     res = await services_ai.chat(ctx.session, body.message, _mode(body.mode))
+    core.save_session(ctx.session)
     if not ctx.can_post:
         res["cards"] = [c for c in res["cards"] if c["type"] != "confirm_post"]
     return res

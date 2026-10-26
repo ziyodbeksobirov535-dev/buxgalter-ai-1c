@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 import services_dashboard as dash
 import services_notion
 from services_1c import (DT, E_BANK_IN, E_BANK_OUT, E_COUNTERPARTY, E_PURCHASE, Cond, ODataError, OneCService,
-                         fmt_account, norm_account)
+                         fmt_account, norm_account, render_filter, Guid)
 
 MAX_ROWS = 50
 MAX_TEXT = 300
@@ -134,7 +134,21 @@ async def find_counterparty(onec: OneCService, query: str) -> dict | None:
     return None
 
 
+async def _org_scope(onec, entity):
+    """Jonli hujjatlar faqat tanlangan tashkilot chegarasida o'qiladi."""
+    if onec.mode != "live":
+        return []
+    props = await onec.entity_props(entity)
+    if not props or "Организация_Key" not in props["header"]:
+        raise ValueError("Obyekt uchun tashkilot chegarasi tasdiqlanmadi — o'qish to'xtatildi")
+    org = await onec.organization()
+    if not onec.org_inn or not org:
+        raise ValueError("Firma STIRi va 1C tashkilotini aniqlash kerak")
+    return [Cond("Организация_Key", "eq", Guid(org["Ref_Key"]))]
+
+
 async def _docs(onec: OneCService, entity: str, conds: list[Cond], top: int) -> list[dict]:
+    conds = list(conds) + await _org_scope(onec, entity)
     rows = await onec.t.query(entity, conds, top=top, orderby="Date desc")
     keys = []
     for r in rows:
@@ -184,10 +198,12 @@ async def counterparty_card(onec: OneCService, query: str) -> dict:
         return {"xato": f"«{query}» bo'yicha kontragent 1C da topilmadi"}
     ref = k["Ref_Key"]
     balances = {}
+    errors = []
     for code, title, _side in dash.SETTLEMENT_ACCOUNTS:
         try:
             total = round(sum(r["sum"] for r in await onec.account_balance(code) if r["dim"] == ref), 2)
-        except ODataError:
+        except ODataError as e:
+            errors.append(str(e))
             continue
         if abs(total) >= 0.01:
             balances[code] = {"nomi": title, "qoldiq": total}
@@ -199,13 +215,15 @@ async def counterparty_card(onec: OneCService, query: str) -> dict:
             conds = [Cond("DeletionMark", "eq", False), Cond("Date", "ge", DT(since)),
                      await onec.counterparty_cond(entity, ref)]
             docs = await _docs(onec, entity, conds, 5)
-        except ODataError:
+        except ODataError as e:
+            errors.append(str(e))
             continue
         if docs:
             recent[label] = docs
     return {"kontragent": k.get("Description"), "toliq_nomi": k.get("НаименованиеПолное") or None, "stir": k.get("ИНН"),
             "ochirishga_belgilangan": bool(k.get("DeletionMark")) or None,
-            "qoldiqlar": balances or "qarz/avans yo'q",
+            "qoldiqlar": balances or ("ma’lumot olinmadi" if errors else "qarz/avans yo'q"),
+            "ogohlantirishlar": errors, "toliq": not errors,
             "izoh": "qoldiq > 0 — debet (bizga qarz yoki biz bergan avans), < 0 — kredit (bizning qarz yoki olingan avans)",
             "oxirgi_hujjatlar": recent}
 
@@ -226,8 +244,10 @@ async def raw_query(onec: OneCService, entity: str, filter: str = "", select: st
         note = "Demo/fayl rejimi — filtr qo'llanmadi"
     else:
         params = {"$format": "json", "$top": str(top)}
-        if filter:
-            params["$filter"] = filter
+        scope = await _org_scope(onec, entity)
+        scoped = render_filter(scope)
+        if filter or scoped:
+            params["$filter"] = f"({filter}) and ({scoped})" if filter and scoped else filter or scoped
         if select:
             params["$select"] = ",".join(s.strip() for s in select.split(",") if s.strip() and not SECRET_RE.search(s))
         if orderby:

@@ -64,6 +64,7 @@ def save_session(session: Session) -> None:
             "own_name": st.own_name, "opening_balance": st.opening_balance},
         "vipiska": session.vipiska, "didox": session.didox, "didox_source": session.didox_source,
         "analyzed_with": session.analyzed_with,
+        "chat": session.chat[-20:],
     }
     try:
         SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,6 +109,8 @@ def _load_session(sid: str, firm_id: int) -> Session:
         session.didox = data.get("didox", [])
         session.didox_source = data.get("didox_source", "")
         session.analyzed_with = data.get("analyzed_with", {})
+        session.chat = [m for m in data.get("chat", []) if isinstance(m, dict)
+                        and m.get("role") in ("user", "model") and isinstance(m.get("text"), str)][-20:]
     except (ValueError, KeyError, TypeError) as e:
         log.warning("Sessiya ma'lumoti tiklanmadi (%s): %s", sid, e)
     return session
