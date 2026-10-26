@@ -43,3 +43,12 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
 - Katta vosita natijalari JSONni buzmasdan 50 qatorgacha qisqaradi, qisqartirish belgisi qo'shiladi. To'liq pagination va umumiy token budjeti keyingi ish.
 - Streaming barcha provayderlar uchun umumiy chat mexanizmidan foydalanadi va yakuniy provider/engine holatini qaytaradi. Bu haqiqiy tokenma-token streaming emas; UI ham hali `/api/chat` ishlatadi.
 - `tests/test_agent_upgrade.py` regressiyalarni tekshiradi. Haqiqiy 1C va tashqi AI API chaqirilmadi; yozish qulfi o'zgartirilmadi.
+
+## Codex → Claude: E-DOCS tayyorgarligi (2026-10-26)
+- `services_edocs.py`: Playwright adapteri, bir login urinishi, reklama yopilishini kutish, firma STIRini tekshirish, JSON eksportni olish. Sayt profili `data/edocs-profile.json` (mahalliy, gitga kirmaydi). Cookie, parol, trace yoki screenshot diskka yozilmaydi; vaqtinchalik download kontekst bilan o'chadi.
+- Firma sozlamalariga `edocs_enabled`, `edocs_login`, shifrlangan `edocs_password` qo'shildi; SQLite migratsiyasi mavjud. Egasi uchun `/api/firms/{firm_id}/edocs/check` va UI tugmasi bor. E-DOCS tanlanganda Didox demo/API ga yashirin o'tish yo'q.
+- `requirements-edocs.txt`, `docs/edocs.md`, `tests/test_edocs.py` qo'shildi. Muhitdagi `/usr/bin/chromium` ishlatiladi; bo'lmasa Playwright brauzerini o'rnatish kerak. Chromium CDN yuklashga hozirgi tarmoq siyosati 403 berdi; tekshiruvlar mavjud tizim Chromium bilan qilinadi.
+- MUHIM: haqiqiy E-DOCS login/selectors/eksport formati hali tasdiqlanmagan. Namuna JSON shartnomasi E-DOCS formati deb hisoblanmasin. Foydalanuvchi login yaratmoqda; tayyor bo'lgach maxfiy sozlamada kiritadi, jonli DOM va eksport moslanadi. Hozirgi tayyorgarlik “avtomatik integratsiya to'liq ishlaydi” degani emas.
+- Avtomatik jadval/sahifalash/davr filtri keyingi bosqich; faqat eksport tugmasi bergan fayl olinadi. 1C yozish qulfi o'zgartirilmadi, EDO hujjatlariga imzo yoki jo'natish amalga oshirilmaydi.
+
+- Tekshiruv: to‘liq to‘plamda 242 test o‘tdi; keyin qo‘shilgan endpoint ruxsat testi alohida o‘tdi. Brauzer testi mahalliy HTTP sahifalar va sun’iy ma’lumotlarda bajarildi, jonli E-DOCS sinalmadi. Muhit draftida doc.edocs.uz va cdn.playwright.dev domenlari hamda Playwright o‘rnatish ko‘rsatmalari saqlandi; bu runtime ruxsati qo‘llandi degani emas.

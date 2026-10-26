@@ -637,9 +637,17 @@
           </div>
 
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
+            <div class="font-semibold">📑 EHF manbasi</div>
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.edocs_enabled"> E-DOCS orqali olish (sinov)</label>
+            <div x-show="firmForm.edocs_enabled" class="space-y-2">
+              <input x-model="firmForm.edocs_login" placeholder="E-DOCS login" autocomplete="off" class="w-full rounded-lg border p-2 text-slate-900">
+              <input type="password" x-model="firmForm.edocs_password" placeholder="E-DOCS parol" autocomplete="new-password" class="w-full rounded-lg border p-2 text-slate-900">
+              <p class="text-xs text-slate-500">Parol shifrlanadi. Avval sozlamalarni saqlang. Saytga moslash va jonli sinov hali kerak.</p>
+              <button type="button" @click="busy('E-DOCS tekshirilmoqda…', async () => { const r = await api('/api/firms/' + firmId + '/edocs/check', {method: 'POST'}); if (r) alert(r.detail); })" class="rounded-lg border px-3 py-2">Ulanishni tekshirish</button>
+            </div>
             <div class="font-semibold">📑 Didox</div>
             <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
-            <div x-show="!firmForm.didox_demo_mode" class="space-y-2">
+            <div x-show="!firmForm.didox_demo_mode && !firmForm.edocs_enabled" class="space-y-2">
               <input x-model="firmForm.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
               <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
               <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
@@ -2113,7 +2121,7 @@ function app() {
       return [
         { label: '🗄️ 1C ulanishi', ok: o.ok === undefined ? null : o.ok && !o.warning, detail: o.error || o.warning || o.label || '…' },
         { label: '🤖 AI yordamchi', ok: a.ok ? true : null, detail: a.label || "Demo AI (kalit yo'q)" },
-        { label: '📑 Didox', ok: f.didox_user_key ? true : null, detail: f.didox_user_key ? 'API kaliti kiritilgan' : (f.didox_demo_mode ? 'Demo rejim' : 'API kaliti kiritilmagan') },
+        { label: f.edocs_enabled ? '📑 E-DOCS' : '📑 Didox', ok: f.edocs_enabled ? null : (f.didox_user_key ? true : null), detail: f.edocs_enabled ? 'Sinov: kirish va eksportni tekshiring' : f.didox_user_key ? 'API kaliti kiritilgan' : (f.didox_demo_mode ? 'Demo rejim' : 'API kaliti kiritilmagan') },
         { label: '📱 Telegram bot', ok: this.status.telegram ? true : null, detail: this.status.telegram ? 'Ishlayapti' : 'Sozlanmagan (.env)' },
         { label: '📁 1C eksport fayllari', ok: files.loaded ? true : null, detail: files.loaded ? (files.counts.docs + ' bank hujjati, ' + files.counts.counterparties + ' kontragent') : 'Yuklanmagan (OData ishlasa — shart emas)' },
         { label: '🛡️ Dublikat himoyasi', ok: true, detail: (o.mode === 'live' ? 'Yoqilgan · 🔒 faqat tahlil' : 'Yoqilgan') },

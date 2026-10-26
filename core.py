@@ -386,7 +386,7 @@ async def recheck_vipiska(session: Session) -> dict:
 
 async def load_didox(session: Session) -> dict:
     settings = firm_settings(session.firm_id)
-    demo_didox = settings["didox_demo_mode"] or not settings.get("didox_user_key")
+    demo_didox = not settings.get("edocs_enabled") and (settings["didox_demo_mode"] or not settings.get("didox_user_key"))
     if demo_didox and onec_for(session).mode != "demo":
         # Demo hisob-fakturalar o'ylab topilgan — haqiqiy firmaning 1C si bilan solishtirish chalg'itadi
         raise DidoxError("📑 Bu firma uchun Didox API kaliti kiritilmagan (⚙️ Joriy firma → Didox). Demo "
@@ -405,7 +405,7 @@ async def load_didox(session: Session) -> dict:
             fallback = fs or OneCService(OfflineOData(str(e)))
             session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
             session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
-        session.didox_source = "Didox (demo)" if source == "demo" else "Didox API"
+        session.didox_source = "Didox (demo)" if source == "demo" else ("E-DOCS brauzer" if source == "edocs" else "Didox API")
         session.analyzed_with["didox_ver"] = ANALYSIS_VERSION
         save_session(session)
     return snapshot(session, "didox")

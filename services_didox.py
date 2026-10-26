@@ -103,6 +103,12 @@ def _map_invoice(d: dict) -> dict:
 
 
 async def fetch_invoices(settings: dict) -> tuple[list[dict], str]:
+    if settings.get("edocs_enabled"):
+        from services_edocs import fetch_invoices as fetch_edocs, EdocsError
+        try:
+            return await fetch_edocs(settings), "edocs"
+        except EdocsError as e:
+            raise DidoxError(str(e), status=400) from None
     if settings.get("didox_demo_mode") or not settings.get("didox_user_key"):
         return _demo_invoices(), "demo"
     headers = {"user-key": settings["didox_user_key"]}

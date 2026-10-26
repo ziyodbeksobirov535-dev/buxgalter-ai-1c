@@ -39,11 +39,11 @@ MIN_PASSWORD = 8
 
 FIRM_FIELDS = ("name", "inn", "onec_demo_mode", "onec_base_url", "onec_user", "onec_password", "didox_demo_mode",
                "didox_base_url", "didox_user_key", "didox_partner_token", "bank_accounts",
-               "notion_token", "notion_stock_db")
-FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token", "notion_token")
-FIRM_BOOLS = ("onec_demo_mode", "didox_demo_mode")
+               "notion_token", "notion_stock_db", "edocs_enabled", "edocs_login", "edocs_password")
+FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token", "notion_token", "edocs_password")
+FIRM_BOOLS = ("onec_demo_mode", "didox_demo_mode", "edocs_enabled")
 # Maxfiy qiymat qaysi manzil/loginga tegishli: ular o'zgarsa va yangi qiymat berilmasa — eskisi o'chiriladi
-FIRM_SECRET_BOUND_TO = {"onec_password": ("onec_base_url", "onec_user"),
+FIRM_SECRET_BOUND_TO = {"edocs_password": ("edocs_login",), "onec_password": ("onec_base_url", "onec_user"),
                         "didox_user_key": ("didox_base_url",), "didox_partner_token": ("didox_base_url",)}
 
 # 1C ga yozish ruxsati — umumiy firma sozlamalaridan ALOHIDA (PUT /api/firms orqali o'zgartirib bo'lmaydi):
@@ -265,7 +265,8 @@ def init() -> None:
         if "advance_account" not in [r[1] for r in c.execute("PRAGMA table_info(account_rules)")]:
             c.execute("ALTER TABLE account_rules ADD COLUMN advance_account TEXT NOT NULL DEFAULT ''")
         firm_cols = [r[1] for r in c.execute("PRAGMA table_info(firms)")]
-        for col, ddl in {**WRITE_ACCESS_COLUMNS, **NOTION_COLUMNS}.items():  # 1C yozish ruxsati, Notion
+        for col, ddl in {**WRITE_ACCESS_COLUMNS, **NOTION_COLUMNS, "edocs_enabled": "INTEGER NOT NULL DEFAULT 0",
+                         "edocs_login": "TEXT NOT NULL DEFAULT ''", "edocs_password": "TEXT NOT NULL DEFAULT ''"}.items():  # 1C yozish ruxsati, Notion
             if col not in firm_cols:
                 c.execute(f"ALTER TABLE firms ADD COLUMN {col} {ddl}")
     _chmod600(DB_FILE)
@@ -623,6 +624,7 @@ def _firm_public(row: sqlite3.Row) -> dict:
         f[k] = bool(row[k])
     for k in FIRM_SECRETS:
         f[k] = config.MASK if row[k] else ""
+    f["edocs_login"] = row["edocs_login"]
     f["bank_accounts"] = row["bank_accounts"]
     f["notion_stock_db"] = row["notion_stock_db"] if "notion_stock_db" in row.keys() else ""
     f["active"] = bool(row["active"])

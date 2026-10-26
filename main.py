@@ -281,6 +281,19 @@ async def firms_write_access(firm_id: int, body: WriteAccessIn, user: dict = Dep
     return updated
 
 
+@app.post("/api/firms/{firm_id}/edocs/check")
+async def edocs_check(firm_id: int, _user: dict = Depends(require_owner)):
+    from services_edocs import fetch_invoices, EdocsError
+    settings = db.firm_settings(firm_id)
+    if not settings:
+        raise HTTPException(404, "Firma topilmadi")
+    try:
+        await fetch_invoices(settings, check_only=True)
+    except EdocsError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"ok": True, "detail": "Kirish va firma STIRi tekshirildi. Eksport hali tekshirilmadi."}
+
+
 # ---------------------------------------------------------------- foydalanuvchilar (Egasi)
 class UserIn(BaseModel):
     username: str = Field(..., max_length=64)
