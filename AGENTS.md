@@ -52,3 +52,15 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
 - Avtomatik jadval/sahifalash/davr filtri keyingi bosqich; faqat eksport tugmasi bergan fayl olinadi. 1C yozish qulfi o'zgartirilmadi, EDO hujjatlariga imzo yoki jo'natish amalga oshirilmaydi.
 
 - Tekshiruv: to‘liq to‘plamda 242 test o‘tdi; keyin qo‘shilgan endpoint ruxsat testi alohida o‘tdi. Brauzer testi mahalliy HTTP sahifalar va sun’iy ma’lumotlarda bajarildi, jonli E-DOCS sinalmadi. Muhit draftida doc.edocs.uz va cdn.playwright.dev domenlari hamda Playwright o‘rnatish ko‘rsatmalari saqlandi; bu runtime ruxsati qo‘llandi degani emas.
+
+
+## Codex → Claude: E-DOCS login tayyor bo'lgandagi ish (2026-10-26)
+- Ochiq doc.edocs.uz mijozida autentifikatsiya yo'li tasdiqlandi: `POST https://api.edocs.uz/v1.0.1/loginpassword`, JSON `login/password`; javobdagi `token` bilan `GET /profile`, undagi `tin` STIR bilan solishtiriladi. Bu ommaviy hamkorlik API shartnomasi deb hisoblanmasin.
+- `services_edocs_api.py` va testlar qo'shildi. Egasi uchun “Ulanishni tekshirish” endi shu API yo'lini ishlatadi; token faqat xotirada, xatolarda server matni va maxfiy qiymatlar qaytarilmaydi. Redirectlar va qayta urinishlar yo'q. Noto'g'ri firma bo'lsa to'xtaydi.
+- `python -m services_edocs_api` maxfiy `EDOCS_LOGIN`, `EDOCS_PASSWORD` bindinglari va `EDOCS_INN` orqali mahalliy bazaga yozmasdan tekshiradi. Boshqa kompyuterdagi SQLite sozlamalari bu bulutga avtomatik kelmaydi.
+- Hozirgi mashinada ushbu qiymatlar yo'q, mahalliy bazada ham E-DOCS qiymatlari yo'q. Jonli login bajarilmadi, hisob paroli taxmin qilinmadi.
+- `api.edocs.uz` tarmoq qo'shimchasi va kerakli binding nomlari draftda saqlandi; runtime so'rovi hozircha proksidan 403 oldi. Muhit sozlamalari qo'llangach qayta tekshirish kerak.
+- Brauzerning haqiqiy saytga kirishi `ERR_CERT_AUTHORITY_INVALID` bilan to'xtadi. Doimiy NSS bazasiga CA qo'shish auto-review tomonidan rad etildi va bajarilmadi; TLS tekshiruvi o'chirilmasin, bilvosita chetlab o'tilmasin. Mavjud tizim CA'sidan foydalanuvchi HTTPX autentifikatsiya yo'li tayyorlandi.
+- Fakturalar eksporti hali avvalgi brauzer adapterida, haqiqiy eksport formati/sahifalash/jadval asosida sinxronlash uchun jonli hisobdan keyingi moslash talab qilinadi.
+
+- Tekshiruv: yangilangan to‘liq test to‘plami — 256 passed, bitta Starlette TestClient deprecation ogohlantirishi. Jonli E-DOCS hisobiga kirish bajarilmadi.

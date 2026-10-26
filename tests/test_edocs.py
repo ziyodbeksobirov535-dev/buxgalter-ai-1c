@@ -119,8 +119,9 @@ def test_absent_ad_does_not_block():
 def test_connection_check_owner_only(monkeypatch):
     import main
     from fastapi.testclient import TestClient
-    fetch = AsyncMock(return_value=[])
-    monkeypatch.setattr(edocs, 'fetch_invoices', fetch)
+    import services_edocs_api
+    fetch = AsyncMock(return_value={'ok': True})
+    monkeypatch.setattr(services_edocs_api, 'check_connection', fetch)
     firm = db.create_firm({'name': 'Synthetic'})
     url = f"/api/firms/{firm['id']}/edocs/check"
     with TestClient(main.app, base_url='http://127.0.0.1:8000') as client:
