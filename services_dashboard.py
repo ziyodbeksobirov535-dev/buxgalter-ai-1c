@@ -101,7 +101,68 @@ def _month(days: list[dict], today: date) -> dict:
     start = today.replace(day=1).isoformat()
     cur = [d for d in days if d["date"] >= start]
     k, c = round(sum(d["kirim"] for d in cur), 2), round(sum(d["chiqim"] for d in cur), 2)
-    return {"from": start, "to": today.isoformat(), "kirim": k, "chiqim": c, "net": round(k - c, 2)}
+    # o'tgan oyning shu kunigacha bo'lgan qismi — "o'tgan oyga nisbatan" foizi uchun
+    prev_start = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+    prev_end = prev_start + timedelta(days=today.day - 1)
+    if prev_end.month != prev_start.month:  # masalan 31-mart → 29-fevral
+        prev_end = today.replace(day=1) - timedelta(days=1)
+    prev = [d for d in days if prev_start.isoformat() <= d["date"] <= prev_end.isoformat()]
+    pk, pc = round(sum(d["kirim"] for d in prev), 2), round(sum(d["chiqim"] for d in prev), 2)
+    return {"from": start, "to": today.isoformat(), "kirim": k, "chiqim": c, "net": round(k - c, 2),
+            "prev": {"from": prev_start.isoformat(), "to": prev_end.isoformat(), "kirim": pk, "chiqim": pc,
+                     "net": round(pk - pc, 2)} if prev else None}
+
+
+DAILY_DAYS = 30
+
+
+def _daily(days: list[dict], today: date) -> list[dict]:
+    """Oxirgi 30 kun — har kun (harakat bo'lmagan kunlar 0 bilan), grafik uchun."""
+    by = {d["date"]: d for d in days}
+    out = []
+    for i in range(DAILY_DAYS - 1, -1, -1):
+        key = (today - timedelta(days=i)).isoformat()
+        d = by.get(key) or {}
+        out.append({"date": key, "kirim": d.get("kirim", 0.0), "chiqim": d.get("chiqim", 0.0)})
+    return out
+
+
+# Bank chiqimining operatsiya turi → xarajatlar tuzilmasidagi guruh
+EXPENSE_GROUPS = {"ОплатаПоставщику": "Yetkazib beruvchilar", "ПеречислениеНалога": "Soliqlar va budjet",
+                  "ПеречислениеЗаработнойПлаты": "Ish haqi", "ПеречислениеЗП": "Ish haqi",
+                  "КомиссияБанка": "Bank xizmati", "ВозвратПокупателю": "Mijozlarga qaytarish",
+                  "ВыдачаПодотчетнику": "Hisobdor shaxslar", "ПереводНаДругойСчет": "O'z hisoblari aro"}
+
+
+def expense_mix(days: list[dict], today: date) -> list[dict]:
+    """Shu oydagi bank chiqimi tuzilmasi (1C dagi ВидОперации bo'yicha)."""
+    start = today.replace(day=1).isoformat()
+    groups: dict[str, float] = {}
+    for d in days:
+        if d["date"] < start:
+            continue
+        for op, amount in (d.get("ops") or {}).items():
+            label = EXPENSE_GROUPS.get(op, "Boshqa to'lovlar")
+            groups[label] = round(groups.get(label, 0.0) + amount, 2)
+    total = sum(groups.values())
+    return [{"label": k, "amount": v, "pct": round(100 * v / total, 1) if total else 0}
+            for k, v in sorted(groups.items(), key=lambda kv: -kv[1]) if v > 0]
+
+
+def funnel(vipiska: list[dict]) -> dict | None:
+    """Yuklangan vipiska qatorlari: jami → 1C da bor (dublikat) → yangi → 1C ga kiritilgan/eksport qilingan."""
+    bank = [r for r in vipiska if r.get("kind") == "bank"]
+    if not bank:
+        return None
+    dup = sum(1 for r in bank if r["status"] == "duplicate")
+    new = sum(1 for r in bank if r["status"] in ("new", "unchecked", "posted") or r.get("posted"))
+    done = sum(1 for r in bank if r.get("posted") or r.get("exported_at"))
+    disc = sum(1 for r in bank if r["status"] == "discrepancy")
+    total = len(bank)
+    return {"total": total, "steps": [
+        {"label": "Vipiskada", "count": total}, {"label": "1C da bor", "count": dup},
+        {"label": "Yangi", "count": new}, {"label": "Kiritilgan", "count": done}],
+        "discrepancy": disc, "coverage_pct": round(100 * (dup + done) / total, 1) if total else 0}
 
 
 def statement_days(st) -> list[dict]:
@@ -193,19 +254,22 @@ async def build(session, onec: OneCService, status: dict, today: date | None = N
     statement = statement_info(st, session.vipiska)
     connected = onec.mode in ("live", "demo", "file") and status.get("ok")
 
-    balance_now = balance_at_last = last_entry = None
+    balance_now = balance_at_last = last_entry = balance_month_start = None
     days: list[dict] = []
     debt = None
     if connected:
         own = st.own_account if st else ""
         at_last = _end_of(date.fromisoformat(statement["last_date"])) if statement else None
-        since = min(_monday(today) - timedelta(weeks=WEEKS - 1), today.replace(day=1))
-        last_entry, balance_now, balance_at_last, days, debt = await asyncio.gather(
+        prev_month = (today.replace(day=1) - timedelta(days=1)).replace(day=1)
+        since = min(_monday(today) - timedelta(weeks=WEEKS - 1), prev_month, today - timedelta(days=DAILY_DAYS))
+        month_start_eod = _end_of(today.replace(day=1) - timedelta(days=1))
+        last_entry, balance_now, balance_at_last, days, debt, balance_month_start = await asyncio.gather(
             _safe(onec.last_bank_date(), None, errors, "oxirgi bank hujjati"),
             _safe(bank_balance(onec, _end_of(today), own), None, errors, "51.10 qoldig'i"),
             _safe(bank_balance(onec, at_last, own), None, errors, "sverka") if at_last else asyncio.sleep(0, None),
             _safe(onec.bank_flows(since, today), [], errors, "aylanma"),
-            _safe(debts(onec), None, errors, "debitor/kreditor"))
+            _safe(debts(onec), None, errors, "debitor/kreditor"),
+            _safe(bank_balance(onec, month_start_eod, own), None, errors, "oy boshidagi qoldiq"))
     flow_source = "1c" if days else ("statement" if st and st.rows else "none")
     if not days:
         days = statement_days(st)
@@ -223,6 +287,8 @@ async def build(session, onec: OneCService, status: dict, today: date | None = N
                     ("statement" if hero_value is not None else "none"),
                     "onec": onec_info, "statement": statement, "sverka": sverka(statement, balance_at_last)},
         "month": _month(days, today), "weeks": _weekly(days, today), "flow_source": flow_source,
+        "daily": _daily(days, today), "expense_mix": expense_mix(days, today), "funnel": funnel(session.vipiska),
+        "balance_month_start": balance_month_start,
         "debts": debt, "todo": todo(session.vipiska, session.didox, session.firm_id),
         "errors": errors[:5],
     }

@@ -1105,11 +1105,15 @@ class OneCService:
             docs = await self.fetch_all(entity, [Cond("Posted", "eq", True), Cond("DeletionMark", "eq", False),
                                                  Cond("Date", "ge", DT(datetime.combine(since, datetime.min.time()))),
                                                  Cond("Date", "le", DT(datetime.combine(until, datetime.max.time()).replace(microsecond=0)))],
-                                        select=["Ref_Key", "Date", FIELDS["amount"]])
+                                        select=["Ref_Key", "Date", FIELDS["amount"], FIELDS["operation"]])
             for d in docs:
                 day = _day(d.get("Date"))
-                rec = days.setdefault(day, {"date": day, "kirim": 0.0, "chiqim": 0.0})
-                rec[side] = round(rec[side] + float(d.get(FIELDS["amount"]) or 0), 2)
+                rec = days.setdefault(day, {"date": day, "kirim": 0.0, "chiqim": 0.0, "ops": {}})
+                amount = float(d.get(FIELDS["amount"]) or 0)
+                rec[side] = round(rec[side] + amount, 2)
+                if side == "chiqim":  # xarajatlar tuzilmasi uchun: operatsiya turi bo'yicha
+                    op = d.get(FIELDS["operation"]) or ""
+                    rec["ops"][op] = round(rec["ops"].get(op, 0.0) + amount, 2)
         return sorted(days.values(), key=lambda x: x["date"])
 
     async def known_operations(self, entity: str) -> set[str]:

@@ -13,7 +13,13 @@
       darkMode: 'class',
       theme: { extend: {
         fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-        colors: { brand: { 50:'#eef6ff',100:'#d9eaff',500:'#2563eb',600:'#1d4ed8',700:'#1e40af',900:'#0b1f4d' } }
+        colors: {
+          brand: { 50:'#eef3ff',100:'#dbe5ff',500:'#3358ff',600:'#2747e6',700:'#1f39b8',900:'#0d1a52' },
+          // tungi rejim — ko'kimtir emas, neytral qora (videodagi uslub)
+          slate: { 700:'#2e2e35', 800:'#1f1f25', 900:'#151519', 950:'#0b0b0e' },
+          lime: { 400:'#c4f04a' }
+        },
+        boxShadow: { card: '0 1px 2px rgba(16,24,40,.04), 0 10px 30px -14px rgba(16,24,40,.12)' }
       } }
     };
   </script>
@@ -32,94 +38,101 @@
     @keyframes pulse-dot { 0%,100% { opacity: .3 } 50% { opacity: 1 } }
     .typing span { animation: pulse-dot 1.2s infinite; }
     .typing span:nth-child(2) { animation-delay: .2s } .typing span:nth-child(3) { animation-delay: .4s }
+    /* kartalar: yorug' rejimda chegara o'rniga yumshoq soya */
+    html:not(.dark) .rounded-2xl.border.bg-white { border-color: rgba(15,23,42,.06); box-shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 30px -14px rgba(16,24,40,.12); }
+    .lift { transition: transform .25s ease, box-shadow .25s ease; }
+    .lift:hover { transform: translateY(-4px); }
+    html:not(.dark) .lift:hover { box-shadow: 0 2px 4px rgba(16,24,40,.05), 0 18px 40px -16px rgba(16,24,40,.22); }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+    .rise { animation: rise .55s cubic-bezier(.2,.7,.2,1) both; }
+    @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+    .draw { stroke-dasharray: 1; stroke-dashoffset: 0; animation: draw 1.1s ease-out both; }
   </style>
 </head>
-<body class="h-full bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100 font-sans">
+<body class="h-full bg-[#f4f4f6] text-slate-800 dark:bg-slate-950 dark:text-slate-100 font-sans">
 <div x-data="app()" x-init="init()" class="flex flex-col h-[100dvh]" x-cloak>
 
   <!-- ===================== TOP BAR ===================== -->
-  <header class="shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
-      <div class="flex items-center gap-2 mr-2">
-        <div class="h-9 w-9 rounded-xl bg-gradient-to-br from-brand-500 to-emerald-500 grid place-items-center text-lg shadow-sm">🏦</div>
-        <div class="leading-tight">
-          <div class="font-bold tracking-tight">BUXGALTER AI</div>
-          <div class="text-[11px] text-slate-500 dark:text-slate-400">1C:Buxgalteriya (O'zbekiston 3.0)</div>
+  <header class="shrink-0 bg-white/85 dark:bg-slate-950/85 backdrop-blur border-b border-slate-200/70 dark:border-slate-800/80 relative z-20">
+    <div class="flex items-center gap-2 sm:gap-3 px-4 lg:px-6 py-2.5">
+      <div class="flex items-center gap-2 shrink-0">
+        <svg viewBox="0 0 32 32" class="h-7 w-7" aria-hidden="true"><path d="M6 9h20l-4 6H2z" fill="#3358ff"/><path d="M10 17h20l-4 6H6z" fill="#c4f04a"/></svg>
+        <div class="leading-tight hidden sm:block">
+          <div class="font-semibold tracking-tight">Buxgalter AI</div>
+          <div class="text-[10px] text-slate-500 dark:text-slate-400 -mt-0.5">1C · O'zbekiston 3.0</div>
         </div>
       </div>
 
       <!-- Firma tanlagich -->
       <select x-show="firms.length" :value="firmId" @change="switchFirm(+$event.target.value)" title="Firma"
-              class="max-w-[60vw] sm:max-w-[240px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium px-2 py-1.5">
-        <template x-for="f in firms" :key="f.id"><option :value="f.id" :selected="f.id===firmId" x-text="'🏢 ' + f.name"></option></template>
+              class="min-w-[120px] lg:min-w-[150px] max-w-[46vw] sm:max-w-[220px] rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-sm font-medium pl-3 pr-8 py-1.5">
+        <template x-for="f in firms" :key="f.id"><option :value="f.id" :selected="f.id===firmId" x-text="f.name"></option></template>
       </select>
 
-      <!-- Holat belgilari -->
-      <div class="hidden md:flex items-center gap-1.5 text-xs">
-        <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')"
-              :title="status.onec.error || ''" x-text="onecBadge()"></span>
-        <span class="px-2 py-1 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)"
-              :title="status.ai.label" x-text="aiBadge()"></span>
-        <span class="px-2 py-1 rounded-full border border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800">🛡️ Dublikat Himoyasi: Yoqilgan</span>
-      </div>
+      <!-- Asosiy menyu: markazda, tugmalar ko'rinishida -->
+      <nav class="hidden lg:flex mx-auto items-center gap-0.5 rounded-full bg-slate-100/80 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-1">
+        <template x-for="p in pages()" :key="p.id">
+          <a :href="'#/' + p.id" class="relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition whitespace-nowrap"
+             :class="page===p.id ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800'">
+            <span x-show="page===p.id" class="text-sm leading-none" x-text="p.icon"></span><span x-text="navLabel(p)"></span>
+            <span x-show="p.badge" class="text-[10px] rounded-full px-1.5 min-w-[18px] text-center num"
+                  :class="page===p.id ? 'bg-white/20 dark:bg-slate-900/15' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'" x-text="p.badge"></span>
+          </a>
+        </template>
+      </nav>
 
-      <div class="ml-auto flex items-center gap-1.5">
+      <div class="ml-auto lg:ml-0 flex items-center gap-1.5 shrink-0">
         <template x-if="page==='bank'">
           <div class="flex items-center gap-1.5">
-            <button @click="$refs.file.click()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">📥 <span class="hidden sm:inline">Vipiska/Excel Yuklash</span><span class="sm:hidden">Yuklash</span></button>
-            <button x-show="isDemoFirm()" @click="loadSample()" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-3 py-1.5">🧪 <span class="hidden sm:inline">Test Vipiska Namunasini Yuklash</span><span class="sm:hidden">Test</span></button>
+            <button @click="$refs.file.click()" class="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3.5 py-1.5">📥 <span class="hidden sm:inline">Vipiska yuklash</span><span class="sm:hidden">Yuklash</span></button>
+            <button x-show="isDemoFirm()" @click="loadSample()" class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-3 py-1.5">🧪 <span class="hidden xl:inline">Test namunasi</span></button>
           </div>
         </template>
         <template x-if="page==='didox'">
-          <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3 py-1.5">🔄 Didox'dan yuklash</button>
+          <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3.5 py-1.5">🔄 <span class="hidden sm:inline">Didox'dan yuklash</span></button>
         </template>
-        <button @click="go('settings')" title="Sozlamalar" class="lg:hidden rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5">⚙️<span class="hidden xl:inline"> Sozlamalar</span></button>
+        <!-- holat: 1C va AI (nuqta + matn katta ekranda) -->
+        <div class="hidden md:flex items-center gap-1 text-[11px]">
+          <span class="flex items-center gap-1 rounded-full border border-slate-200 dark:border-slate-800 px-2 py-1" :title="status.onec.error || onecBadge()">
+            <i class="h-2 w-2 rounded-full" :class="status.onec.ok ? (status.onec.mode==='live' ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-rose-500'"></i><span class="hidden 2xl:inline" x-text="onecBadge()"></span><span class="2xl:hidden">1C</span>
+          </span>
+          <span class="flex items-center gap-1 rounded-full border border-slate-200 dark:border-slate-800 px-2 py-1" :title="status.ai.label">
+            <i class="h-2 w-2 rounded-full" :class="status.ai.ok ? 'bg-emerald-500' : 'bg-amber-400'"></i><span class="hidden 2xl:inline" x-text="aiBadge()"></span><span class="2xl:hidden">AI</span>
+          </span>
+        </div>
+        <!-- yorug' / tungi -->
+        <div class="flex items-center rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-0.5">
+          <button @click="dark && toggleTheme()" title="Yorug' rejim" class="h-7 w-7 rounded-full grid place-items-center text-sm transition" :class="!dark ? 'bg-white shadow-sm' : 'opacity-50 hover:opacity-100'">☀️</button>
+          <button @click="!dark && toggleTheme()" title="Tungi rejim" class="h-7 w-7 rounded-full grid place-items-center text-sm transition" :class="dark ? 'bg-slate-700 shadow-sm' : 'opacity-50 hover:opacity-100'">🌙</button>
+        </div>
+        <button @click="go('settings')" title="Sozlamalar" class="lg:hidden h-8 w-8 rounded-full border border-slate-200 dark:border-slate-800 grid place-items-center text-sm">⚙️</button>
         <div class="relative" x-data="{ open: false }" @click.outside="open = false">
-          <button @click="open = !open" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5 max-w-[180px] truncate"
-                  :title="me?.user.role_label" x-text="'👤 ' + (me?.user.full_name || me?.user.username || '')"></button>
-          <div x-show="open" x-transition class="absolute right-0 mt-1 w-60 z-30 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg p-1 text-sm">
+          <button @click="open = !open" class="flex items-center gap-2 rounded-full pl-0.5 pr-1 sm:pr-2.5 py-0.5 hover:bg-slate-100 dark:hover:bg-slate-900" :title="me?.user.role_label">
+            <span class="h-8 w-8 rounded-full bg-gradient-to-br from-orange-300 to-orange-500 text-white text-xs font-semibold grid place-items-center" x-text="initials(me?.user.full_name || me?.user.username)"></span>
+            <span class="hidden xl:inline text-sm font-medium max-w-[140px] truncate" x-text="me?.user.full_name || me?.user.username || ''"></span>
+            <span class="hidden xl:inline text-slate-400 text-xs">▾</span>
+          </button>
+          <div x-show="open" x-transition class="absolute right-0 mt-1 w-60 z-30 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg p-1 text-sm">
             <div class="px-3 py-2 text-xs text-slate-500" x-text="(me?.user.username || '') + ' · ' + (me?.user.role_label || '')"></div>
-            <button @click="open = false; openSettings('account')" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">🔑 Parol va Telegram</button>
-            <button x-show="me?.is_owner" @click="open = false; openSettings('firms')" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">🏢 Firmalar</button>
-            <button x-show="me?.is_owner" @click="open = false; openSettings('users')" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">👥 Foydalanuvchilar</button>
-            <button x-show="!isTg" @click="logout()" class="w-full text-left rounded-lg px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-600">🚪 Chiqish</button>
+            <button @click="open = false; openSettings('account')" class="w-full text-left rounded-xl px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">🔑 Parol va Telegram</button>
+            <button x-show="me?.is_owner" @click="open = false; openSettings('firms')" class="w-full text-left rounded-xl px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">🏢 Firmalar</button>
+            <button x-show="me?.is_owner" @click="open = false; openSettings('users')" class="w-full text-left rounded-xl px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800">👥 Foydalanuvchilar</button>
+            <button x-show="!isTg" @click="logout()" class="w-full text-left rounded-xl px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-rose-600">🚪 Chiqish</button>
           </div>
         </div>
-        <button @click="toggleTheme()" :title="dark ? 'Yorug\' rejim' : 'To\'q rejim'" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm px-2.5 py-1.5" x-text="dark ? '☀️' : '🌙'"></button>
       </div>
       <input type="file" x-ref="file" class="hidden" accept=".xlsx,.xlsm,.csv,.txt" @change="upload($event.target.files[0]); $event.target.value=''">
-    </div>
-    <!-- mobil holat belgilari -->
-    <div class="md:hidden flex gap-1.5 overflow-x-auto thin-scroll px-4 pb-2 text-[11px] whitespace-nowrap">
-      <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')" x-text="onecBadge()"></span>
-      <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)" x-text="aiBadge()"></span>
-      <span class="px-2 py-0.5 rounded-full border border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800">🛡️ Dublikat Himoyasi: Yoqilgan</span>
     </div>
   </header>
 
   <!-- ===================== MAIN SPLIT ===================== -->
   <main class="flex-1 flex min-h-0">
 
-    <!-- ---------- CHAP MENYU (kompyuter) ---------- -->
-    <nav class="hidden lg:flex flex-col w-56 shrink-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 gap-1">
-      <template x-for="p in pages()" :key="p.id">
-        <a :href="'#/' + p.id" class="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition"
-           :class="page===p.id ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'">
-          <span class="text-base" x-text="p.icon"></span><span class="flex-1" x-text="p.label"></span>
-          <span x-show="p.badge" class="text-[11px] rounded-full px-1.5 min-w-[20px] text-center"
-                :class="page===p.id ? 'bg-white/25' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'" x-text="p.badge"></span>
-        </a>
-      </template>
-      <div class="mt-auto pt-3 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
-        <div>🛡️ Dublikat himoyasi yoqilgan</div>
-        <div x-show="snap?.onec_mode==='live' || status.onec?.mode==='live'">🔒 Faqat tahlil: 1C ga yozilmaydi</div>
-      </div>
-    </nav>
 
     <!-- ---------- SAHIFALAR ---------- -->
     <div class="flex-1 min-w-0 min-h-0 flex flex-col">
     <!-- ===================== 🏠 BOSH SAHIFA ===================== -->
-    <div x-show="page==='home'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 pb-24 space-y-4">
+    <div x-show="page==='home'" class="flex-1 min-h-0 overflow-y-auto thin-scroll p-4 lg:px-8 lg:py-6 pb-24 space-y-3 sm:space-y-4 max-w-[1500px] w-full mx-auto">
       <div x-show="noFirms" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 text-center text-sm">
         <div class="text-3xl">🏢</div><p class="mt-2">Sizga hali hech qanday firma biriktirilmagan — "Egasi"ga murojaat qiling.</p>
       </div>
@@ -129,111 +142,214 @@
       </div>
       <template x-if="dash && !noFirms">
         <div class="space-y-4">
-          <!-- Qoldiq + sverka -->
-          <div class="grid lg:grid-cols-3 gap-4">
-            <div class="lg:col-span-2 rounded-2xl p-5 bg-gradient-to-br from-brand-600 via-brand-500 to-emerald-600 text-white shadow-sm">
-              <div class="flex items-start gap-2">
-                <div class="text-sm opacity-90">🏦 51.10 Hisob-kitob schyoti qoldig'i (UZS)</div>
-                <button @click="loadDash(true)" :disabled="dashLoading" class="ml-auto rounded-lg bg-white/15 hover:bg-white/25 px-2 py-1 text-xs" x-text="dashLoading ? '⏳' : '🔄 Yangilash'"></button>
+          <!-- Sarlavha -->
+          <div class="flex flex-wrap items-end gap-3 rise">
+            <div>
+              <h1 class="text-xl sm:text-2xl font-semibold tracking-tight">Bosh sahifa</h1>
+              <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400" x-text="homeSubtitle()"></p>
+            </div>
+            <div class="ml-auto flex items-center gap-2">
+              <span class="rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium" x-text="monthName()"></span>
+              <button @click="loadDash(true)" :disabled="dashLoading" title="1C dan yangilash"
+                      class="h-8 w-8 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 grid place-items-center text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
+                <span :class="dashLoading ? 'animate-spin' : ''">🔄</span></button>
+            </div>
+          </div>
+
+          <!-- KPI kartalar -->
+          <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+            <!-- 51.10 — asosiy (ko'k) -->
+            <div class="col-span-2 md:col-span-3 xl:col-span-1 relative overflow-hidden rounded-2xl p-4 sm:p-5 bg-brand-500 text-white shadow-card lift rise">
+              <svg class="absolute -right-6 -bottom-8 h-32 w-40 opacity-90" viewBox="0 0 160 128" aria-hidden="true">
+                <path d="M30 128 L110 10 L140 10 L60 128 Z" fill="#c4f04a"/><path d="M80 128 L140 40 L160 40 L160 128 Z" fill="#ffffff" opacity=".12"/></svg>
+              <div class="relative flex items-start gap-2">
+                <span class="h-8 w-8 rounded-xl bg-white/15 grid place-items-center text-sm">🏦</span>
+                <span x-show="deltaPct(dash.balance.value, dash.balance_month_start) !== null"
+                      class="ml-auto rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium num" x-text="deltaText(dash.balance.value, dash.balance_month_start)"></span>
               </div>
-              <div class="mt-3 text-3xl sm:text-4xl font-bold num tracking-tight" x-text="dash.balance.value === null ? '—' : fmt(dash.balance.value)"></div>
-              <div class="mt-2 text-xs opacity-90" x-text="balanceSource()"></div>
-              <div x-show="dash.balance.onec" class="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <span x-show="dash.balance.onec?.days_behind > 0" class="rounded-full bg-amber-300 text-amber-950 px-2 py-0.5 font-medium" x-text="lagLabel()"></span>
-                <span x-show="dash.balance.onec?.days_behind === 0" class="rounded-full bg-white/20 px-2 py-0.5">✅ 1C bugungi kungacha to'liq kiritilgan</span>
-              </div>
-              <div x-show="dash.balance.onec && dash.balance.statement && dash.balance.statement.closing !== null" class="mt-3 rounded-xl bg-white/10 px-3 py-2 text-sm space-y-0.5">
-                <div class="flex flex-wrap items-baseline gap-x-2">
-                  <span class="opacity-90" x-text="bankActualLabel()"></span>
-                  <span class="font-semibold num" x-text="fmt(dash.balance.statement?.closing)"></span>
-                </div>
-                <div x-show="dash.balance.onec?.statement_newer" class="text-xs opacity-90" x-text="bankDiffLabel()"></div>
-              </div>
-              <div class="mt-4 flex flex-wrap gap-2 text-sm">
-                <a href="#/bank" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📥 Vipiska yuklash</a>
-                <a href="#/didox" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📑 Didox</a>
-                <a href="#/stock" class="rounded-lg bg-white/15 hover:bg-white/25 px-3 py-1.5">📦 Sklad</a>
+              <div class="relative mt-4 text-2xl sm:text-[28px] font-semibold num tracking-tight" x-effect="countUp($el, dash.balance.value)">—</div>
+              <div class="relative mt-0.5 text-xs opacity-85">51.10 · Bank qoldig'i (UZS)</div>
+              <div class="relative mt-2 text-[11px] opacity-80 leading-snug" x-text="balanceSource()"></div>
+              <span x-show="dash.balance.onec?.days_behind > 0" class="relative mt-2 inline-block rounded-full bg-amber-300 text-amber-950 px-2 py-0.5 text-[11px] font-medium" x-text="lagLabel()"></span>
+              <div x-show="dash.balance.onec && dash.balance.statement && dash.balance.statement.closing !== null" class="relative mt-2 text-[11px] opacity-90">
+                <span x-text="bankActualLabel()"></span> <b class="num" x-text="fmt(dash.balance.statement?.closing)"></b>
+                <div x-show="dash.balance.onec?.statement_newer" x-text="bankDiffLabel()"></div>
               </div>
             </div>
-            <div class="rounded-2xl p-5 border bg-white dark:bg-slate-900" :class="sverkaClass()">
-              <div class="font-semibold text-sm">⚖️ Sverka: vipiska ↔ 1C (51.10)</div>
+            <template x-for="(k, ki) in kpiCards()" :key="k.id">
+              <div class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 lift rise" :class="ki === 2 ? 'col-span-2 md:col-span-1' : ''" :style="`animation-delay:${(ki + 1) * 70}ms`">
+                <div class="flex items-start gap-2">
+                  <span class="h-8 w-8 rounded-xl bg-slate-100 dark:bg-slate-800 grid place-items-center text-sm" x-text="k.icon"></span>
+                  <span x-show="k.delta" class="ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium num" :class="k.deltaCls" x-text="k.delta"></span>
+                </div>
+                <div class="mt-4 text-lg sm:text-2xl font-semibold num tracking-tight" :class="k.cls" x-effect="countUp($el, k.value, k.sign)">—</div>
+                <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400" x-text="k.label"></div>
+                <div class="mt-2 text-[11px] text-slate-400" x-text="k.hint"></div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Grafiklar -->
+          <div class="grid lg:grid-cols-2 gap-3 sm:gap-4">
+            <template x-for="(c, ci) in [chartDaily(), chartWeekly()]" :key="c.id">
+              <div class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 rise" :style="`animation-delay:${200 + ci * 80}ms`">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 grid place-items-center text-xs" x-text="c.icon"></span>
+                  <span class="font-medium text-sm" x-text="c.title"></span>
+                  <span class="ml-auto flex items-center gap-3 text-[11px] text-slate-500">
+                    <template x-for="l in c.lines" :key="l.key"><span class="flex items-center gap-1"><i class="h-2 w-2 rounded-full" :style="`background:${l.color}`"></i><span x-text="l.label"></span></span></template>
+                  </span>
+                </div>
+                <div class="relative mt-3 h-56 pl-12 pb-5" @mouseleave="hov = { ...hov, [c.id]: null }">
+                  <!-- o'q yozuvlari (HTML — grafik cho'zilganda ham buzilmaydi) -->
+                  <template x-for="t in c.ticks" :key="'t' + t.y">
+                    <span class="absolute left-0 w-11 text-right -translate-y-1/2 text-[10px] text-slate-400 num" :style="`top:calc((100% - 1.25rem) * ${t.y / (c.H - c.pad.b)})`" x-text="t.label"></span>
+                  </template>
+                  <div class="relative h-full w-full">
+                    <svg viewBox="52 0 578 198" preserveAspectRatio="none" class="absolute inset-0 h-full w-full overflow-visible select-none"
+                         x-html="chartSvg(c)" @mousemove="hoverChart($event, c)" @touchstart.passive="hoverChart($event.touches[0], c, $event.currentTarget)" @touchmove.passive="hoverChart($event.touches[0], c, $event.currentTarget)"></svg>
+                    <div x-show="hov[c.id] != null" class="pointer-events-none absolute top-0 bottom-0 border-l border-dashed border-slate-400 dark:border-slate-500" :style="`left:${c.px(hov[c.id] ?? 0)}%`"></div>
+                    <!-- hover nuqtalari va izoh -->
+                    <template x-for="l in c.lines" :key="'p' + l.key">
+                      <span x-show="hov[c.id] != null" class="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white dark:border-slate-900 shadow"
+                            :style="`background:${l.color}; left:${c.px(hov[c.id] ?? 0)}%; top:${c.py(l.pts[hov[c.id] ?? 0]?.[1] ?? 0)}%`"></span>
+                    </template>
+                    <div x-show="hov[c.id] != null" class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-2.5 py-1.5 text-[11px] shadow-lg whitespace-nowrap"
+                         :style="`left:${Math.min(85, Math.max(15, c.px(hov[c.id] ?? 0)))}%; top:${Math.max(12, c.py(Math.min(...c.lines.map(l => l.pts[hov[c.id] ?? 0]?.[1] ?? c.H))) - 4)}%`">
+                      <div class="font-medium opacity-80" x-text="c.tipTitle(hov[c.id] ?? 0)"></div>
+                      <template x-for="l in c.lines" :key="'v' + l.key"><div class="num font-semibold" x-text="l.label + ': ' + fmtShort(c.series[hov[c.id] ?? 0]?.[l.key] || 0)"></div></template>
+                    </div>
+                    <div x-show="!c.hasData" class="absolute inset-0 grid place-items-center text-xs text-slate-500">Bu davrda bank harakati topilmadi</div>
+                  </div>
+                  <template x-for="(lb, li) in c.xlabels" :key="'x' + li">
+                    <span class="absolute bottom-0 -translate-x-1/2 text-[10px] text-slate-400 num whitespace-nowrap" :style="`left:calc(3rem + (100% - 3rem) * ${c.px(lb.i) / 100})`" x-text="lb.label"></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Donut · Voronka · Reyting -->
+          <div class="grid lg:grid-cols-3 gap-3 sm:gap-4">
+            <!-- Xarajatlar tuzilmasi -->
+            <div class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 rise" style="animation-delay:360ms">
+              <div class="flex items-center gap-2">
+                <span class="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 grid place-items-center text-xs">🧾</span>
+                <div><div class="font-medium text-sm">Xarajatlar tuzilmasi</div><div class="text-[11px] text-slate-500">Shu oydagi bank chiqimi, 1C operatsiyalari bo'yicha</div></div>
+              </div>
+              <div x-show="(dash.expense_mix || []).length" class="mt-4 flex items-center gap-4">
+                <div class="relative h-32 w-32 shrink-0">
+                  <svg viewBox="0 0 42 42" class="h-full w-full -rotate-90" x-html="donutSvg()"></svg>
+                  <div class="absolute inset-0 grid place-items-center text-center">
+                    <div><div class="text-lg font-semibold num" x-text="Math.round(dash.expense_mix?.[0]?.pct || 0) + '%'"></div>
+                      <div class="text-[10px] text-slate-500 leading-tight max-w-[70px]" x-text="dash.expense_mix?.[0]?.label || ''"></div></div>
+                  </div>
+                </div>
+                <div class="flex-1 min-w-0 space-y-1.5">
+                  <template x-for="(seg, si) in donutSegments()" :key="'l' + si">
+                    <div class="flex items-center gap-2 text-xs" :class="si === 0 ? 'rounded-lg bg-slate-100 dark:bg-slate-800 px-2 py-1 -mx-2' : ''">
+                      <i class="h-2 w-2 rounded-full shrink-0" :style="`background:${seg.color}`"></i>
+                      <span class="flex-1 min-w-0 leading-tight" x-text="seg.label" :title="fmt(seg.amount) + ' so\'m'"></span>
+                      <span class="num text-slate-500" x-text="seg.pct + '%'"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <p x-show="!(dash.expense_mix || []).length" class="mt-4 text-xs text-slate-500">Shu oyda 1C da bank chiqimi yo'q.</p>
+            </div>
+
+            <!-- Vipiska voronkasi -->
+            <div class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 rise" style="animation-delay:430ms">
+              <div class="flex items-start gap-2">
+                <span class="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 grid place-items-center text-xs">🔻</span>
+                <div><div class="font-medium text-sm">Vipiska holati</div><div class="text-[11px] text-slate-500">Yuklangan qatorlar 1C ga qanchalik kiritilgan</div></div>
+                <div x-show="dash.funnel" class="ml-auto text-right"><div class="text-[10px] text-slate-500">Qamrov</div><div class="text-sm font-semibold num" x-text="(dash.funnel?.coverage_pct ?? 0) + '%'"></div></div>
+              </div>
+              <div x-show="dash.funnel" class="mt-4 space-y-2.5">
+                <template x-for="(st, fi) in (dash.funnel?.steps || [])" :key="fi">
+                  <div class="grid grid-cols-[84px_1fr_40px] items-center gap-2 text-xs">
+                    <span class="text-slate-500 truncate" x-text="st.label"></span>
+                    <div class="h-6 rounded-lg bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div class="h-full rounded-lg flex items-center px-2 text-[11px] font-medium text-white num transition-all duration-700"
+                           :style="`width:${Math.max(funnelPct(st.count), st.count ? 8 : 0)}%; background:${['#3358ff','#5a78ff','#8ea2ff','#c4f04a'][fi]}; ${fi === 3 ? 'color:#1a2e05' : ''}`" x-text="st.count || ''"></div>
+                    </div>
+                    <span class="text-right text-slate-500 num" x-text="funnelPct(st.count) + '%'"></span>
+                  </div>
+                </template>
+                <a x-show="dash.funnel?.discrepancy" href="#/bank" class="block text-[11px] text-rose-600 hover:underline" x-text="'⚠️ ' + dash.funnel?.discrepancy + ' ta qatorda 1C bilan farq bor'"></a>
+              </div>
+              <div x-show="!dash.funnel" class="mt-4 text-xs text-slate-500">Vipiska yuklanmagan. <a href="#/bank" class="text-brand-600 hover:underline">📥 Bank vipiskasini yuklang</a> — dastur uni 1C bilan solishtiradi.</div>
+            </div>
+
+            <!-- Eng katta qarzlar -->
+            <div class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 rise" style="animation-delay:500ms">
+              <div class="flex items-start gap-2">
+                <span class="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 grid place-items-center text-xs">🏆</span>
+                <div><div class="font-medium text-sm" x-text="topSide === 'debitor' ? 'Eng katta qarzdorlar' : 'Eng katta kreditorlar'"></div>
+                  <div class="text-[11px] text-slate-500" x-text="topSide === 'debitor' ? '40.10 · bizga qarzi' : '60.10 · bizning qarzimiz'"></div></div>
+                <div class="ml-auto flex rounded-full bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px]">
+                  <button @click="topSide = 'debitor'" class="rounded-full px-2 py-0.5" :class="topSide === 'debitor' ? 'bg-white dark:bg-slate-700 shadow-sm font-medium' : 'text-slate-500'">40.10</button>
+                  <button @click="topSide = 'kreditor'" class="rounded-full px-2 py-0.5" :class="topSide === 'kreditor' ? 'bg-white dark:bg-slate-700 shadow-sm font-medium' : 'text-slate-500'">60.10</button>
+                </div>
+              </div>
+              <div class="mt-4 space-y-3">
+                <template x-for="(t, ti) in topList()" :key="ti">
+                  <div class="flex items-center gap-2.5">
+                    <span class="h-7 w-7 shrink-0 rounded-full grid place-items-center text-[10px] font-semibold text-white" :style="`background:${['#3358ff','#16a34a','#f59e0b','#ec4899','#64748b'][ti % 5]}`" x-text="initials(t.name)"></span>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-baseline gap-2 text-xs"><span class="flex-1 min-w-0 truncate font-medium" x-text="t.name" :title="t.inn ? 'STIR ' + t.inn : ''"></span><span class="num font-semibold" x-text="fmtShort(t.amount)"></span></div>
+                      <div class="mt-1 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden"><div class="h-full rounded-full bg-brand-500 transition-all duration-700" :style="`width:${t.pct}%`"></div></div>
+                    </div>
+                  </div>
+                </template>
+                <p x-show="!topList().length" class="text-xs text-slate-500">Qoldiq yo'q yoki 1C dan o'qilmadi.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sverka · Bugungi ishlar -->
+          <div class="grid lg:grid-cols-3 gap-3 sm:gap-4">
+            <div class="lg:col-span-2 rounded-2xl p-4 sm:p-5 border bg-white dark:bg-slate-900 dark:border-slate-800 rise" :class="sverkaClass()" style="animation-delay:560ms">
+              <div class="flex items-center gap-2">
+                <span class="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 grid place-items-center text-xs">⚖️</span>
+                <span class="font-medium text-sm">Sverka: vipiska ↔ 1C (51.10)</span>
+              </div>
               <template x-if="dash.balance.sverka">
-                <div class="mt-2 space-y-2 text-sm">
+                <div class="mt-3 space-y-2 text-sm">
                   <div x-text="dash.balance.sverka.text"></div>
-                  <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs num">
-                    <span class="text-slate-500" x-text="'Vipiska (' + fmtDate(dash.balance.sverka.date) + ')'"></span><span class="text-right" x-text="fmt(dash.balance.sverka.statement_closing)"></span>
-                    <span class="text-slate-500">1C dagi 51.10</span><span class="text-right" x-text="fmt(dash.balance.sverka.onec)"></span>
-                    <span class="text-slate-500 font-medium">Farq</span><span class="text-right font-semibold" x-text="fmt(dash.balance.sverka.diff)"></span>
-                    <span class="text-slate-500">1C da yo'q to'lovlar</span><span class="text-right" x-text="fmt(dash.balance.sverka.pending_net)"></span>
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs num">
+                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><div class="text-slate-500" x-text="'Vipiska (' + fmtDate(dash.balance.sverka.date) + ')'"></div><div class="mt-0.5 font-semibold" x-text="fmt(dash.balance.sverka.statement_closing)"></div></div>
+                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><div class="text-slate-500">1C dagi 51.10</div><div class="mt-0.5 font-semibold" x-text="fmt(dash.balance.sverka.onec)"></div></div>
+                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><div class="text-slate-500">Farq</div><div class="mt-0.5 font-semibold" x-text="fmt(dash.balance.sverka.diff)"></div></div>
+                    <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-2.5"><div class="text-slate-500">1C da yo'q to'lovlar</div><div class="mt-0.5 font-semibold" x-text="fmt(dash.balance.sverka.pending_net)"></div></div>
                   </div>
                 </div>
               </template>
-              <p x-show="!dash.balance.sverka" class="mt-2 text-xs text-slate-500 leading-relaxed" x-text="sverkaHint()"></p>
+              <p x-show="!dash.balance.sverka" class="mt-3 text-xs text-slate-500 leading-relaxed" x-text="sverkaHint()"></p>
             </div>
-          </div>
-
-          <!-- Shu oy -->
-          <div class="grid sm:grid-cols-3 gap-3">
-            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/60 p-4">
-              <div class="text-xs text-emerald-700 dark:text-emerald-400">⬇️ Shu oydagi jami kirim</div>
-              <div class="mt-1 text-2xl font-bold num text-emerald-600 dark:text-emerald-400" x-text="fmt(dash.month.kirim)"></div>
-              <div class="mt-1 text-xs text-slate-500" x-text="monthLabel()"></div>
-            </div>
-            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/60 p-4">
-              <div class="text-xs text-rose-700 dark:text-rose-400">⬆️ Shu oydagi jami chiqim</div>
-              <div class="mt-1 text-2xl font-bold num text-rose-600 dark:text-rose-400" x-text="fmt(dash.month.chiqim)"></div>
-              <div class="mt-1 text-xs text-slate-500" x-text="monthLabel()"></div>
-            </div>
-            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
-              <div class="text-xs text-slate-500 dark:text-slate-400">⚖️ Sof aylanma (farq)</div>
-              <div class="mt-1 text-2xl font-bold num" :class="dash.month.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'" x-text="(dash.month.net > 0 ? '+' : '') + fmt(dash.month.net)"></div>
-              <div class="mt-1 text-xs text-slate-500" x-text="flowSourceLabel()"></div>
-            </div>
-          </div>
-
-          <!-- Grafik + bugungi ishlar -->
-          <div class="grid lg:grid-cols-3 gap-4">
-            <div class="lg:col-span-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
-              <div class="flex flex-wrap items-center gap-3 text-sm">
-                <span class="font-semibold">📊 Haftalik aylanma (oxirgi 8 hafta)</span>
-                <span class="ml-auto flex items-center gap-3 text-xs text-slate-500">
-                  <span class="flex items-center gap-1"><i class="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500"></i>Kirim</span>
-                  <span class="flex items-center gap-1"><i class="inline-block h-2.5 w-2.5 rounded-sm bg-rose-500"></i>Chiqim</span>
-                </span>
+            <div class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 rise" style="animation-delay:620ms">
+              <div class="flex items-center gap-2">
+                <span class="h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 grid place-items-center text-xs">📋</span>
+                <span class="font-medium text-sm">Bugungi ishlar</span>
               </div>
-              <div class="mt-4 flex items-end gap-1.5 sm:gap-3 h-52">
-                <template x-for="w in dash.weeks" :key="w.week">
-                  <div class="flex-1 min-w-0 flex flex-col items-center gap-1 h-full">
-                    <div class="w-full flex-1 flex items-end justify-center gap-0.5 sm:gap-1">
-                      <div class="w-1/2 max-w-[22px] rounded-t bg-emerald-500/90 transition-all" :style="`height:${weekBar(w.kirim)}%`" :title="'Kirim: ' + fmt(w.kirim)"></div>
-                      <div class="w-1/2 max-w-[22px] rounded-t bg-rose-500/90 transition-all" :style="`height:${weekBar(w.chiqim)}%`" :title="'Chiqim: ' + fmt(w.chiqim)"></div>
-                    </div>
-                    <div class="text-[10px] text-slate-500 num whitespace-nowrap" x-text="fmtDate(w.week).slice(0, 5)"></div>
-                  </div>
-                </template>
-              </div>
-              <div x-show="!dash.weeks.some(w => w.kirim || w.chiqim)" class="text-center text-xs text-slate-500 -mt-28 mb-24">Bu davrda bank harakati topilmadi</div>
-            </div>
-            <div class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
-              <div class="font-semibold text-sm">📋 Bugungi ishlar</div>
               <div class="mt-2 space-y-0.5">
                 <template x-for="t in todoItems()" :key="t.id">
-                  <a :href="'#/' + t.page" class="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm">
+                  <a :href="'#/' + t.page" class="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm">
                     <span x-text="t.icon"></span><span class="flex-1 min-w-0" x-text="t.text"></span>
                     <span class="text-xs rounded-full px-2 py-0.5 num" :class="t.cls" x-text="t.count"></span>
                   </a>
                 </template>
                 <div x-show="!todoItems().length" class="px-2 py-3 text-sm text-slate-500">✅ Hozircha kutilayotgan ish yo'q</div>
               </div>
-              <div class="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-1.5 text-xs">
-                <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')" x-text="onecBadge()"></span></div>
-                <div class="flex items-center gap-2"><span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)" x-text="aiBadge()"></span></div>
+              <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-1.5 text-[11px]">
+                <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.onec.ok, status.onec.mode!=='live')" x-text="onecBadge()"></span>
+                <span class="px-2 py-0.5 rounded-full border" :class="badgeClass(status.ai.ok, !status.ai.ok)" x-text="aiBadge()"></span>
               </div>
             </div>
           </div>
 
           <!-- 🤝 Hisob-kitoblar: 40.10 / 63.10 / 60.10 / 43.10 va boshqa tanlangan schyot -->
-          <div x-show="dash.debts" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 space-y-3">
+          <div x-show="dash.debts" class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5 space-y-3 rise" style="animation-delay:680ms">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-semibold text-sm">🤝 Hisob-kitoblar (kontragentlar bo'yicha)</span>
               <select :value="balAccount" @change="pickBalance($event.target.value)" class="ml-auto max-w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm px-2 py-1.5">
@@ -280,7 +396,7 @@
           </div>
 
           <!-- Barcha firmalar -->
-          <div x-show="(dash.firms || []).length > 1" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
+          <div x-show="(dash.firms || []).length > 1" class="rounded-2xl border bg-white dark:bg-slate-900 dark:border-slate-800 p-4 sm:p-5">
             <div class="font-semibold text-sm">🏢 Barcha firmalar</div>
             <div class="mt-2 overflow-x-auto thin-scroll">
               <table class="w-full text-sm">
@@ -1261,10 +1377,10 @@
           :class="aiButtonPos()">🤖 <span class="hidden sm:inline">AI Buxgalter Copilot</span></button>
 
   <!-- Telefon: pastki menyu -->
-  <nav class="lg:hidden shrink-0 grid grid-cols-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900" style="padding-bottom: env(safe-area-inset-bottom)">
+  <nav class="lg:hidden shrink-0 grid grid-cols-6 border-t border-slate-200/70 dark:border-slate-800 bg-white/90 dark:bg-slate-950/90 backdrop-blur" style="padding-bottom: env(safe-area-inset-bottom)">
     <template x-for="p in pages()" :key="p.id">
       <a :href="'#/' + p.id" class="relative flex flex-col items-center py-1.5 text-[10px] font-medium"
-         :class="page===p.id ? 'text-brand-600 dark:text-sky-400' : 'text-slate-500'">
+         :class="page===p.id ? 'text-slate-900 dark:text-white' : 'text-slate-400'">
         <span class="text-lg leading-none" x-text="p.icon"></span><span class="mt-0.5 truncate max-w-full" x-text="p.short"></span>
         <span x-show="p.badge" class="absolute top-0.5 right-2 text-[9px] rounded-full bg-amber-500 text-white px-1" x-text="p.badge"></span>
       </a>
@@ -1513,7 +1629,7 @@ const WELCOME = "Salom! Men **AI Buxgalter Copilot**man 👋\n\n- 🏦 Vipiskani
 function app() {
   return {
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
-    dash: null, dashLoading: false, stock: null, stockLoading: false, stockSearch: '', stockCache: {}, cmpFilter: 'all', notionHelp: false,
+    dash: null, dashLoading: false, hov: {}, topSide: 'debitor', stock: null, stockLoading: false, stockSearch: '', stockCache: {}, cmpFilter: 'all', notionHelp: false,
     stockSrc: (() => { try { return localStorage.getItem('stockSrc') || '1c'; } catch (e) { return '1c'; } })(),
     balAccount: '40.10', bal: null, balLoading: false, balSearch: '',
     drafts: [], draftsOpen: false, cpBox: null, cpSaving: false, writeForm: { confirm: '', limit: 1, create_contracts: false }, filters: {},
@@ -1579,6 +1695,11 @@ function app() {
       ];
     },
     isWork() { return ['bank', 'didox', 'rules'].includes(this.page); },
+    navLabel(p) { return { home: 'Bosh sahifa', settings: 'Sozlamalar' }[p.id] || p.short; },
+    initials(name) {
+      const w = String(name || '?').trim().split(/\s+/);
+      return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase();
+    },
     go(p) { if (location.hash !== '#/' + p) location.hash = '#/' + p; else this.route(); },
     showPage(p) { this.page = p; if (location.hash !== '#/' + p) history.replaceState(null, '', '#/' + p); },
     async route() {
@@ -1759,6 +1880,144 @@ function app() {
       return "1C dagi 51.10 qoldig'ini o'qib bo'lmadi (1C ulanmagan yoki provodkalar registri yoqilmagan).";
     },
     monthLabel() { const m = this.dash?.month || {}; return this.fmtDate(m.from) + ' — ' + this.fmtDate(m.to); },
+
+    // ---------------- 🏠 Bosh sahifa: KPI, grafiklar, donut, voronka, reyting
+    monthName(d) {
+      const t = new Date((d || this.dash?.today || new Date().toISOString().slice(0, 10)) + 'T00:00:00');
+      const m = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'][t.getMonth()];
+      return m + ' ' + t.getFullYear();
+    },
+    homeSubtitle() {
+      const f = this.firms.find(x => x.id === this.firmId);
+      return (f ? f.name + ' · ' : '') + ({ '1c': '1C buxgalteriyasi bo\'yicha', statement: 'yuklangan vipiska bo\'yicha', none: 'ma\'lumot yo\'q' }[this.dash?.flow_source] || '');
+    },
+    deltaPct(cur, prev) {
+      if (cur === null || cur === undefined || !prev) return null;
+      return (cur - prev) / Math.abs(prev) * 100;
+    },
+    deltaText(cur, prev) {
+      const d = this.deltaPct(cur, prev);
+      return d === null ? '' : (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(1) + '%';
+    },
+    countUp(el, v, sign) {
+      if (v === null || v === undefined) { el.textContent = '—'; el.dataset.v = ''; return; }
+      const from = el.dataset.v ? +el.dataset.v : 0, t0 = performance.now(), dur = 800;
+      el.dataset.v = v;
+      const pre = sign && v > 0 ? '+' : '';
+      const step = (t) => {
+        const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        el.textContent = pre + this.fmt(from + (v - from) * e);
+        if (k < 1 && el.dataset.v == v) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    },
+    kpiCards() {
+      const m = this.dash?.month || {}, p = m.prev || {};
+      const badge = (cur, prev, upGood) => {
+        const d = this.deltaPct(cur, prev);
+        if (d === null) return { delta: '', deltaCls: '' };
+        const good = (d >= 0) === upGood;
+        return { delta: this.deltaText(cur, prev), deltaCls: good ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300' };
+      };
+      const hint = p.from ? 'o\'tgan oyning shu davriga nisbatan' : this.monthLabel();
+      return [
+        { id: 'kirim', icon: '⬇️', label: 'Shu oydagi kirim', value: m.kirim, cls: '', hint, ...badge(m.kirim, p.kirim, true) },
+        { id: 'chiqim', icon: '⬆️', label: 'Shu oydagi chiqim', value: m.chiqim, cls: '', hint, ...badge(m.chiqim, p.chiqim, false) },
+        { id: 'net', icon: '⚖️', label: 'Sof pul oqimi', value: m.net, sign: true, hint: this.flowSourceLabel(),
+          cls: m.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400', ...badge(m.net, p.net, true) },
+      ];
+    },
+    niceMax(v) {
+      if (v <= 0) return 1;
+      const e = Math.pow(10, Math.floor(Math.log10(v))), f = v / e;
+      return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e;
+    },
+    axisShort(v) {
+      const a = Math.abs(v);
+      return a >= 1e9 ? +(v / 1e9).toFixed(1) + ' mlrd' : a >= 1e6 ? +(v / 1e6).toFixed(0) + ' mln' : a >= 1e3 ? +(v / 1e3).toFixed(0) + ' ming' : String(Math.round(v));
+    },
+    smoothPath(pts) {
+      // monoton kubik egri (Fritsch–Carlson): silliq, lekin 0 dan pastga "sakramaydi"
+      const n = pts.length;
+      if (n < 2) return n ? `M${pts[0][0]},${pts[0][1]}` : '';
+      const dx = [], dy = [], m = [], t = [];
+      for (let i = 0; i < n - 1; i++) { dx[i] = pts[i + 1][0] - pts[i][0]; dy[i] = pts[i + 1][1] - pts[i][1]; m[i] = dy[i] / dx[i]; }
+      t[0] = m[0]; t[n - 1] = m[n - 2];
+      for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : 3 * (dx[i - 1] + dx[i]) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
+      let d = `M${pts[0][0]},${pts[0][1]}`;
+      for (let i = 0; i < n - 1; i++) {
+        const h = dx[i] / 3;
+        d += ` C${pts[i][0] + h},${pts[i][1] + h * t[i]} ${pts[i + 1][0] - h},${pts[i + 1][1] - h * t[i + 1]} ${pts[i + 1][0]},${pts[i + 1][1]}`;
+      }
+      return d;
+    },
+    chartGeo(id, title, icon, series, lines, xlabel, tipTitle) {
+      const W = 640, H = 220, pad = { l: 52, r: 10, t: 12, b: 22 }, n = series.length;  // SVG viewBox="52 0 578 198" shu o'lchamlarga mos
+      const max = this.niceMax(Math.max(0, ...lines.flatMap(l => series.map(s => s[l.key] || 0))));
+      const x = i => pad.l + (n <= 1 ? 0 : i * (W - pad.l - pad.r) / (n - 1));
+      const y = v => pad.t + (H - pad.t - pad.b) * (1 - v / max);
+      const out = lines.map(l => {
+        const pts = series.map((s, i) => [x(i), y(s[l.key] || 0)]);
+        const d = this.smoothPath(pts);
+        return { ...l, pts, d, area: d + ` L${x(n - 1)},${H - pad.b} L${x(0)},${H - pad.b} Z` };
+      });
+      const every = Math.max(1, Math.ceil(n / 7));
+      const px = i => 100 * (x(i) - pad.l) / (W - pad.l - pad.r);   // nuqta: chizish maydonining % (gorizontal)
+      const py = yy => 100 * yy / (H - pad.b);                        // va vertikal
+      return { id, title, icon, W, H, pad, x, y, px, py, series, lines: out, tipTitle,
+               ticks: [0, .25, .5, .75, 1].map(f => ({ y: y(max * f), label: this.axisShort(max * f) })),
+               xlabels: series.map((s, i) => ({ i, x: x(i), label: xlabel(s) })).filter(l => l.i % every === 0 || l.i === n - 1),
+               hasData: series.some(s => lines.some(l => s[l.key])) };
+    },
+    chartDaily() {
+      const s = this.dash?.daily || [];
+      return this.chartGeo('daily', 'Kunlik kirim · oxirgi 30 kun', '📈', s,
+        [{ key: 'kirim', label: 'Kirim', color: '#3358ff', fill: true }],
+        d => d.date.slice(8, 10) + '.' + d.date.slice(5, 7), i => this.fmtDate(s[i]?.date));
+    },
+    chartWeekly() {
+      const s = this.dash?.weeks || [];
+      return this.chartGeo('weekly', 'Kirim va chiqim · haftalar', '📊', s,
+        [{ key: 'kirim', label: 'Kirim', color: '#3358ff', fill: true }, { key: 'chiqim', label: 'Chiqim', color: '#9aa4b2', fill: false }],
+        w => w.week.slice(8, 10) + '.' + w.week.slice(5, 7), i => s[i] ? this.fmtDate(s[i].week) + ' haftasi' : '');
+    },
+    hoverChart(ev, c, target) {
+      const svg = target || ev.currentTarget;
+      if (!svg || !ev) return;
+      const r = svg.getBoundingClientRect();
+      const px = (ev.clientX - r.left) / r.width * c.W;
+      const n = c.series.length;
+      if (!n) return;
+      const i = Math.round((px - c.pad.l) / ((c.W - c.pad.l - c.pad.r) / Math.max(1, n - 1)));
+      this.hov = { ...this.hov, [c.id]: Math.min(n - 1, Math.max(0, i)) };
+    },
+    chartSvg(c) {
+      const grid = c.ticks.map(t => `<line x1="${c.pad.l}" x2="${c.W - c.pad.r}" y1="${t.y}" y2="${t.y}" stroke="currentColor" class="text-slate-200 dark:text-slate-800" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join('');
+      const defs = c.lines.map(l => `<linearGradient id="g-${c.id}-${l.key}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${l.color}" stop-opacity=".25"/><stop offset="100%" stop-color="${l.color}" stop-opacity="0"/></linearGradient>`).join('');
+      const paths = c.lines.map(l => (l.fill ? `<path d="${l.area}" fill="url(#g-${c.id}-${l.key})"/>` : '')
+        + `<path d="${l.d}" fill="none" stroke="${l.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" pathLength="1" class="draw"/>`).join('');
+      return `<defs>${defs}</defs>${grid}${paths}`;
+    },
+    donutSvg() {
+      const bg = '<circle cx="21" cy="21" r="15.915" fill="none" stroke="currentColor" class="text-slate-100 dark:text-slate-800" stroke-width="5"/>';
+      return bg + this.donutSegments().map(g => `<circle cx="21" cy="21" r="15.915" fill="none" stroke="${g.color}" stroke-width="5" stroke-dasharray="${g.len} ${100 - g.len}" stroke-dashoffset="${-g.offset}"/>`).join('');
+    },
+    donutSegments() {
+      const colors = ['#3358ff', '#c4f04a', '#22c55e', '#f59e0b', '#ec4899', '#94a3b8'];
+      let off = 0;
+      return (this.dash?.expense_mix || []).slice(0, 6).map((m, i) => {
+        const len = Math.max(m.pct, m.pct > 0 ? 0.8 : 0);  // juda kichik ulush ham ko'rinsin
+        const seg = { ...m, color: colors[i], len, offset: off };
+        off += len;
+        return seg;
+      });
+    },
+    funnelPct(n) { const t = this.dash?.funnel?.total || 0; return t ? Math.round(100 * n / t) : 0; },
+    topList() {
+      const top = this.dash?.debts?.[this.topSide]?.top || [];
+      const max = Math.max(1, ...top.map(t => t.amount));
+      return top.map(t => ({ ...t, pct: Math.round(100 * t.amount / max) }));
+    },
     flowSourceLabel() {
       return { '1c': "1C dagi bank hujjatlari bo'yicha", statement: "Yuklangan vipiska bo'yicha", none: "Ma'lumot yo'q" }[this.dash?.flow_source] || '';
     },

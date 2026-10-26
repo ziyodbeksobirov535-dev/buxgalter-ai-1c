@@ -113,3 +113,23 @@ def test_onec_balance_is_dated_by_last_entered_bank_document():
     o = d["balance"]["onec"]
     assert o["value"] == DEMO_BANK_BALANCE and o["last_entry"] == "2026-10-05" and o["days_behind"] == 13
     assert o["statement_newer"] is True  # vipiskada 1C dan keyingi to'lovlar bor
+
+
+def test_dashboard_daily_series_month_compare_mix_and_funnel():
+    """Bosh sahifa grafiklari: 30 kunlik qator, o'tgan oy bilan taqqoslash, xarajatlar tuzilmasi, vipiska voronkasi."""
+    session = core.get_session("d4", DEMO_FIRM)
+    run(core.load_sample(session))
+    d = run(dash.build(session, OneCService(DemoOData()), {"ok": True}, today=date(2026, 10, 18)))
+    assert len(d["daily"]) == dash.DAILY_DAYS and d["daily"][-1]["date"] == "2026-10-18"
+    assert d["month"]["prev"]["from"] == "2026-09-01" and d["month"]["prev"]["to"] == "2026-09-18"
+    mix = d["expense_mix"]
+    assert mix and abs(sum(m["pct"] for m in mix) - 100) < 0.5 and mix == sorted(mix, key=lambda m: -m["amount"])
+    f = d["funnel"]
+    assert f["total"] == len([r for r in session.vipiska if r["kind"] == "bank"]) and f["steps"][1]["count"] == 3
+    assert "balance_month_start" in d
+
+
+def test_month_compare_handles_short_previous_month():
+    m = dash._month([{"date": "2026-02-28", "kirim": 5.0, "chiqim": 1.0}, {"date": "2026-03-31", "kirim": 7.0, "chiqim": 0}],
+                    date(2026, 3, 31))
+    assert m["prev"]["to"] == "2026-02-28" and m["prev"]["kirim"] == 5.0 and m["kirim"] == 7.0
