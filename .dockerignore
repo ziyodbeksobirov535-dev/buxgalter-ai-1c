@@ -1,0 +1,16 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+*.log
+*.tmp
+*.zip
+*.tar.gz
+.DS_Store
+
+# maxfiy va haqiqiy ma'lumotlar obrazga (image) kirmasin — ular volume orqali ulanadi
+data/
+.env
+.env.*
+.claude/

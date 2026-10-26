@@ -458,7 +458,7 @@ def extract_contract(purpose: str) -> dict | None:
     return None
 
 
-TAX_INNS = {"201122919"}  # Moliya vazirligi huzuridagi G'aznachilik (soliq to'lovlari)
+TAX_INNS = {"201122919"}  # Moliya vazirligi huzuridagi G'aznachilik (soliq to'lovlari); demo STIR bu yerga qo'shilmaydi
 TAX_NAME = re.compile(r"молия вазирлиги|moliya vazirligi|ғазна|газна|g'azna|gazna|казначейств|\bдси\b|\bdsi\b|"
                       r"солиқ|soliq|налогов", re.IGNORECASE)
 BANK_FEE = re.compile(r"за документ|комисс|komissiya|за обслуживан|xizmat haqi|за услуги банка|bank xizmat",

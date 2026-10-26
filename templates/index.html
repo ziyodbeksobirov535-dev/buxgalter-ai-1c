@@ -1542,7 +1542,7 @@ function app() {
       this.isTg = !!(this.tg && this.tg.initData);
       if (this.isTg) { this.tg.ready(); this.tg.expand(); }
       let saved = null, savedFirm = null;
-      try { saved = localStorage.getItem('bx_theme'); savedFirm = +localStorage.getItem('bx_firm'); } catch (e) {}
+      try { saved = localStorage.getItem('bx_theme'); savedFirm = +localStorage.getItem('bx_firm') || null; } catch (e) {}
       this.dark = saved ? saved === 'dark' : (this.isTg ? this.tg.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
       this.applyTheme();
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
@@ -1555,7 +1555,11 @@ function app() {
       window.addEventListener('hashchange', () => this.route());
       if (!this.firms.length) { this.noFirms = true; await this.route(); return; }
       const preferred = this.isTg ? this.me.user.tg_firm_id : savedFirm;
-      this.firmId = (this.firms.find(f => f.id === preferred) || this.firms[0]).id;
+      const defaultFirm = (preferred && this.firms.find(f => f.id === preferred))
+        || this.firms.find(f => !f.name.toLowerCase().includes('demo'))
+        || this.firms.find(f => !f.onec_demo_mode)
+        || this.firms[0];
+      this.firmId = defaultFirm.id;
       await this.loadFirmData();
       await this.route();
     },

@@ -18,6 +18,7 @@ import asyncio
 import copy
 import json
 import re
+import secrets
 import time
 import urllib.parse
 from collections import Counter
@@ -354,14 +355,27 @@ class HttpOData:
             write_guard(urllib.parse.unquote(urllib.parse.urlsplit(url).path).rsplit("/", 1)[-1].split("(")[0])
         if self.auth_error:
             raise ODataError(self.auth_error)
-        try:
-            r = await self.client.request(method, url, **kw)
-        except httpx.HTTPError as e:
-            raise ODataError(f"1C serveriga ulanib bo'lmadi: {e}") from e
-        status = self._effective_status(r)
-        if status >= 300:
-            self._raise_for(r, status)
-        return r
+        retries = 3 if method.upper() == "GET" else 1
+        last_exc: Exception | None = None
+        for attempt in range(retries):
+            try:
+                r = await self.client.request(method, url, **kw)
+                status = self._effective_status(r)
+                if status in (502, 503, 504) and attempt < retries - 1 and method.upper() == "GET":
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+                if status >= 300:
+                    self._raise_for(r, status)
+                return r
+            except httpx.HTTPError as e:
+                last_exc = e
+                if attempt < retries - 1 and method.upper() == "GET":
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+                raise ODataError(f"1C serveriga ulanib bo'lmadi: {e}") from e
+        if last_exc:
+            raise ODataError(f"1C serveriga ulanib bo'lmadi: {last_exc}") from last_exc
+        raise ODataError("1C serveriga ulanib bo'lmadi")
 
     async def _request(self, method: str, path: str, **kw) -> Any:
         r = await self._send(method, f"{self.base}/{path}", **kw)
@@ -388,6 +402,11 @@ class HttpOData:
             params["$select"] = ",".join(select)
         data = await self._request("GET", entity + "?" + encode_query(params))
         return data.get("value", [])
+
+    async def batch_query(self, queries: list[dict]) -> list[list[dict]]:
+        """Bir nechta o'qish so'rovi parallel (har biri oddiy GET). OData $batch ishlatilmaydi: u POST so'rovi —
+        1C ga yozish qulfini (write_guard) chetlab o'tadi, uzcloud esa POST ni baribir 403 bilan yopgan."""
+        return list(await asyncio.gather(*[self.query(**q) for q in queries]))
 
     async def raw(self, entity: str, params: dict[str, str]) -> list[dict]:
         """Agentning umumiy o'qish so'rovi (faqat GET; $filter matni agentdan)."""
@@ -453,6 +472,9 @@ class OfflineOData:
     async def balance_rows(self, *a, **kw) -> list[dict]:
         return []
 
+    async def batch_query(self, queries: list[dict]) -> list[list[dict]]:
+        return [[] for _ in queries]
+
     async def ping(self) -> bool:
         raise ODataError(self.reason or "1C ga ulanmagan")
 
@@ -502,6 +524,9 @@ class DemoOData:
         if top:
             rows = rows[:top]
         return copy.deepcopy(rows)
+
+    async def batch_query(self, queries: list[dict]) -> list[list[dict]]:
+        return [await self.query(**q) for q in queries]
 
     async def get(self, entity, key) -> dict | None:
         for r in self.db.get(entity, []):

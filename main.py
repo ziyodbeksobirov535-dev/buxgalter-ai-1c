@@ -5,12 +5,14 @@ Ishga tushirish:  .venv/bin/python main.py   →  http://127.0.0.1:8000
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -57,6 +59,10 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="BUXGALTER AI", version="2.0.0", lifespan=lifespan)
 # Begona domen nomi bilan kelgan so'rovlarni rad etish (DNS rebinding hujumidan himoya)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.ALLOWED_HOSTS)
+
+STATIC_DIR = config.BASE_DIR / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.middleware("http")
@@ -769,6 +775,20 @@ async def chat(body: ChatIn, ctx: FirmCtx = Depends(firm_ctx)):
     if not ctx.can_post:
         res["cards"] = [c for c in res["cards"] if c["type"] != "confirm_post"]
     return res
+
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(body: ChatIn, ctx: FirmCtx = Depends(firm_ctx)):
+    """AI javobini Server-Sent Events (SSE) oqimi sifatida uzatish."""
+    async def sse_gen():
+        async for chunk in services_ai.chat_stream(ctx.session, body.message, _mode(body.mode)):
+            if not ctx.can_post and '"cards"' in chunk:  # /api/chat dagi kabi: kuzatuvchiga kiritish kartasi yo'q
+                event = json.loads(chunk)
+                event["cards"] = [c for c in event.get("cards", []) if c.get("type") != "confirm_post"]
+                chunk = json.dumps(event, ensure_ascii=False)
+            yield f"data: {chunk.strip()}\n\n"
+        core.save_session(ctx.session)  # suhbat tarixi qayta ishga tushganda yo'qolmasin
+    return StreamingResponse(sse_gen(), media_type="text/event-stream")
 
 
 if __name__ == "__main__":

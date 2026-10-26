@@ -72,15 +72,29 @@ def save_session(session: Session) -> None:
         tmp.replace(_session_file(session.sid))
     except OSError as e:
         log.warning("Sessiya saqlanmadi (%s): %s", session.sid, e)
+    try:
+        db.save_session_store(session.sid, session.firm_id, data)
+    except Exception as e:
+        log.debug("DB sessiya saqlanmadi (%s): %s", session.sid, e)
 
 
 def _load_session(sid: str, firm_id: int) -> Session:
     session = Session(sid, firm_id)
     path = _session_file(sid)
-    if not path.exists():
+    data = None
+    if path.exists():
+        try:
+            data = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            log.warning("Sessiya fayli o'qilmadi (%s): %s", sid, e)
+    if data is None:
+        try:
+            data = db.load_session_store(sid)
+        except Exception:
+            data = None
+    if not data:
         return session
     try:
-        data = json.loads(path.read_text("utf-8"))
         st = data.get("statement")
         if st:
             rows = [BankRow(**{**r, "date": date.fromisoformat(r["date"]),
@@ -94,8 +108,8 @@ def _load_session(sid: str, firm_id: int) -> Session:
         session.didox = data.get("didox", [])
         session.didox_source = data.get("didox_source", "")
         session.analyzed_with = data.get("analyzed_with", {})
-    except (OSError, ValueError, KeyError, TypeError) as e:
-        log.warning("Sessiya fayli o'qilmadi (%s): %s", sid, e)
+    except (ValueError, KeyError, TypeError) as e:
+        log.warning("Sessiya ma'lumoti tiklanmadi (%s): %s", sid, e)
     return session
 
 

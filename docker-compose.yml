@@ -1,0 +1,14 @@
+services:
+  buxgalter-ai:
+    build: .
+    container_name: buxgalter-ai
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"  # faqat shu kompyuterdan; tarmoqqa ochish — alohida qaror (HTTPS bilan)
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000

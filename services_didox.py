@@ -63,6 +63,25 @@ def vat_code(rate: float) -> str:
     return "БезНДС" if rate <= 0 else f"НДС{int(rate) if float(rate).is_integer() else rate}"
 
 
+# O'zbekiston EDO hujjat turlari (Didox, Soliq Servis)
+DOC_TYPE_LABELS = {
+    "002": "Elektron hisob-faktura (EHF)",
+    "003": "Ishonchnoma (Доверенность)",
+    "004": "Bajarilgan ishlar / xizmatlar dalolatnomasi",
+    "007": "Tovar-transport yukxati (TTN)",
+}
+
+
+def validate_ikpu(code: str | None) -> dict:
+    """MXIK (IKPU) kodini tekshirish — O'zbekistonda tovar/xizmat uchun 17 xonali bo'lishi shart."""
+    raw = "".join(ch for ch in str(code or "") if ch.isdigit())
+    if not raw:
+        return {"code": "", "valid": False, "reason": "MXIK kodi ko'rsatilmagan"}
+    if len(raw) != 17:
+        return {"code": raw, "valid": False, "reason": f"MXIK 17 xonali bo'lishi kerak ({len(raw)} xona)"}
+    return {"code": raw, "valid": True, "reason": "To'g'ri"}
+
+
 def _map_invoice(d: dict) -> dict:
     """Didox javobidagi turli maydon nomlarini yagona ko'rinishga keltiradi."""
     def pick(*keys, default=None):

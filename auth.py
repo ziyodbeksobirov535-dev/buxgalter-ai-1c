@@ -105,7 +105,7 @@ async def firm_ctx(request: Request, user: dict = Depends(current_user)) -> Firm
         firms = db.list_firms(user)
         if not firms:
             raise HTTPException(403, "Sizga hech qanday firma biriktirilmagan — \"Egasi\"ga murojaat qiling")
-        raw = str(firms[0]["id"])
+        raw = str(next((f["id"] for f in firms if "demo" not in f["name"].lower() and not f.get("onec_demo_mode")), firms[0]["id"]))
     firm_id = int(raw)
     if not db.user_can_access(user, firm_id):
         raise HTTPException(403, "Bu firmaga kirish huquqingiz yo'q")

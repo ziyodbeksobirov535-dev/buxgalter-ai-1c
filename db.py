@@ -152,6 +152,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
     action TEXT NOT NULL,
     details TEXT NOT NULL DEFAULT '{}'
 );
+CREATE TABLE IF NOT EXISTS sessions_store (
+    sid TEXT PRIMARY KEY,
+    firm_id INTEGER NOT NULL,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_firm ON audit_log(firm_id);
+CREATE INDEX IF NOT EXISTS idx_account_rules_firm ON account_rules(firm_id, kind);
+CREATE INDEX IF NOT EXISTS idx_onec_drafts_firm ON onec_drafts(firm_id);
 """
 
 _lock = threading.RLock()
@@ -177,9 +187,12 @@ def _parse(ts: str | None) -> datetime | None:
 @contextmanager
 def tx():
     with _lock:
-        conn = sqlite3.connect(DB_FILE)
+        conn = sqlite3.connect(DB_FILE, timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
         try:
             yield conn
             conn.commit()
@@ -463,6 +476,30 @@ def user_from_web_session(token: str) -> dict | None:
 def delete_web_session(token: str) -> None:
     with tx() as c:
         c.execute("DELETE FROM web_sessions WHERE token_hash = ?", (_token_hash(token or ""),))
+
+
+def save_session_store(sid: str, firm_id: int, data: dict) -> None:
+    raw = json.dumps(data, ensure_ascii=False, default=str)
+    with tx() as c:
+        c.execute("""
+            INSERT INTO sessions_store (sid, firm_id, data, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(sid) DO UPDATE SET
+                firm_id = excluded.firm_id,
+                data = excluded.data,
+                updated_at = excluded.updated_at
+        """, (sid, firm_id, raw, _iso(now())))
+
+
+def load_session_store(sid: str) -> dict | None:
+    with tx() as c:
+        row = c.execute("SELECT data FROM sessions_store WHERE sid = ?", (sid,)).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row["data"])
+        except (json.JSONDecodeError, TypeError):
+            return None
 
 
 # ---------------------------------------------------------------- Telegram bog'lash

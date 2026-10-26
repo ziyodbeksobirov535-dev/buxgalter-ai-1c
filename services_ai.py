@@ -16,6 +16,7 @@ OpenAI / Claude ixtiyoriy zaxira sifatida: vositalar mahalliy ishga tushiriladi,
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -504,3 +505,82 @@ async def chat(session: core.Session, message: str, mode: str = "vipiska") -> di
     session.chat = session.chat[-20:]
     return {"reply": reply, "cards": ctx.cards, "refresh": sorted(ctx.refresh), "tools": ctx.used,
             "engine": engine, "engine_label": info["label"] if engine != "mock" else engine_info({**settings, "ai_provider": "mock"})["label"]}
+
+
+async def chat_stream(session: core.Session, message: str, mode: str = "vipiska"):
+    """Server-Sent Events (SSE) oqimi: AI javobi va vositalar natijalari real vaqtda keladi."""
+    message = (message or "").strip()[:4000]
+    settings = config.get_settings()
+    info = engine_info(settings)
+    ctx = ToolContext(session, mode)
+    engine = info["provider"]
+
+    yield json.dumps({"type": "start", "engine": engine, "engine_label": info["label"]}) + "\n"
+
+    if engine == "gemini":
+        try:
+            from google import genai
+            from google.genai import errors, types
+            client = genai.Client(api_key=settings["gemini_api_key"])
+            cfg = types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT + f"\nJoriy rejim: {ctx.mode}.",
+                tools=[types.Tool(function_declarations=[types.FunctionDeclaration(**d) for d in TOOL_DECLARATIONS])],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+            contents = [types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part.from_text(text=m["text"])])
+                        for m in ctx.session.chat[-8:]]
+            contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+            model = settings["gemini_model"]
+
+            reply_accum = ""
+            for _ in range(5):
+                try:
+                    resp = await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
+                except errors.ClientError as e:
+                    if e.code == 404 and model != GEMINI_FALLBACK_MODEL:
+                        model = GEMINI_FALLBACK_MODEL
+                        resp = await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
+                    else:
+                        raise
+                calls = resp.function_calls or []
+                if not calls:
+                    reply_accum = (resp.text or "").strip() or "…"
+                    yield json.dumps({"type": "token", "content": reply_accum}) + "\n"
+                    break
+                contents.append(resp.candidates[0].content)
+                parts = []
+                for fc in calls:
+                    yield json.dumps({"type": "tool_start", "tool": fc.name}) + "\n"
+                    result = await ctx.run(fc.name, dict(fc.args or {}))
+                    yield json.dumps({"type": "tool_end", "tool": fc.name, "cards": ctx.cards}) + "\n"
+                    parts.append(types.Part.from_function_response(name=fc.name, response={"result": result}))
+                contents.append(types.Content(role="user", parts=parts))
+
+            session.chat += [{"role": "user", "text": message}, {"role": "model", "text": reply_accum}]
+            session.chat = session.chat[-20:]
+            yield json.dumps({"type": "done", "reply": reply_accum, "cards": ctx.cards,
+                              "refresh": sorted(ctx.refresh), "tools": ctx.used}) + "\n"
+            return
+        except Exception as e:
+            log.warning("Stream failed with Gemini, fallback to mock: %s", e)
+            engine = "mock"
+
+    calls = route_intent(message)
+    results = []
+    for n, a in calls:
+        yield json.dumps({"type": "tool_start", "tool": n}) + "\n"
+        r = await ctx.run(n, a)
+        results.append(r)
+        yield json.dumps({"type": "tool_end", "tool": n, "cards": ctx.cards}) + "\n"
+
+    reply = mock_reply(calls, results, mode)
+    words = reply.split(" ")
+    chunk_size = 4
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i + chunk_size]) + (" " if i + chunk_size < len(words) else "")
+        yield json.dumps({"type": "token", "content": chunk}) + "\n"
+        await asyncio.sleep(0.01)
+
+    session.chat += [{"role": "user", "text": message}, {"role": "model", "text": reply}]
+    session.chat = session.chat[-20:]
+    yield json.dumps({"type": "done", "reply": reply, "cards": ctx.cards,
+                      "refresh": sorted(ctx.refresh), "tools": ctx.used}) + "\n"

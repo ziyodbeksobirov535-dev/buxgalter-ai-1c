@@ -455,3 +455,16 @@ def test_cache_expires_so_changes_in_1c_are_seen(monkeypatch):
     assert asyncio.run(svc._cached(("acc_by_code", "51.10"), factory)) == 3
     clock[0] += services_1c.CACHE_TTL + 1
     assert asyncio.run(svc._cached(("acc_by_code", "51.10"), factory)) == 3  # hisoblar rejasi — uzoqroq saqlanadi
+
+
+def test_batch_query_sends_only_get_requests():
+    """batch_query 1C ga POST ($batch) yubormaydi — yozish qulfini chetlab o'tmasin."""
+    sent = []
+
+    def handler(req):
+        sent.append(req.method)
+        return httpx.Response(200, json={"value": [{"Ref_Key": "x"}]})
+    svc = service(handler)
+    res = asyncio.run(svc.t.batch_query([{"entity": "Catalog_Контрагенты", "top": 1},
+                                         {"entity": "Catalog_Банки", "top": 1}]))
+    assert res == [[{"Ref_Key": "x"}], [{"Ref_Key": "x"}]] and set(sent) == {"GET"}
