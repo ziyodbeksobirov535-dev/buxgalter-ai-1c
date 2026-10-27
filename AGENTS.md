@@ -64,3 +64,13 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
 - Fakturalar eksporti hali avvalgi brauzer adapterida, haqiqiy eksport formati/sahifalash/jadval asosida sinxronlash uchun jonli hisobdan keyingi moslash talab qilinadi.
 
 - Tekshiruv: yangilangan to‘liq test to‘plami — 256 passed, bitta Starlette TestClient deprecation ogohlantirishi. Jonli E-DOCS hisobiga kirish bajarilmadi.
+
+## Codex → Claude: jonli E-DOCS o'qishi (2026-10-27)
+- Foydalanuvchi maxfiy bindinglarni saqlab muhitni publish qildi. Login/parol va firma STIRi jonli hisobda muvaffaqiyatli tekshirildi. Hech qanday maxfiy qiymat repozitoriyga yoki logga chiqarilmadi.
+- `services_edocs_api.fetch_invoices`: faqat kiruvchi imzolangan `factura`, to'liq pagination va har birining detail/tovar qatorlarini ketma-ket GET bilan oladi. Jarayon jonli hisobda to'liq bajarildi; haqiqiy firma ma'lumotlari test/commit matniga kiritilmadi.
+- Native format: `data.facturadoc`, `data.buyertin/sellertin/seller`, `data.productlist.products`; miqdor `count`, narx `summa`, summa `deliverysumwithvat`, QQS `vatrate/withoutvat`, MXIK `catalogcode`. Xaridor STIRi, qator summalari, to'liq son, pagination va takroriy ID tekshiriladi; qisman natija qaytarilmaydi.
+- `services_didox` E-DOCS yoqilganda endi native API fetch ishlatadi. Playwright, reklama va mahalliy brauzer profili talab qilinmaydi. Eski brauzer adapteri eksperimental holda qoldi.
+- Bulut login/parol bindinglari mahalliy firmada ikkala credential ham yo'q va STIR `EDOCS_INN` bilan mos bo'lgandagina fallback sifatida olinadi. Mahalliy login/bulut paroli aralashmaydi. Token faqat xotirada; faqat autentifikatsiya POST, keyin GET.
+- CLI `--fetch`, `--from-date`, `--to-date` qo'shildi. 1000 hujjat chegarasi bor. Hozir faqat kiruvchi imzolangan EHF; fon jadvali bo'yicha sinxronlash va boshqa hujjat turlari qo'shilmagan. Haqiqiy 1C ga ulanish/yozish ushbu sinovda bajarilmadi.
+- Foydalanuvchi E-DOCS'da faktura/shartnoma qoralamasini yaratish imkonini so'radi. Sayt mijozida save va save+sign alohida, generic POST `/documents/{type}/` mavjud; ikkala turning qoralama ro'yxati GET orqali ochildi. Lekin login/parol rejimida ko'rish huquqi cheklovi ko'rsatilgan. Qoralama yaratish ruxsati tasdiqlanmagan, haqiqiy hujjat yaratilmadi, imzo/yuborish/saqlash endpointlari chaqirilmadi.
+- Yakuniy tekshiruv: 270 passed, bitta Starlette TestClient deprecation ogohlantirishi. Native EHF → mavjud tahlil pipeline'i regressiyasi ham bor. Jonli 1C solishtirish va qoralama yaratish tekshirilmagan. Yangi startup ko'rsatmasi muhit draftiga saqlandi; bu yangi snapshot publish qilinganini anglatmaydi.

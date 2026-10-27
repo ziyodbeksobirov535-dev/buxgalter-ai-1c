@@ -405,7 +405,7 @@ async def load_didox(session: Session) -> dict:
             fallback = fs or OneCService(OfflineOData(str(e)))
             session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
             session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
-        session.didox_source = "Didox (demo)" if source == "demo" else ("E-DOCS brauzer" if source == "edocs" else "Didox API")
+        session.didox_source = "Didox (demo)" if source == "demo" else ("E-DOCS API (kiruvchi imzolangan EHF)" if source == "edocs" else "Didox API")
         session.analyzed_with["didox_ver"] = ANALYSIS_VERSION
         save_session(session)
     return snapshot(session, "didox")

@@ -39,7 +39,8 @@ def test_missing_credentials_stop_before_browser():
 
 def test_edocs_selected_never_falls_back_to_demo(monkeypatch):
     import services_didox
-    monkeypatch.setattr(edocs, 'fetch_invoices', AsyncMock(side_effect=edocs.EdocsError('not configured')))
+    import services_edocs_api
+    monkeypatch.setattr(services_edocs_api, 'fetch_invoices', AsyncMock(side_effect=edocs.EdocsError('not configured')))
     with pytest.raises(services_didox.DidoxError, match='not configured'):
         asyncio.run(services_didox.fetch_invoices({'edocs_enabled': True, 'didox_demo_mode': True}))
 

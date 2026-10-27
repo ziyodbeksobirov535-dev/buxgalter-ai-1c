@@ -104,7 +104,8 @@ def _map_invoice(d: dict) -> dict:
 
 async def fetch_invoices(settings: dict) -> tuple[list[dict], str]:
     if settings.get("edocs_enabled"):
-        from services_edocs import fetch_invoices as fetch_edocs, EdocsError
+        from services_edocs import EdocsError
+        from services_edocs_api import fetch_invoices as fetch_edocs
         try:
             return await fetch_edocs(settings), "edocs"
         except EdocsError as e:
