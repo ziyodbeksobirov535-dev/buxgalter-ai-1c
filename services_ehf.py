@@ -43,7 +43,7 @@ def base_row(inv):
            'purpose': 'EHF: ' + ', '.join(i['name'] for i in inv.get('items', []))[:300],
            'account': '60.10' if flow == 'in' else '40.10', 'account_source': 'rules',
            'account_badge': 'EHF sverka — faqat o‘qish', 'advance_account': '', 'settlement_note': '',
-           'posting_note': '', 'operation': '', 'learned': None, 'blockers': [], 'diffs': [], 'match': None,
+           'posting_note': '', 'operation': '', 'learned': None, 'blockers': [], 'diffs': [], 'comparison_warnings': [], 'match': None,
            'counterparty_key': None, 'mfo': '', 'account_no': '', 'posted': False, 'posted_ref': None,
            'posted_number': None, 'error': None, 'read_only': True, 'selectable': False, 'overridable': False}
     return row
@@ -178,18 +178,21 @@ def matching(row, candidates):
 
 
 def compare_items(row, candidate):
+    """Tasdiqlangan farq va moslashtirishdagi noaniqlik alohida qaytadi."""
     if not candidate.get('items') or not row['items']:
-        return ['Tovar qatorlari to‘liq tekshirilmadi (1C yoki EHF tafsiloti yetishmaydi).']
+        return [], ['Tovar qatorlari to‘liq tekshirilmadi (1C yoki EHF tafsiloti yetishmaydi).']
     target = candidate['items']
     remaining = list(range(len(target)))
-    diffs = []
+    diffs, warnings = [], []
+    unresolved = False
     norm = lambda v: re.sub(r'\s+', ' ', str(v or '').strip()).casefold()
     for item in row['items']:
         choices = [i for i in remaining if norm(target[i]['name']) == norm(item['name'])]
         if not choices and item.get('ikpu'):
             choices = [i for i in remaining if target[i].get('ikpu') == item['ikpu']]
         if len(choices) != 1:
-            diffs.append('Tovar nomi/MXIK bo‘yicha aniq moslik topilmadi: ' + item['name'])
+            warnings.append('Tovar nomi/MXIK bo‘yicha aniq moslik topilmadi: ' + item['name'])
+            unresolved = True
             continue
         i = choices[0]
         remaining.remove(i)
@@ -199,18 +202,23 @@ def compare_items(row, candidate):
         for key, label, tolerance in [('qty', 'Miqdor', .000001), ('total', 'Qator summasi', .02), ('vat_sum', 'QQS summasi', .02)]:
             a, b = item.get(key), other.get(key)
             if a is None or b is None:
-                diffs.append(label + ' to‘liq tekshirilmadi: ' + item['name'])
+                warnings.append(label + ' to‘liq tekshirilmadi: ' + item['name'])
             elif abs(a - b) > tolerance:
                 diffs.append(label + ' farqli: ' + item['name'])
-    if remaining: diffs.append('1C da EHFga moslashtirilmagan qo‘shimcha tovar qatorlari bor.')
-    return diffs
+    if remaining:
+        if unresolved:
+            warnings.append('1C qatorlari EHF bilan to‘liq moslashtirilmadi; qo‘shimcha tovar borligi hali tasdiqlanmagan.')
+        else:
+            diffs.append('1C da EHFga moslashtirilmagan qo‘shimcha tovar qatorlari bor.')
+    return diffs, warnings
 
 
 def item_diffs(row, matches):
     candidates = [c for c in matches if c.get('items')]
     if not candidates:
-        return ['1C da tovar qatorlari tekshirilmadi.']
-    return list(dict.fromkeys(d for c in candidates for d in compare_items(row, c)))
+        return [], ['1C da tovar qatorlari tekshirilmadi.']
+    comparisons = [compare_items(row, c) for c in candidates]
+    return tuple(list(dict.fromkeys(d for comparison in comparisons for d in comparison[i])) for i in (0, 1))
 
 
 async def reconcile(invoices, onec, expected, date_from='', date_to=''):
@@ -247,12 +255,18 @@ async def reconcile(invoices, onec, expected, date_from='', date_to=''):
                 result(row, 'missing', 'new', '🟡 1C da topilmadi')
         else:
             if any(c['deleted'] for c in matches): diffs.append('1C hujjati o‘chirishga belgilangan.')
-            if row.get('parse_error'): diffs.append(row['parse_error'])
-            diffs.extend(item_diffs(row, matches))
+            product_diffs, product_warnings = item_diffs(row, matches)
+            diffs.extend(product_diffs)
+            if row.get('parse_error'): product_warnings.append(row['parse_error'])
+            row['comparison_warnings'] = list(dict.fromkeys(product_warnings))
             if any(v > 1 for v in Counter(c['entity'] for c in matches).values()): diffs.append('Bir turdagi bir nechta mos hujjat: qo‘lda tekshirish kerak.')
             if st == 'signed' and any(not c['posted'] for c in matches): diffs.append('Tasdiqlangan EHF uchun 1C hujjati qoralama holatida.')
-            result(row, 'differences' if diffs else 'matched', 'discrepancy' if diffs else 'duplicate',
-                   '🔴 Rekvizitlarda farq bor' if diffs else '🟢 1C bilan mos', matches, diffs)
+            if diffs:
+                result(row, 'differences', 'discrepancy', '🔴 Rekvizitlarda farq bor', matches, diffs)
+            elif product_warnings:
+                result(row, 'partial', 'unchecked', '🟠 Rekvizitlar mos; tovarlar to‘liq tekshirilmadi', matches)
+            else:
+                result(row, 'matched', 'duplicate', '🟢 1C bilan mos', matches)
     # Teskari nazorat: EHFda umuman ko'rinmagan 1C hujjatlari.
     for flow, candidates in datasets.items():
         for c in candidates:

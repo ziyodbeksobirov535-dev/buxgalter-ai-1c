@@ -33,6 +33,8 @@ class Session:
     didox_source: str = ""
     ehf_summary: dict = field(default_factory=dict)
     ehf_history: list[dict] = field(default_factory=list)
+    ehf_chats: dict = field(default_factory=dict)
+    ehf_ai_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     chat: list[dict] = field(default_factory=list)
     # Telegram tugmalari uchun: token -> aniq qatorlar to'plami (tugma faqat o'zi ko'rsatgan qatorlarni yozadi)
     batches: dict = field(default_factory=dict)
@@ -66,6 +68,7 @@ def save_session(session: Session) -> None:
             "own_name": st.own_name, "opening_balance": st.opening_balance},
         "vipiska": session.vipiska, "didox": session.didox, "didox_source": session.didox_source,
         "analyzed_with": session.analyzed_with, "ehf_summary": session.ehf_summary, "ehf_history": session.ehf_history,
+        "ehf_chats": session.ehf_chats,
         "chat": session.chat[-20:],
     }
     try:
@@ -112,6 +115,7 @@ def _load_session(sid: str, firm_id: int) -> Session:
         session.didox_source = data.get("didox_source", "")
         session.ehf_summary = data.get("ehf_summary", {})
         session.ehf_history = data.get("ehf_history", [])
+        session.ehf_chats = data.get("ehf_chats", {})
         session.analyzed_with = data.get("analyzed_with", {})
         session.chat = [m for m in data.get("chat", []) if isinstance(m, dict)
                         and m.get("role") in ("user", "model") and isinstance(m.get("text"), str)][-20:]
@@ -344,7 +348,7 @@ OFFLINE = "offline:"
 FILES = "files:"
 # Tahlil qoidalari o'zgarganda oshiriladi — eski tahlil qilingan jadvalda "qayta tekshiring" ogohlantirishi chiqadi
 ANALYSIS_VERSION = "2026-10-18.6"
-EHF_ANALYSIS_VERSION = "2026-10-27.1"
+EHF_ANALYSIS_VERSION = "2026-10-27.2"
 
 
 async def load_statement(session: Session, filename: str, content: bytes, is_sample: bool = False) -> dict:
@@ -528,7 +532,8 @@ async def preview_payload(session: Session, mode: str, row_id: str) -> dict:
     if not row:
         raise KeyError(row_id)
     if mode == 'didox' and ehf_read_only(session):
-        return {'row': row, 'payload': None, 'payload_error': 'EHF sverka — faqat o‘qish.',
+        from services_ehf_ai import state
+        return {'row': row, 'payload': None, 'payload_error': '', 'ai': state(session, row),
                 'learned_names': {}, 'entity': (row.get('match') or {}).get('entity', row['entity'])}
     onec = analysis_onec(session, mode)
     payload, error = None, None

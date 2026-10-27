@@ -785,6 +785,26 @@ class ChatIn(BaseModel):
     mode: str = "vipiska"
 
 
+class EhfChatIn(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+    revision: str = Field(..., pattern=r'^[a-f0-9]{64}$')
+
+
+@app.post('/api/ehf/{row_id}/chat')
+async def ehf_chat(row_id: str, body: EhfChatIn, ctx: FirmCtx = Depends(firm_ctx)):
+    from services_ehf_ai import ask, ContextChanged
+    try:
+        res = await ask(ctx.session, row_id, body.message, body.revision)
+    except KeyError:
+        raise HTTPException(404, 'EHF qatori topilmadi') from None
+    except ContextChanged as error:
+        raise HTTPException(409, str(error)) from None
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+    core.save_session(ctx.session)
+    return res
+
+
 @app.post("/api/chat")
 async def chat(body: ChatIn, ctx: FirmCtx = Depends(firm_ctx)):
     res = await services_ai.chat(ctx.session, body.message, _mode(body.mode))

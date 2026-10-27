@@ -8,11 +8,12 @@ import pytest
 import uvicorn
 
 import config,core,db,main
+import services_ehf_ai
 from services_edocs import browser_options
 from services_ehf import base_row,result
 
 
-def test_browser_ehf_filters(tmp_path):
+def test_browser_ehf_filters(tmp_path, monkeypatch):
     pw=pytest.importorskip('playwright.async_api')
     db.update_firm(1,{'edocs_enabled':True})
     user=db.create_user('synthetic','synthetic-password','owner')
@@ -23,6 +24,10 @@ def test_browser_ehf_filters(tmp_path):
         result(row,code,status,code)
         session.didox.append(row)
     session.didox_source='E-DOCS API';session.ehf_summary={'counts':{'missing':1,'matched':1,'deleted_in_1c':1},'warnings':[]}
+    config.save_settings({'gemini_api_key':'synthetic-key'})
+    async def generate(context,history,message,settings):
+        return 'Synthetic AI: '+context['ehf']['number']+' turn '+str(len(history)//2+1), 'synthetic-model', ''
+    monkeypatch.setattr(services_ehf_ai,'_generate',generate)
     sock=socket.socket();sock.bind(('127.0.0.1',0));origin=f'http://127.0.0.1:{sock.getsockname()[1]}'
     server=uvicorn.Server(uvicorn.Config(main.app,log_level='error',lifespan='off'))
     thread=threading.Thread(target=lambda:server.run(sockets=[sock]),daemon=True);thread.start()
@@ -56,9 +61,31 @@ def test_browser_ehf_filters(tmp_path):
                 await page.get_by_placeholder('Qidirish: kontragent, STIR, №, maqsad',exact=True).fill('000000001');await count(1)
                 await page.get_by_role('button',name='✕ Tozalash',exact=True).click()
                 await page.screenshot(path='/tmp/buxgalter-ehf-control.png',full_page=True)
+                async def inspect(number):
+                    await page.locator('tbody tr:visible').filter(has_text=number).get_by_role('button',name='👁 Tekshirish',exact=True).click()
+                    box=page.get_by_role('region',name='Faktura bo‘yicha Gemini')
+                    await pw.expect(box).to_be_visible()
+                    return box
+                box=await inspect('EHF-IN')
+                await box.get_by_role('button',name='Bu yerda aynan qanday muammo bor?',exact=True).click()
+                await pw.expect(box.get_by_text('Synthetic AI: EHF-IN turn 1',exact=True)).to_be_visible()
+                await box.get_by_label('Faktura bo‘yicha savol',exact=True).fill('What about VAT?')
+                await box.get_by_role('button',name='Savol yuborish',exact=True).click()
+                await pw.expect(box.get_by_text('Synthetic AI: EHF-IN turn 2',exact=True)).to_be_visible()
+                await page.get_by_role('button',name='Yopish',exact=True).click()
+                box=await inspect('EHF-OUT')
+                await pw.expect(box.get_by_text('Synthetic AI: EHF-IN turn 1',exact=True)).to_have_count(0)
+                await box.get_by_role('button',name='Bu yerda aynan qanday muammo bor?',exact=True).click()
+                await pw.expect(box.get_by_text('Synthetic AI: EHF-OUT turn 1',exact=True)).to_be_visible()
+                await page.get_by_role('button',name='Yopish',exact=True).click()
+                box=await inspect('EHF-IN')
+                await pw.expect(box.get_by_text('Synthetic AI: EHF-IN turn 2',exact=True)).to_be_visible()
+                await page.wait_for_timeout(250)  # modal ochilish animatsiyasi suratda tugagan bo'lsin
+                await page.screenshot(path='/tmp/buxgalter-ehf-gemini.png',full_page=True)
                 await page.set_viewport_size({'width':390,'height':844})
                 await page.wait_for_timeout(100)
                 assert await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+                await pw.expect(box.get_by_label('Faktura bo‘yicha savol',exact=True)).to_be_visible()
                 assert not errors,errors
             finally:await browser.close()
     try:asyncio.run(check())

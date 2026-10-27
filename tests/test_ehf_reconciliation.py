@@ -172,3 +172,28 @@ def test_rejected_number_does_not_hide_unrelated_onec_invoice():
     inv=invoice(status='rejected');inv['counterparty_inn']='000000002'
     rows,_=run([inv],[document()])
     assert {r['reconcile'] for r in rows}=={'skipped','onec_only'}
+
+
+def test_unmatched_product_is_warning_not_confirmed_amount_or_extra_product_difference():
+    inv=invoice();inv['items'][0].update(name='Synthetic differently named product', ikpu='different')
+    rows,_=run([inv],[document()])
+    assert rows[0]['reconcile']=='partial' and not rows[0]['diffs']
+    assert any('aniq moslik' in w for w in rows[0]['comparison_warnings'])
+    assert any('hali tasdiqlanmagan' in w for w in rows[0]['comparison_warnings'])
+
+
+def test_missing_vat_detail_is_unknown_and_real_extra_line_is_difference():
+    inv=invoice();inv['items'][0]['vat_sum']=None
+    rows,_=run([inv],[document()])
+    assert rows[0]['reconcile']=='partial'
+    assert any('QQS summasi' in w for w in rows[0]['comparison_warnings'])
+    doc=document();doc['Товары'].append(dict(doc['Товары'][0],Номенклатура_Key='synthetic-extra'))
+    # Qo'shimcha qatorning MXIKi bir xil, lekin nomi boshqa.
+    onec=OneC([doc])
+    original=onec.t.get
+    async def get(entity,key):
+        if key=='synthetic-extra':return {'Description':'Synthetic extra product'}
+        return await original(entity,key)
+    onec.t.get=get
+    rows,_=asyncio.run(reconcile([invoice()],onec,'000000000'))
+    assert rows[0]['reconcile']=='differences' and any('qo‘shimcha' in d for d in rows[0]['diffs'])

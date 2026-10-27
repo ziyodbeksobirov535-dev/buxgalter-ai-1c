@@ -17,13 +17,23 @@ Metadata orqali nashr qilingan tegishli obyektlar o'qiladi. So'rovlar tashkilot 
 
 Raqamdagi bosh nollar, bo'shliq va № prefiksi normallanadi. Tashqi raqam, 1C raqami, sana, summa va kontragent STIRi tekshiriladi. Mavjud bo'lsa, EDO/roaming identifikatori rekvizitlari o'zgargan hujjatni ham topadi. Raqam o'zgargan, lekin sana/summa/STIR mos hujjat to'liq mos deb yashirilmaydi — farq sifatida ko'rsatiladi. Bir turdagi bir nechta mos hujjat ham ogohlantirishdir.
 
-1C dagi tovar/xizmat qatorlari nomenklatura nomi/MXIK bo'yicha moslanadi. Miqdor, MXIK, qatorning QQS bilan summasi va QQS summasi solishtiriladi. Tafsilot yetishmasa yoki moslik noaniq bo'lsa bu ham yashirilmaydi. Tasdiqlangan EHFning 1C qoralamasi va o'chirishga belgilangan 1C hujjati nazoratga tushadi. Bank vipiskasi dublikat algoritmi o'zgartirilmagan.
+1C dagi tovar/xizmat qatorlari nomenklatura nomi/MXIK bo'yicha moslanadi. Miqdor, MXIK, qatorning QQS bilan summasi va QQS summasi solishtiriladi. Tasdiqlangan farqlar qizil, yetishmagan/noaniq tafsilotlar sariq ko'rsatiladi. Rekvizitlar mos, tovarlar hali moslashtirilmagan bo'lsa `partial` — “Rekvizitlar mos; tovarlar to'liq tekshirilmadi”. Moslashtirilmagan qator avtomatik “ortiqcha tovar” deb hisoblanmaydi. Tasdiqlangan EHFning 1C qoralamasi va o'chirishga belgilangan 1C hujjati nazoratga tushadi. Bank vipiskasi dublikat algoritmi o'zgartirilmagan.
 
 Teskari tekshiruv tanlangan EHF davrida 1C da bor, ammo yuklangan EHF ro'yxatida topilmagan hujjatlarni chiqaradi. Bu “EHF tizimida umuman yo'q” degani emas: qamrov va holat cheklovlari borligini hisobga oling. Holati bo'yicha sverkaga kirmaydigan, ammo yuklangan EHF raqami ma'lum bo'lganlar teskari nazoratda noto'g'ri yo'q deb belgilanmaydi.
 
 ## Filtrlar va natijalar
 
 Sana, kirim/chiqim, EHF holati, sverka natijasi, kontragent/STIR/raqam qidiruvi mavjud. EHF holati va 1C natijasi alohida ko'rsatiladi. Natijalar: mos, topilmadi, rekvizit farqi, o'chirilgan EHF 1C da bor, faqat 1C ro'yxatida, tekshirilmagan va holati bo'yicha tekshirilmaydi. “Tozalash” barcha jadval filtrlarini tiklaydi. Yuklash davri va oxirgi vaqt sahifada ko'rinadi.
+
+## Faktura ichida Gemini bilan savol-javob
+
+“Tekshirish” oynasidagi “Shu fakturani AI bilan tushunish” bo'limida tayyor savolni bosing yoki o'z savolingizni yozing. Shu fakturaning rekvizitlari, mos 1C hujjatlari, EHF/1C tovar qatorlari, farqlar va qamrov ogohlantirishlari Gemini'ga yuboriladi. Umumiy chat tarixi, boshqa fakturalar va ulanish credentiallari yuborilmaydi. “EHF va 1C tovar qatorlarini ko'rish” ostida dastlabki qiymatlar ham ko'rinadi.
+
+Egasi Sozlamalar → AI yordamchi bo'limida Gemini kaliti/modelini saqlaydi. Maxsus faktura izohi Gemini kalitini ishlatadi; umumiy chatda boshqa provayder tanlangan bo'lsa ham boshqa AIga yashirin o'tmaydi. Kalit yo'q yoki Gemini xatosida “Mahalliy izoh” deb aniq belgilangan diagnostika chiqadi; bu erkin savolga Gemini javobi emas. Bulutda Gemini kaliti mavjud emasligi lokal kompyuterda ham yo'q degani emas.
+
+Suhbat har faktura va foydalanuvchi/firma sessiyasi uchun alohida, restartda tiklanadi. Oxirgi 20 faktura suhbati, har birida 20 xabargacha saqlanadi. Yangi yuklash yoki solishtirish o'zgarsa oldingi suhbat qayta ishlatilmaydi. Javob kutish paytida ma'lumot yangilansa 409 qaytadi: oynani qayta oching. Gemini yangi 1C/E-DOCS so'rovini bajarmaydi; izoh oxirgi yuklangan natijaga tayanadi, to'liq qayta nazorat uchun E-DOCS'dan qayta yuklang.
+
+AI kontekstida EHFdan 100 va mos 1C hujjatlaridan jami 100 tagacha tovar qatori, ko'pi bilan 10 mos hujjat uzatiladi; jami/berilgan sonlari orqali qisqartirish ko'rsatiladi. AI moslikni o'zgartirmaydi va hujjat yozish/imzolash vositalariga ega emas.
 
 ## E-DOCS o'chirilgan kirim bo'yicha cheklov
 
