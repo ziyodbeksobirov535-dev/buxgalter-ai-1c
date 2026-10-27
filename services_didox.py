@@ -102,12 +102,13 @@ def _map_invoice(d: dict) -> dict:
             "kind": "Товары", "items": items}
 
 
-async def fetch_invoices(settings: dict, date_from: str = "", date_to: str = "") -> tuple[list[dict], str]:
+async def fetch_invoices(settings: dict, date_from: str = "", date_to: str = "", known_ids=()) -> tuple[list[dict], str]:
     if settings.get("edocs_enabled"):
         from services_edocs import EdocsError
         from services_edocs_api import fetch_invoices as fetch_edocs
         try:
-            return await fetch_edocs(settings, date_from=date_from, date_to=date_to), "edocs"
+            extra = {"known_ids": known_ids} if known_ids else {}
+            return await fetch_edocs(settings, date_from=date_from, date_to=date_to, **extra), "edocs"
         except EdocsError as e:
             raise DidoxError(str(e), status=400) from None
     if date_from or date_to:

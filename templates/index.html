@@ -802,7 +802,7 @@
             <div x-show="firmForm.edocs_enabled" class="space-y-2">
               <input x-model="firmForm.edocs_login" placeholder="E-DOCS login" autocomplete="off" class="w-full rounded-lg border p-2 text-slate-900">
               <input type="password" x-model="firmForm.edocs_password" placeholder="E-DOCS parol" autocomplete="new-password" class="w-full rounded-lg border p-2 text-slate-900">
-              <p class="text-xs text-slate-500">Parol shifrlanadi. Avval sozlamalarni saqlang. Kiruvchi imzolangan fakturalar API orqali olinadi.</p>
+              <p class="text-xs text-slate-500">Parol shifrlanadi. Avval sozlamalarni saqlang. Kirim va chiqim fakturalari holatlari bilan API orqali olinadi.</p>
               <button type="button" @click="busy('E-DOCS tekshirilmoqda…', async () => { const r = await api('/api/firms/' + firmId + '/edocs/check', {method: 'POST'}); if (r) alert(r.detail); })" class="rounded-lg border px-3 py-2">Ulanishni tekshirish</button>
             </div>
             <div class="font-semibold">📑 Didox</div>
@@ -1014,7 +1014,7 @@
       <div x-show="mode !== 'rules'" class="flex-1 overflow-y-auto thin-scroll p-4 space-y-4 relative">
 
         <!-- KPI -->
-        <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <div x-show="!(mode==='didox' && edocsEnabled())" class="grid grid-cols-2 xl:grid-cols-4 gap-3">
           <div class="kpi rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4">
             <div class="text-xs text-slate-500 dark:text-slate-400">📄 Jami qatorlar</div>
             <div class="mt-1 text-2xl font-bold num" x-text="kpis.total ?? 0"></div>
@@ -1044,15 +1044,22 @@
         </div>
 
         <div x-show="mode==='didox' && edocsEnabled()" class="rounded-xl border border-sky-300 bg-sky-50 dark:bg-slate-900 p-4 mb-4 space-y-3">
-          <p class="font-semibold">📑 E-DOCS — faqat o‘qish</p>
-          <p class="text-sm">Kiruvchi imzolangan fakturalar va tovar qatorlari olinadi. Hujjat yaratish, imzolash va 1C ga yozish yopiq.</p>
+          <p class="font-semibold">📑 E-DOCS ↔ 1C nazorati — faqat o‘qish</p>
+          <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            <template x-for="metric in ehfMetrics()" :key="metric.label">
+              <div class="rounded-xl border bg-white dark:bg-slate-900 p-3"><div class="text-xs text-slate-500" x-text="metric.label"></div><div class="mt-1 text-xl font-semibold" x-text="metric.count"></div></div>
+            </template>
+          </div>
+          <template x-for="warning in (snap?.ehf_summary?.warnings || [])" :key="warning"><p class="text-sm text-amber-700 dark:text-amber-300" x-text="'⚠️ ' + warning"></p></template>
+          <p class="text-sm">Kirim va chiqim fakturalari holatlari bilan olinadi. Imzo kutilmoqda va tasdiqlanganlar 1C bilan solishtiriladi; o‘chirilgan EHF uchun 1C da hujjat borligi tekshiriladi. Hujjat yaratish, imzolash va 1C ga yozish yopiq.</p>
           <div class="flex flex-wrap items-end gap-3">
             <label>Boshlanish sanasi<input type="date" x-model="ehfFrom" class="block rounded border p-2 text-slate-900"></label>
             <label>Tugash sanasi<input type="date" x-model="ehfTo" class="block rounded border p-2 text-slate-900"></label>
             <button @click="loadDidox()" :disabled="loading" class="rounded bg-brand-600 text-white px-4 py-2">🔄 E-DOCS’dan yuklash</button>
           </div>
+          <p x-show="snap?.ehf_summary?.period" class="text-xs" x-text="'Tekshirilgan davr: ' + (snap?.ehf_summary?.period?.from || '') + ' — ' + (snap?.ehf_summary?.period?.to || '')"></p>
           <p x-show="snap?.loaded_at" class="text-xs" x-text="'Oxirgi yuklash: ' + new Date(snap?.loaded_at).toLocaleString()"></p>
-          <p x-show="snap?.offline" class="text-sm">1C bilan tekshirilmagan. Jonli 1C ulanishini sozlasangiz, solishtirish ham bajariladi.</p>
+          <p x-show="snap?.offline" class="text-sm">1C tekshiruvi to‘liq bajarilmadi. Sabablar yuqorida ko‘rsatilgan; ulanish va OData obyektlarini tekshiring.</p>
         </div>
 
         <!-- Bo'sh holat -->
@@ -1102,7 +1109,7 @@
              x-text="'🔴 ' + (status.onec?.error || '')"></div>
         <div x-show="status.onec?.warning && mode !== 'rules'" class="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs px-3 py-2"
              x-text="'🟡 ' + (status.onec?.warning || '')"></div>
-        <div x-show="snap?.offline" class="rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm px-3 py-2">
+        <div x-show="snap?.offline && mode==='vipiska'" class="rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-sm px-3 py-2">
           ⚪ <b>Ko'rish rejimi:</b> 1C ga ulanib bo'lmadi — dublikat va kontragentlar 1C bilan tekshirilmadi. Schyotlar qoidalar va standart bo'yicha, shartnomalar to'lov maqsadidan ko'rsatilmoqda. 1C ulangach «🔄 1C da qayta tekshirish» ni bosing.
           <button x-show="canPost" @click="openFiles()" class="mt-1.5 block text-xs rounded-lg border border-slate-400 dark:border-slate-600 px-2.5 py-1 hover:bg-white dark:hover:bg-slate-700">📁 1C eksport fayllarini yuklash (OData'siz tekshirish)</button>
         </div>
@@ -1151,6 +1158,11 @@
             <select :value="flt().dir" @change="setFilter('dir', $event.target.value)" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1">
               <option value="">⬇️⬆️ Hammasi</option><option value="kirim">⬇️ Kirim</option><option value="chiqim">⬆️ Chiqim</option>
             </select>
+            <select x-show="mode==='didox' && edocsEnabled()" :value="flt().ehf || ''" @change="setFilter('ehf', $event.target.value)" title="EHF holati" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1">
+              <option value="">Barcha EHF holatlari</option><option value="sended">Imzo kutilmoqda</option><option value="signed">Tasdiqlangan</option><option value="deleted">O‘chirilgan</option><option value="rejected">Rad etilgan</option><option value="drafts">Qoralama</option><option value="onec_only">Faqat 1C ro‘yxatida</option>
+            </select>
+            <input x-show="mode==='didox'" type="date" :value="flt().from || ''" @change="setFilter('from', $event.target.value)" title="Jadval sanasi — dan" class="rounded border p-1 text-slate-900">
+            <input x-show="mode==='didox'" type="date" :value="flt().to || ''" @change="setFilter('to', $event.target.value)" title="Jadval sanasi — gacha" class="rounded border p-1 text-slate-900">
             <input :value="flt().q" @input="setFilter('q', $event.target.value)" placeholder="Qidirish: kontragent, STIR, №, maqsad"
                    class="flex-1 min-w-[180px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-1">
             <button x-show="filterActive()" @click="resetFilter()" class="rounded-lg px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">✕ Tozalash</button>
@@ -1163,27 +1175,28 @@
             <table class="w-full text-sm">
               <thead class="bg-slate-50 dark:bg-slate-800/60 text-xs text-slate-500 dark:text-slate-400 text-left">
                 <tr>
-                  <th class="px-2 py-2 w-8"><input type="checkbox" class="rounded" :checked="allSelected()" :disabled="!visibleRows().some(r => r.selectable)" @change="toggleAll($event.target.checked)" title="Barcha yangi qatorlarni tanlash"></th>
+                  <th x-show="!snap?.read_only" class="px-2 py-2 w-8"><input type="checkbox" class="rounded" :checked="allSelected()" :disabled="!visibleRows().some(r => r.selectable)" @change="toggleAll($event.target.checked)" title="Barcha yangi qatorlarni tanlash"></th>
                   <th class="px-2 py-2 whitespace-nowrap">Sana & №</th>
                   <th class="px-2 py-2">Kontragent & STIR</th>
                   <th class="px-2 py-2">Turi</th>
                   <th class="px-2 py-2 text-right whitespace-nowrap">Summa (UZS)</th>
                   <th class="px-2 py-2 hidden 2xl:table-cell">To'lov maqsadi</th>
-                  <th class="px-2 py-2 min-w-[120px]">🧠 AI & 1C Tarix Schyoti</th>
-                  <th class="px-2 py-2">Holati</th>
+                  <th x-show="!snap?.read_only" class="px-2 py-2 min-w-[120px]">🧠 AI & 1C Tarix Schyoti</th>
+                  <th class="px-2 py-2" x-text="mode==='didox' ? 'EHF holati / 1C natijasi' : 'Holati'"></th>
                   <th class="px-2 py-2 text-right">Amal</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                 <template x-for="r in visibleRows()" :key="r.id">
                   <tr :class="rowClass(r)">
-                    <td class="px-2 py-2.5 align-top">
+                    <td x-show="!r.read_only" class="px-2 py-2.5 align-top">
                       <input type="checkbox" class="rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)"
                              :title="r.selectable ? 'Tanlash' : 'Bloklangan: ' + (r.blockers[0] || r.status_label)">
                     </td>
                     <td class="px-2 py-2.5 align-top whitespace-nowrap">
                       <div class="font-medium num" x-text="fmtDate(r.date)"></div>
                       <div class="text-xs text-slate-500" x-text="'№ ' + r.number"></div>
+                      <div x-show="r.ehf_status_label" class="mt-1 text-xs font-medium text-sky-700 dark:text-sky-300" x-text="r.ehf_status_label"></div>
                       <div x-show="r.posted_date && r.posted_date !== r.date" class="text-[11px] text-slate-400" title="Bank o'tkazgan sana — 1C hujjati shu sana bilan" x-text="'o\'tkazildi ' + fmtDate(r.posted_date)"></div>
                     </td>
                     <td class="px-2 py-2.5 align-top max-w-[210px]">
@@ -1196,11 +1209,11 @@
                     </td>
                     <td class="px-2 py-2.5 align-top whitespace-nowrap">
                       <span class="text-xs font-medium px-2 py-0.5 rounded-full" :class="r.direction==='kirim' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'"
-                            x-text="r.kind==='ehf' ? '📑 EHF (Xarid)' : (r.direction==='kirim' ? '⬇️ Kirim' : '⬆️ Chiqim')"></span>
+                            x-text="r.kind==='ehf' ? (r.flow==='out' ? '📑 Chiqim EHF' : '📑 Kirim EHF') : (r.direction==='kirim' ? '⬇️ Kirim' : '⬆️ Chiqim')"></span>
                     </td>
                     <td class="px-2 py-2.5 align-top text-right font-semibold num whitespace-nowrap" x-text="fmt(r.amount)"></td>
                     <td class="px-2 py-2.5 align-top max-w-[240px] hidden 2xl:table-cell"><div class="text-xs text-slate-600 dark:text-slate-300 line-clamp-2" :title="r.purpose" x-text="r.purpose"></div></td>
-                    <td class="px-2 py-2.5 align-top">
+                    <td x-show="!r.read_only" class="px-2 py-2.5 align-top">
                       <select class="w-[7.5rem] text-sm rounded-lg border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 border px-2 py-1 disabled:opacity-60"
                               :title="accountTitle(r.account)" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
                         <template x-for="g in accountOptions(r)" :key="g.label">
@@ -1246,18 +1259,19 @@
             <template x-for="r in visibleRows()" :key="r.id">
               <div class="p-3" :class="rowClass(r)">
                 <div class="flex items-start gap-2">
-                  <input type="checkbox" class="mt-1 rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)">
+                  <input x-show="!r.read_only" type="checkbox" class="mt-1 rounded disabled:opacity-30" :disabled="!r.selectable || !canPost" :checked="isSel(r.id)" @change="toggleSel(r.id)">
                   <div class="min-w-0 flex-1">
                     <div class="flex items-start justify-between gap-2">
                       <div class="font-medium truncate" x-text="r.counterparty_name"></div>
                       <div class="font-semibold num whitespace-nowrap" :class="r.direction==='kirim' ? 'text-emerald-600' : 'text-rose-600'" x-text="(r.direction==='kirim' ? '+' : '−') + fmt(r.amount)"></div>
                     </div>
                     <div class="text-xs text-slate-500 num" x-text="fmtDate(r.date) + ' · № ' + r.number + ' · STIR ' + (r.counterparty_inn || '—')"></div>
+                    <div x-show="r.ehf_status_label" class="mt-1 text-xs text-sky-700 dark:text-sky-300" x-text="r.ehf_status_label + ' · ' + (r.flow==='out' ? 'Chiqim EHF' : 'Kirim EHF')"></div>
                     <div class="mt-1 text-xs text-slate-600 dark:text-slate-300 line-clamp-2" x-text="r.purpose"></div>
                     <div x-show="r.contract?.label" class="text-[11px]" :class="contractClass(r.contract)" x-text="r.contract?.label"></div>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                       <span class="text-[11px] font-medium px-2 py-0.5 rounded-lg" :class="rowStatusClass(r)" x-text="r.status_label"></span>
-                      <select class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
+                      <select x-show="!r.read_only" class="text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-1.5 py-0.5" :disabled="r.posted || r.status==='duplicate' || !canPost" @change="changeAccount(r, $event.target.value)">
                         <template x-for="g in accountOptions(r)" :key="g.label">
                           <optgroup :label="g.label">
                             <template x-for="a in g.accounts" :key="a.code">
@@ -1576,7 +1590,7 @@
         <div class="p-5 space-y-4 text-sm">
           <div class="flex items-start gap-3">
             <div class="min-w-0">
-              <div class="text-xs text-slate-500" x-text="inspect.row.kind==='ehf' ? 'Didox EHF' : (inspect.row.direction==='kirim' ? 'Bank kirim' : 'Bank chiqim')"></div>
+              <div class="text-xs text-slate-500" x-text="inspect.row.kind==='ehf' ? 'EHF sverka' : (inspect.row.direction==='kirim' ? 'Bank kirim' : 'Bank chiqim')"></div>
               <h3 class="font-semibold text-base" x-text="inspect.row.counterparty_name"></h3>
               <div class="text-xs text-slate-500 num" x-text="'№ ' + inspect.row.number + ' · ' + fmtDate(inspect.row.date) + ' · STIR ' + inspect.row.counterparty_inn"></div>
             </div>
@@ -1588,14 +1602,15 @@
           <div class="rounded-xl bg-slate-50 dark:bg-slate-800/60 p-3 text-xs" x-text="inspect.row.purpose"></div>
 
           <div>
-            <div class="font-semibold mb-1">🛡️ Dublikat tekshiruvi</div>
+            <div class="font-semibold mb-1" x-text="inspect.row.read_only ? '1C bilan sverka' : '🛡️ Dublikat tekshiruvi'"></div>
             <div class="text-xs text-slate-600 dark:text-slate-300" x-text="inspect.row.status_reason"></div>
-            <template x-if="inspect.row.match">
+            <template x-for="m in (inspect.row.matches || (inspect.row.match ? [inspect.row.match] : []))" :key="(m.entity || inspect.entity) + m.ref">
               <div class="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 p-3 text-xs grid grid-cols-2 gap-1 num">
-                <div class="text-slate-500">1C hujjati</div><div x-text="inspect.row.match.number + (inspect.row.match.posted ? ' (o\'tkazilgan)' : ' (qoralama)')"></div>
-                <div class="text-slate-500">Kiruvchi №/sana</div><div x-text="inspect.row.match.in_number + ' · ' + fmtDate(inspect.row.match.in_date)"></div>
-                <div class="text-slate-500">Summa (1C)</div><div x-text="fmt(inspect.row.match.amount)"></div>
-                <div class="text-slate-500">Hujjat turi</div><div class="truncate" x-text="inspect.entity.replace('Document_', '')"></div>
+                <div class="text-slate-500">1C hujjati</div><div x-text="(m.number || '—') + (m.posted ? ' (o\'tkazilgan)' : ' (qoralama)')"></div>
+                <div class="text-slate-500">Faktura №/sana</div><div x-text="(m.in_number || m.number || '—') + ' · ' + fmtDate(m.in_date)"></div>
+                <div class="text-slate-500">Summa (1C)</div><div x-text="m.amount == null ? 'Tekshirilmagan' : fmt(m.amount)"></div>
+                <div class="text-slate-500">Hujjat turi</div><div class="break-words" x-text="(m.entity || inspect.entity).replace('Document_', '')"></div>
+                <template x-if="m.deleted"><div class="col-span-2 text-rose-600">O‘chirishga belgilangan</div></template>
               </div>
             </template>
             <template x-for="d in (inspect.row.diffs || [])" :key="d"><div class="mt-1 text-xs text-rose-600" x-text="'🔴 ' + d"></div></template>
@@ -2161,7 +2176,7 @@ function app() {
       return [
         { label: '🗄️ 1C ulanishi', ok: o.ok === undefined ? null : o.ok && !o.warning, detail: o.error || o.warning || o.label || '…' },
         { label: '🤖 AI yordamchi', ok: a.ok ? true : null, detail: a.label || "Demo AI (kalit yo'q)" },
-        { label: f.edocs_enabled ? '📑 E-DOCS' : '📑 Didox', ok: f.edocs_enabled ? null : (f.didox_user_key ? true : null), detail: f.edocs_enabled ? 'API orqali kiruvchi imzolangan EHF' : f.didox_user_key ? 'API kaliti kiritilgan' : (f.didox_demo_mode ? 'Demo rejim' : 'API kaliti kiritilmagan') },
+        { label: f.edocs_enabled ? '📑 E-DOCS' : '📑 Didox', ok: f.edocs_enabled ? null : (f.didox_user_key ? true : null), detail: f.edocs_enabled ? 'API orqali kirim/chiqim EHF' : f.didox_user_key ? 'API kaliti kiritilgan' : (f.didox_demo_mode ? 'Demo rejim' : 'API kaliti kiritilmagan') },
         { label: '📱 Telegram bot', ok: this.status.telegram ? true : null, detail: this.status.telegram ? 'Ishlayapti' : 'Sozlanmagan (.env)' },
         { label: '📁 1C eksport fayllari', ok: files.loaded ? true : null, detail: files.loaded ? (files.counts.docs + ' bank hujjati, ' + files.counts.counterparties + ' kontragent') : 'Yuklanmagan (OData ishlasa — shart emas)' },
         { label: '🛡️ Dublikat himoyasi', ok: true, detail: (o.mode === 'live' ? 'Yoqilgan · 🔒 faqat tahlil' : 'Yoqilgan') },
@@ -2304,22 +2319,35 @@ function app() {
       if (!this.filters[this.mode]) {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem('bx_flt_' + this.mode) || 'null'); } catch (e) {}
-        this.filters[this.mode] = { cat: 'all', dir: '', q: '', ...(saved || {}) };
+        this.filters[this.mode] = { cat: 'all', dir: '', q: '', ehf: '', from: '', to: '', ...(saved || {}) };
       }
-      return this.filters[this.mode];
+      const f = this.filters[this.mode];
+      if (this.mode === 'didox' && this.edocsEnabled()) f.cat = ({dup:'matched', diff:'differences', new:'missing', blocked:'unchecked', posted:'matched'})[f.cat] || f.cat;
+      return f;
     },
     setFilter(k, v) {
       this.flt()[k] = v;
-      try { localStorage.setItem('bx_flt_' + this.mode, JSON.stringify({ cat: this.flt().cat, dir: this.flt().dir })); } catch (e) {}
+      try { localStorage.setItem('bx_flt_' + this.mode, JSON.stringify({ cat: this.flt().cat, dir: this.flt().dir, ehf: this.flt().ehf || '', from: this.flt().from || '', to: this.flt().to || '' })); } catch (e) {}
     },
-    resetFilter() { this.filters[this.mode] = { cat: 'all', dir: '', q: '' }; this.setFilter('cat', 'all'); },
-    filterActive() { const f = this.flt(); return f.cat !== 'all' || !!f.dir || !!f.q.trim(); },
+    resetFilter() { this.filters[this.mode] = { cat: 'all', dir: '', q: '', ehf: '', from: '', to: '' }; this.setFilter('cat', 'all'); },
+    filterActive() { const f = this.flt(); return f.cat !== 'all' || !!f.dir || !!f.q.trim() || !!f.ehf || !!f.from || !!f.to; },
     rowCat(r) {
+      if (this.mode === 'didox' && r.reconcile) return r.reconcile;
       if (r.posted) return 'posted';
       if (['new', 'unchecked'].includes(r.status) && (r.blockers || []).length) return 'blocked';
       return { new: 'new', duplicate: 'dup', discrepancy: 'diff', unchecked: 'unchecked' }[r.status] || 'other';
     },
+    ehfMetrics() {
+      const c = this.snap?.ehf_summary?.counts || {};
+      return [{label:'Yuklangan EHF', count:this.rows.filter(r=>r.reconcile!=='onec_only').length},
+              {label:'1C bilan mos', count:c.matched || 0}, {label:'1C da topilmadi', count:c.missing || 0},
+              {label:'Farq / nazorat', count:(c.differences||0)+(c.deleted_in_1c||0)+(c.onec_only||0)+(c.unchecked||0)}];
+    },
     rowCats() {
+      if (this.mode === 'didox' && this.edocsEnabled()) {
+        const labels = {matched:'🟢 1C bilan mos', missing:'🟡 1C da topilmadi', differences:'🔴 Rekvizitlarda farq', deleted_in_1c:'🔴 O‘chirilgan EHF, 1C da bor', onec_only:'🟠 1C da bor, EHFda topilmadi', unchecked:'⚪ Tekshirilmagan', skipped:'Holati bo‘yicha tekshirilmaydi', deleted_absent:'O‘chirilgan, 1C da faol hujjat yo‘q'};
+        return [{id:'all',label:'📋 Hammasi',count:this.rows.length}, ...Object.entries(labels).map(([id,label])=>({id,label,count:this.rows.filter(r=>this.rowCat(r)===id).length}))];
+      }
       const n = (id) => this.rows.filter(r => this.rowCat(r) === id).length;
       return [
         { id: 'all', label: '📋 Hammasi', count: this.rows.length },
@@ -2334,6 +2362,8 @@ function app() {
     visibleRows() {
       const f = this.flt(), q = f.q.trim().toLowerCase();
       return this.rows.filter(r => (f.cat === 'all' || this.rowCat(r) === f.cat) && (!f.dir || r.direction === f.dir)
+        && (!f.ehf || r.ehf_status === f.ehf || (f.ehf==='deleted' && r.ehf_status==='erased') || (f.ehf==='sended' && r.ehf_status==='received'))
+        && (!f.from || r.date >= f.from) && (!f.to || r.date <= f.to)
         && (!q || [r.counterparty_name, r.counterparty_1c_name, r.counterparty_inn, r.number, r.purpose]
               .some(v => String(v || '').toLowerCase().includes(q))));
     },
@@ -2522,7 +2552,7 @@ function app() {
     },
     onecChip() {
       if (this.snap?.files_mode) return "1C: eksport fayllari";
-      if (this.snap?.offline) return "1C: ulanmagan";
+      if (this.snap?.offline) return this.mode === 'didox' ? '1C: tekshirilmagan' : '1C: ulanmagan';
       return this.snap?.onec_mode === 'demo' ? "1C: Demo baza" : "1C: OData";
     },
     filesBanner() {

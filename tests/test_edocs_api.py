@@ -97,7 +97,7 @@ def test_invoices_paginate_details_and_never_write():
             return httpx.Response(200, json={'docs': [{'_id': f'synthetic{page}'}], 'totalDocs': 2,
                 'page': page, 'hasNextPage': page == 1, 'nextPage': 2 if page == 1 else None})
         return httpx.Response(200, json=invoice(path.rsplit('/', 1)[-1]))
-    rows = asyncio.run(fetch_invoices(SETTINGS, transport=httpx.MockTransport(handle)))
+    rows = asyncio.run(fetch_invoices(SETTINGS, transport=httpx.MockTransport(handle), direction='in', statuses=['signed'], max_documents=1000))
     assert [r['id'] for r in rows] == ['synthetic1', 'synthetic2']
     assert rows[0]['items'][0]['qty'] == 2 and rows[0]['items'][0]['vat_rate'] == 12
     assert calls.count(('POST', '/v1.0.1/loginpassword')) == 1
@@ -124,7 +124,7 @@ def test_partial_pagination_is_not_returned(failure):
         if failure == 'missing_next': body.pop('nextPage')
         return httpx.Response(200, json=body)
     with pytest.raises(EdocsError):
-        asyncio.run(fetch_invoices(SETTINGS, transport=httpx.MockTransport(handle)))
+        asyncio.run(fetch_invoices(SETTINGS, transport=httpx.MockTransport(handle), direction='in', statuses=['signed'], max_documents=1000))
 
 
 @pytest.mark.parametrize('problem', ['buyer', 'total', 'nan', 'vat_missing', 'status'])
@@ -135,9 +135,12 @@ def test_invoice_validation(problem):
     if problem == 'total': doc['totalSumWithVat'] = 999
     if problem == 'nan': doc['data']['productlist']['products'][0]['count'] = float('nan')
     if problem == 'vat_missing': doc['data']['productlist']['products'][0].pop('vatrate')
-    if problem == 'status': doc['status'] = 'rejected'
-    with pytest.raises(EdocsError):
-        map_invoice(doc, SETTINGS['inn'])
+    if problem == 'status': doc['status'] = 'unknown'
+    if problem in ('total', 'nan', 'vat_missing'):
+        assert map_invoice(doc, SETTINGS['inn'])['parse_error']
+    else:
+        with pytest.raises(EdocsError):
+            map_invoice(doc, SETTINGS['inn'])
 
 
 def test_environment_credentials_bound_to_firm(monkeypatch):
@@ -167,3 +170,37 @@ def test_native_invoices_reach_existing_pipeline_without_demo(monkeypatch):
     assert 'E-DOCS API' in snapshot['source']
     assert len(snapshot['rows']) == 1 and snapshot['rows'][0]['status'] == 'unchecked'
     assert not snapshot['rows'][0]['posted']
+
+
+def test_all_buckets_and_previous_incoming_deletion_are_loaded():
+    from services_edocs_api import fetch_invoices
+    buckets = []
+    def handle(request):
+        path = request.url.path
+        if path.endswith('/loginpassword'): return httpx.Response(200,json={'token':'synthetic-token'})
+        if path.endswith('/profile'): return httpx.Response(200,json={'tin':SETTINGS['inn']})
+        if path.endswith('/documents'):
+            io,status=request.url.params['io'],request.url.params['status']
+            buckets.append((io,status))
+            # Kiruvchi o'chirilganlar ro'yxat API'sida yo'q, lekin oldingi ID orqali o'qiladi.
+            return httpx.Response(200,json={'docs':[],'totalDocs':0,'page':1,'hasNextPage':False,'nextPage':None})
+        d=invoice('old-incoming');d['status']='deleted'
+        return httpx.Response(200,json=d)
+    batch=asyncio.run(fetch_invoices(SETTINGS,transport=httpx.MockTransport(handle),known_ids=[{'id':'old-incoming','flow':'in'}]))
+    assert set(buckets)=={('in','received'),('in','signed'),('in','rejected'),('out','drafts'),('out','sended'),('out','signed'),('out','rejected'),('out','deleted')}
+    assert batch[0]['ehf_status']=='deleted' and batch[0]['flow']=='in'
+    assert batch.warnings
+
+
+def test_outgoing_uses_buyer_as_counterparty():
+    from services_edocs_api import map_invoice
+    d=invoice();d['data']['sellertin']=SETTINGS['inn'];d['data']['buyertin']='000000002';d['data']['buyer']={'name':'Synthetic buyer'}
+    out=map_invoice(d,SETTINGS['inn'],'out')
+    assert out['counterparty_inn']=='000000002' and out['counterparty_name']=='Synthetic buyer' and out['flow']=='out'
+
+
+def test_pending_and_rejected_are_kept_with_source_state():
+    from services_edocs_api import map_invoice
+    for status in ['sended','rejected','deleted','drafts']:
+        d=invoice();d['status']=status
+        assert map_invoice(d,SETTINGS['inn'])['ehf_status']==status

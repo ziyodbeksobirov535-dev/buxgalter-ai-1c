@@ -57,3 +57,21 @@ def test_agent_never_offers_edocs_post_card():
     ctx = services_ai.ToolContext(core.get_session('read-only-agent', 1), 'didox')
     result = asyncio.run(ctx.run('post_confirmed_to_1c', {'mode': 'didox'}))
     assert result['holat'] == 'yozish_yopiq' and not ctx.cards
+
+
+def test_source_history_survives_period_switch_and_restart(monkeypatch):
+    db.update_firm(1, {'edocs_enabled': True})
+    s = core.get_session('synthetic-ehf-history', 1)
+    january = services_edocs_api.map_invoice(invoice(), SETTINGS['inn'])
+    february = dict(january, id='synthetic-february', date='2026-02-10')
+    fetch = AsyncMock(side_effect=[[january], [february], []])
+    monkeypatch.setattr(services_edocs_api, 'fetch_invoices', fetch)
+    asyncio.run(core.load_didox(s, '2026-01-01', '2026-01-31'))
+    assert not core.snapshot(s, 'didox')['outdated']
+    asyncio.run(core.load_didox(s, '2026-02-01', '2026-02-28'))
+    restored = core._load_session(s.sid, s.firm_id)
+    assert len(restored.ehf_history) == 2
+    asyncio.run(core.load_didox(restored, '2026-01-01', '2026-01-31'))
+    assert fetch.call_args.kwargs['known_ids'] == [{'id': january['id'], 'flow': 'in'}]
+    # 404 yoki bo'sh javob ham oldingi IDni keyingi tekshiruvdan yo'qotmaydi.
+    assert len(restored.ehf_history) == 2

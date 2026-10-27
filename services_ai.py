@@ -132,7 +132,7 @@ def _brief(r: dict) -> dict:
     return {"id": r["id"], "sana": r["date"], "raqam": r["number"],
             "turi": "Kirim" if r["direction"] == "kirim" else "Chiqim", "summa": r["amount"],
             "kontragent": r["counterparty_name"], "stir": r["counterparty_inn"], "holat": r["status"],
-            "sabab": r.get("status_reason"), "farqlar": r.get("diffs"), "schyot": r.get("account"),
+            "sabab": r.get("status_reason"), "ehf_holati": r.get("ehf_status_label"), "sverka": r.get("reconcile"), "farqlar": r.get("diffs"), "schyot": r.get("account"),
             "schyot_manbasi": r.get("account_source"), "to'siqlar": r.get("blockers")}
 
 
@@ -188,7 +188,7 @@ class ToolContext:
     async def t_check_didox_vs_1c(self) -> dict:
         snap = await core.load_didox(self.session)
         self.refresh.add("didox")
-        return {"manba": snap["source"], "kpi": snap["kpis"], "qatorlar": [_brief(r) for r in snap["rows"]]}
+        return {"manba": snap["source"], "kpi": snap["kpis"], "sverka": snap.get("ehf_summary"), "qatorlar": [_brief(r) for r in snap["rows"]]}
 
     async def t_learn_from_1c_history(self, stir: str = "") -> dict:
         onec = await core.readable_onec(self.session)  # OData ishlamasa — 1C eksport fayllaridan
@@ -315,7 +315,10 @@ def mock_reply(calls: list[tuple[str, dict]], results: list[dict], mode: str) ->
         if "xato" in res:
             parts.append(f"⚠️ {res['xato']}")
             continue
-        if name in ("analyze_and_deduplicate_vipiska", "check_didox_vs_1c"):
+        if name == "check_didox_vs_1c" and res.get('sverka'):
+            report = res['sverka']; counts = report.get('counts', {})
+            parts.append("**EHF ↔ 1C nazorati**\n" + "\n".join(f"- {label}: **{counts.get(code, 0)}**" for code, label in [('matched','Mos'),('missing','1C da topilmadi'),('differences','Farq bor'),('deleted_in_1c','EHF o‘chirilgan, 1C da bor'),('onec_only','Faqat 1C ro‘yxatida'),('unchecked','Tekshirilmagan')]) + "\n" + "\n".join('⚠️ ' + w for w in report.get('warnings', [])))
+        elif name in ("analyze_and_deduplicate_vipiska", "check_didox_vs_1c"):
             k = res["kpi"]
             title = "Bank vipiskasi" if name.startswith("analyze") else "Didox EHF"
             lines = [f"**{title} tahlili** ({res.get('manba') or '—'})"]

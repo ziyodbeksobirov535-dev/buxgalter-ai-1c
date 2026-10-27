@@ -31,6 +31,8 @@ class Session:
     vipiska: list[dict] = field(default_factory=list)
     didox: list[dict] = field(default_factory=list)
     didox_source: str = ""
+    ehf_summary: dict = field(default_factory=dict)
+    ehf_history: list[dict] = field(default_factory=list)
     chat: list[dict] = field(default_factory=list)
     # Telegram tugmalari uchun: token -> aniq qatorlar to'plami (tugma faqat o'zi ko'rsatgan qatorlarni yozadi)
     batches: dict = field(default_factory=dict)
@@ -63,7 +65,7 @@ def save_session(session: Session) -> None:
             "source": st.source, "warnings": st.warnings, "is_sample": st.is_sample, "own_inn": st.own_inn,
             "own_name": st.own_name, "opening_balance": st.opening_balance},
         "vipiska": session.vipiska, "didox": session.didox, "didox_source": session.didox_source,
-        "analyzed_with": session.analyzed_with,
+        "analyzed_with": session.analyzed_with, "ehf_summary": session.ehf_summary, "ehf_history": session.ehf_history,
         "chat": session.chat[-20:],
     }
     try:
@@ -108,6 +110,8 @@ def _load_session(sid: str, firm_id: int) -> Session:
         session.vipiska = data.get("vipiska", [])
         session.didox = data.get("didox", [])
         session.didox_source = data.get("didox_source", "")
+        session.ehf_summary = data.get("ehf_summary", {})
+        session.ehf_history = data.get("ehf_history", [])
         session.analyzed_with = data.get("analyzed_with", {})
         session.chat = [m for m in data.get("chat", []) if isinstance(m, dict)
                         and m.get("role") in ("user", "model") and isinstance(m.get("text"), str)][-20:]
@@ -284,7 +288,8 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     files = analyzed.startswith(FILES)
     expected = files_tag(session.firm_id) if files else onec_fingerprint(session.firm_id)
     stale = bool(rows) and not offline and analyzed not in ("", expected)
-    outdated = bool(rows) and session.analyzed_with.get(f"{mode}_ver") != ANALYSIS_VERSION
+    version = EHF_ANALYSIS_VERSION if mode == 'didox' and ehf_read_only(session) else ANALYSIS_VERSION
+    outdated = bool(rows) and session.analyzed_with.get(f"{mode}_ver") != version
     st = session.statement if mode == "vipiska" else None
     fs = firm_settings(session.firm_id)
     write = {"enabled": fs["onec_write_enabled"] and services_1c.WRITES_ENABLED, "limit": fs["onec_write_limit"],
@@ -296,6 +301,7 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
     return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices, "write": write,
             "outdated": outdated, "period": period,
             "read_only": mode == "didox" and ehf_read_only(session),
+            "ehf_summary": session.ehf_summary if mode == "didox" else None,
             "loaded_at": session.analyzed_with.get("didox_loaded_at") if mode == "didox" else None,
             "onec_mode": onec_for(session).mode, "stale": stale, "offline": offline, "firm_id": session.firm_id,
             "files_mode": files, "files": files1c.summary(files1c.load_store(session.firm_id))["counts"] if files else None,
@@ -338,6 +344,7 @@ OFFLINE = "offline:"
 FILES = "files:"
 # Tahlil qoidalari o'zgarganda oshiriladi — eski tahlil qilingan jadvalda "qayta tekshiring" ogohlantirishi chiqadi
 ANALYSIS_VERSION = "2026-10-18.6"
+EHF_ANALYSIS_VERSION = "2026-10-27.1"
 
 
 async def load_statement(session: Session, filename: str, content: bytes, is_sample: bool = False) -> dict:
@@ -398,29 +405,49 @@ async def load_didox(session: Session, date_from: str = "", date_to: str = "") -
         raise DidoxError("📑 Bu firma uchun Didox API kaliti kiritilmagan (⚙️ Joriy firma → Didox). Demo "
                          "hisob-fakturalar faqat Demo firmada ko'rsatiladi.", status=400)
     period_args = {"date_from": date_from, "date_to": date_to} if date_from or date_to else {}
+    history = {(r['flow'], r['id']): r for r in session.ehf_history}
+    if settings.get('edocs_enabled'):
+        for r in session.didox:
+            if r.get('source_id'):
+                h = {'id': r['source_id'], 'flow': r.get('flow', 'in'), 'date': r['date']}
+                history[(h['flow'], h['id'])] = h
+        known = [{'id': r['id'], 'flow': r['flow']} for r in history.values()
+                 if (not date_from or r['date'] >= date_from) and (not date_to or r['date'] <= date_to)]
+        if known: period_args['known_ids'] = known
     invoices, source = await fetch_invoices(settings, **period_args)
     async with session.lock:
         onec = onec_for(session)
         if source == "edocs" and onec.mode == "demo":
             onec = OneCService(OfflineOData("E-DOCS haqiqiy EHF demo 1C bilan solishtirilmaydi"))
         onec.invalidate()
-        try:
-            session.didox = await analyze_invoices(invoices, onec, session.didox, rules_of(session))
-            session.analyzed_with["didox"] = (OFFLINE + onec_fingerprint(session.firm_id)) if onec.mode == "offline" else analysis_tag(session, onec)
-        except ODataError as e:
-            if onec.mode != "live":
-                raise
-            fs = file_onec(session.firm_id)  # jonli 1C javob bermadi — fayllar / ko'rish rejimi
-            fallback = fs or OneCService(OfflineOData(str(e)))
-            session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
-            session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
-        session.didox_source = "Didox (demo)" if source == "demo" else ("E-DOCS API (kiruvchi imzolangan EHF)" if source == "edocs" else "Didox API")
+        if source == "edocs":
+            from services_ehf import reconcile
+            session.didox, session.ehf_summary = await reconcile(invoices, onec, settings['inn'], date_from, date_to)
+            history.update({(r['flow'], r['id']): r for r in session.ehf_history})
+            for inv in invoices:
+                h = {'id': inv['id'], 'flow': inv.get('flow', 'in'), 'date': inv['date']}
+                history[(h['flow'], h['id'])] = h
+            session.ehf_history = list(history.values())
+            session.analyzed_with["didox"] = (OFFLINE + onec_fingerprint(session.firm_id)) if not any(session.ehf_summary['coverage'].values()) else analysis_tag(session, onec)
+        else:
+            session.ehf_summary = {}
+            try:
+                session.didox = await analyze_invoices(invoices, onec, session.didox, rules_of(session))
+                session.analyzed_with["didox"] = (OFFLINE + onec_fingerprint(session.firm_id)) if onec.mode == "offline" else analysis_tag(session, onec)
+            except ODataError as e:
+                if onec.mode != "live":
+                    raise
+                fs = file_onec(session.firm_id)  # jonli 1C javob bermadi — fayllar / ko'rish rejimi
+                fallback = fs or OneCService(OfflineOData(str(e)))
+                session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
+                session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
+        session.didox_source = "Didox (demo)" if source == "demo" else ("E-DOCS API (kirim va chiqim EHF)" if source == "edocs" else "Didox API")
         if source == "edocs":
             for row in session.didox:
                 row["read_only"] = True
                 row["selectable"] = False
         session.analyzed_with["didox_loaded_at"] = datetime.now(timezone.utc).isoformat()
-        session.analyzed_with["didox_ver"] = ANALYSIS_VERSION
+        session.analyzed_with["didox_ver"] = EHF_ANALYSIS_VERSION if source == 'edocs' else ANALYSIS_VERSION
         save_session(session)
     return snapshot(session, "didox")
 
@@ -500,6 +527,9 @@ async def preview_payload(session: Session, mode: str, row_id: str) -> dict:
     row = next((r for r in rows_of(session, mode) if r["id"] == row_id), None)
     if not row:
         raise KeyError(row_id)
+    if mode == 'didox' and ehf_read_only(session):
+        return {'row': row, 'payload': None, 'payload_error': 'EHF sverka — faqat o‘qish.',
+                'learned_names': {}, 'entity': (row.get('match') or {}).get('entity', row['entity'])}
     onec = analysis_onec(session, mode)
     payload, error = None, None
     if onec.mode in ("file", "offline"):

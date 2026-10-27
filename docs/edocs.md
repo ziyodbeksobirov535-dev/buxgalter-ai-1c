@@ -1,6 +1,6 @@
 # E-DOCS ulanishi
 
-Login/parol autentifikatsiyasi, firma STIRi, kiruvchi imzolangan EHF ro'yxati va har bir fakturaning tovar qatorlari jonli hisobda tekshirildi. Brauzer, reklama oynasi, faylni qo'lda yuklash va `data/edocs-profile.json` bu API yo'li uchun kerak emas.
+Login/parol autentifikatsiyasi, firma STIRi, kirim/chiqim EHF ro'yxati va har bir fakturaning tovar qatorlari jonli hisobda tekshirildi. Brauzer, reklama oynasi, faylni qo'lda yuklash va `data/edocs-profile.json` bu API yo'li uchun kerak emas.
 
 Bu saytning o'z ochiq mijozida ishlatiladigan API; ommaviy hamkorlik API shartnomasi deb hisoblanmasin. Sayt formati o'zgarsa parserni moslash talab qilinadi.
 
@@ -22,18 +22,18 @@ Oddiy API yo'li uchun requirements.txt yetarli; Playwright kerak emas.
 .venv/bin/python -m services_edocs_api --fetch --from-date 2026-01-01 --to-date 2026-01-31
 ```
 
-Birinchi buyruq login/profilni, ikkinchisi barcha kiruvchi imzolangan fakturalarni, uchinchisi berilgan davrni tekshiradi. Natijada faqat holat yoki fakturalar soni chiqadi; login, parol, STIR, kontragentlar, summalar va token chiqmaydi. Token faqat bitta ish davomida xotirada turadi. Login avtomatik qayta urinilmaydi va redirect kuzatilmaydi.
+Birinchi buyruq login/profilni, ikkinchisi barcha kirim/chiqim fakturalarni, uchinchisi berilgan davrni tekshiradi. Natijada faqat holat yoki fakturalar soni chiqadi; login, parol, STIR, kontragentlar, summalar va token chiqmaydi. Token faqat bitta ish davomida xotirada turadi. Login avtomatik qayta urinilmaydi va redirect kuzatilmaydi.
 
 ## O'qish va to'liqlik tekshiruvlari
 
 - `POST /v1.0.1/loginpassword` — faqat autentifikatsiya.
 - `GET /v1.0.1/profile` — tanlangan firma STIRi mosligini tekshirish.
-- `GET /v1.0.1/documents` — `type=factura`, `io=in`, `status=signed`; sahifalab o'qish.
+- `GET /v1.0.1/documents` — `type=factura`, kirim va chiqim, saytda mavjud holatlar bo'yicha sahifalab o'qish.
 - `GET /v1.0.1/documents/factura/{id}` — tovar qatorlari, MXIK, miqdor, narx, QQS va summalar.
 
-So'rovlar ketma-ket yuboriladi. Xaridor STIRi har bir fakturada tekshiriladi. Takroriy ID, noto'g'ri sahifalash, yuklash vaqtida o'zgargan umumiy son, yetishmagan qatorlar yoki qator summalari mos kelmasa to'liq operatsiya xato bilan tugaydi; qisman natija qaytarilmaydi. Hujjat chegarasi 1000; undan ko'p bo'lsa CLI/API funksiyasida kichikroq sana davrini tanlash kerak.
+So'rovlar ketma-ket yuboriladi. Kirimda xaridor, chiqimda sotuvchi STIRi tekshiriladi. Takroriy ID, noto'g'ri sahifalash, yuklash vaqtida o'zgargan umumiy son yoki sarlavha xatosida to'liq operatsiya to'xtaydi; qisman natija qaytarilmaydi. Tovar qatorlari yoki ularning summasi mos kelmasa faktura sarlavhasi saqlanadi, tafsilot tekshirilmagani ko'rsatiladi. Hujjat chegarasi 10000; undan ko'p bo'lsa kichikroq sana davrini tanlang.
 
-Hozir faqat kiruvchi imzolangan `factura` hujjatlari olinadi; imzolanmagan, rad etilgan, hybridInvoice va shartnomalar ushbu importga kirmaydi. Tovar/xizmat schyotlari mavjud 1C mantiqi bilan tekshirilishi kerak. Jadval bo'yicha fon sinxronlash hali qo'shilmagan; dastur yuklash so'rovi yoki CLI orqali avtomatik API o'qishini bajaradi.
+EHF barcha mavjud holatlari bilan kirim/chiqim yo'nalishlarida olinadi. Imzo kutilmoqda va tasdiqlanganlar 1C bilan solishtiriladi. O'chirilgan EHF uchun 1C da faol hujjat borligi tekshiriladi. Qoralama va rad etilganlar odatdagi sverkaga kirmaydi. Filtrlar, teskari nazorat va qamrov cheklovlari [EHF sverka yo'riqnomasida](ehf-reconciliation.md) yozilgan. Jadval bo'yicha fon sinxronlash hali yoqilmagan.
 
 ## Qoralama yaratish bo'yicha tekshiruv
 
@@ -51,7 +51,7 @@ Avval Chromium TLS xatosi berdi va doimiy NSS ishonch bazasiga CA qo'shish avtom
 
 1. Sozlamalar → Joriy firma bo‘limida STIR/JShShIRni saqlang. Sozlamalar → Ulanishlar bo‘limida “E-DOCS orqali o‘qish”ni yoqing, login/parolni kiriting va saqlang.
 2. “Ulanishni tekshirish” tugmasini bosing.
-3. Chap menyudagi “EHF fakturalar” sahifasini oching. Kerak bo'lsa boshlanish/tugash sanasini tanlang; bo'sh davr barcha mavjud imzolangan fakturalarni oladi (1000 gacha).
+3. “EHF” sahifasini oching. Kerak bo'lsa boshlanish/tugash sanasini tanlang; bo'sh davr API ro'yxatlaridagi barcha mavjud kirim/chiqim fakturalarni holatlari bilan oladi (10000 gacha). Kiruvchi o'chirilganlar bo'yicha qamrov cheklovini ko'ring.
 4. “E-DOCS’dan yuklash” tugmasini bosing. Manba, oxirgi yuklash vaqti va natijalar ko'rinadi.
 
 E-DOCS natijalari ushbu integratsiyada faqat o'qiladi: UI yozish tugmalarini yashiradi va server ham yozishni rad etadi. AI tasdiqlash kartasi chiqarmaydi. Haqiqiy fakturalar demo 1C bilan solishtirilmaydi; jonli 1C ulanmagan bo'lsa “tekshirilmagan” holatida ko'rsatiladi. Muvaffaqiyatsiz qayta yuklash oldingi jadvalni o'chirmaydi.
