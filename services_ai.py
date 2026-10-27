@@ -206,6 +206,8 @@ class ToolContext:
         mode = mode if mode in ("vipiska", "didox") else self.mode
         if not services_1c.WRITES_ENABLED and core.onec_for(self.session).mode == "live":
             return {"holat": "yozish_yopiq", "izoh": services_1c.WRITE_LOCK_TEXT}
+        if mode == "didox" and core.ehf_read_only(self.session):
+            return {"holat": "yozish_yopiq", "izoh": "E-DOCS fakturalari faqat o'qish uchun."}
         rows = core.rows_of(self.session, mode)
         if not rows:
             return {"xato": "Avval vipiska (yoki Didox) ni yuklang va tekshiring"}

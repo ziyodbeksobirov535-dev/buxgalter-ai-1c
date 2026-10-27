@@ -89,7 +89,7 @@
           </div>
         </template>
         <template x-if="page==='didox'">
-          <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3.5 py-1.5">🔄 <span class="hidden sm:inline">Didox'dan yuklash</span></button>
+          <button @click="loadDidox()" class="inline-flex items-center gap-1.5 rounded-full bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-3.5 py-1.5">🔄 <span class="hidden sm:inline" x-text="edocsEnabled() ? 'E-DOCS’dan yuklash' : 'Didox’dan yuklash'"></span></button>
         </template>
         <!-- holat: 1C va AI (nuqta + matn katta ekranda) -->
         <div class="hidden md:flex items-center gap-1 text-[11px]">
@@ -618,7 +618,7 @@
             <label class="block"><span class="text-xs text-slate-500">Firma nomi</span>
               <input x-model="firmForm.name" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
             <label class="block"><span class="text-xs text-slate-500">STIR (1C dagi tashkilot)</span>
-              <input x-model="firmForm.inn" inputmode="numeric" maxlength="9" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
+              <input x-model="firmForm.inn" inputmode="numeric" maxlength="14" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
           </div>
           <label class="block"><span class="text-xs text-slate-500">Bank hisob raqamlari (vergul bilan, ixtiyoriy) — boshqa firmaning vipiskasini aniqlash uchun</span>
             <input x-model="firmForm.bank_accounts" placeholder="20208000100123456001, 20208000…" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
@@ -638,7 +638,7 @@
 
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
             <div class="font-semibold">📑 EHF manbasi</div>
-            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.edocs_enabled"> E-DOCS orqali olish (sinov)</label>
+            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.edocs_enabled"> E-DOCS orqali o‘qish</label>
             <div x-show="firmForm.edocs_enabled" class="space-y-2">
               <input x-model="firmForm.edocs_login" placeholder="E-DOCS login" autocomplete="off" class="w-full rounded-lg border p-2 text-slate-900">
               <input type="password" x-model="firmForm.edocs_password" placeholder="E-DOCS parol" autocomplete="new-password" class="w-full rounded-lg border p-2 text-slate-900">
@@ -881,12 +881,24 @@
           </div>
         </div>
 
+        <div x-show="mode==='didox' && edocsEnabled()" class="rounded-xl border border-sky-300 bg-sky-50 dark:bg-slate-900 p-4 mb-4 space-y-3">
+          <p class="font-semibold">📑 E-DOCS — faqat o‘qish</p>
+          <p class="text-sm">Kiruvchi imzolangan fakturalar va tovar qatorlari olinadi. Hujjat yaratish, imzolash va 1C ga yozish yopiq.</p>
+          <div class="flex flex-wrap items-end gap-3">
+            <label>Boshlanish sanasi<input type="date" x-model="ehfFrom" class="block rounded border p-2 text-slate-900"></label>
+            <label>Tugash sanasi<input type="date" x-model="ehfTo" class="block rounded border p-2 text-slate-900"></label>
+            <button @click="loadDidox()" :disabled="loading" class="rounded bg-brand-600 text-white px-4 py-2">🔄 E-DOCS’dan yuklash</button>
+          </div>
+          <p x-show="snap?.loaded_at" class="text-xs" x-text="'Oxirgi yuklash: ' + new Date(snap?.loaded_at).toLocaleString()"></p>
+          <p x-show="snap?.offline" class="text-sm">1C bilan tekshirilmagan. Jonli 1C ulanishini sozlasangiz, solishtirish ham bajariladi.</p>
+        </div>
+
         <!-- Bo'sh holat -->
         <template x-if="!rows.length && !loading && !noFirms">
           <div class="rounded-2xl border-2 border-dashed p-8 text-center bg-white dark:bg-slate-900"
                :class="drag ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/20' : 'border-slate-300 dark:border-slate-700'">
             <div class="text-4xl" x-text="mode==='vipiska' ? '🏦' : '📑'"></div>
-            <h2 class="mt-3 text-lg font-semibold" x-text="mode==='vipiska' ? 'Bank vipiskasini yuklang' : 'Didox EHF larini 1C bilan solishtiring'"></h2>
+            <h2 class="mt-3 text-lg font-semibold" x-text="mode==='vipiska' ? 'Bank vipiskasini yuklang' : (edocsEnabled() ? 'E-DOCS fakturalarini yuklang' : 'Didox EHF larini 1C bilan solishtiring')"></h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400 max-w-xl mx-auto" x-show="mode==='vipiska'">
               Excel (.xlsx), CSV yoki 1CClientBankExchange (.txt). Har bir qator 1C da dublikatga tekshiriladi,
               schyotlar oldingi 1C yozuvlaridan o'rganiladi, yangilari faqat qoralama sifatida kiritiladi.</p>
@@ -900,8 +912,8 @@
                   <button x-show="isDemoFirm()" @click="downloadSample()" class="rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium px-4 py-2">📥 Test Vipiska faylini yuklab olish</button>
                 </div>
               </template>
-              <template x-if="mode==='didox'">
-                <button @click="loadDidox()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2">🔄 Didox'dan yuklash va tekshirish</button>
+              <template x-if="mode==='didox' && !edocsEnabled()">
+                <button @click="loadDidox()" class="rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium px-4 py-2" x-text="edocsEnabled() ? '🔄 E-DOCS’dan yuklash' : '🔄 Didox’dan yuklash va tekshirish'"></button>
               </template>
             </div>
             <p class="mt-4 text-xs text-slate-400" x-show="mode==='vipiska'">Faylni shu yerga sudrab tashlashingiz ham mumkin</p>
@@ -954,7 +966,7 @@
         <!-- Jadval -->
         <div x-show="rows.length && !loading" class="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 overflow-hidden">
           <div class="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 text-sm">
-            <span class="font-semibold" x-text="mode==='vipiska' ? 'Vipiska qatorlari' : 'Didox EHF hujjatlari'"></span>
+            <span class="font-semibold" x-text="mode==='vipiska' ? 'Vipiska qatorlari' : (edocsEnabled() ? 'E-DOCS EHF hujjatlari' : 'Didox EHF hujjatlari')"></span>
             <span x-show="mode==='vipiska' && snap?.period" class="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-sky-300 num" x-text="periodLabel()"></span>
             <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500" x-text="onecChip()"></span>
             <div class="ml-auto flex items-center gap-2">
@@ -1276,7 +1288,7 @@
           <span x-text="'Tanlangan: ' + selCount() + ' ta · ' + fmt(selSum()) + ' so\'m'"></span>
           <span class="hidden sm:inline"> · 🛡️ Dublikat va farqli qatorlarni tanlab bo'lmaydi</span>
         </div>
-        <span x-show="!canPost" class="ml-auto text-xs text-slate-500">👁 Kuzatuvchi rejimi — 1C ga yozish huquqi yo'q</span>
+        <span x-show="!canPost" class="ml-auto text-xs text-slate-500" x-text="snap?.read_only ? '👁 E-DOCS — faqat o‘qish' : '👁 Kuzatuvchi rejimi — 1C ga yozish huquqi yo‘q'"></span>
         <button x-show="canPost && fileMode() && mode==='vipiska'" @click="exportImportFile()" :disabled="!exportCount() || exporting"
                 class="ml-auto w-full sm:w-auto rounded-xl bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2.5 shadow-sm"
                 x-text="exportLabel()"></button>
@@ -1636,6 +1648,7 @@ const WELCOME = "Salom! Men **AI Buxgalter Copilot**man 👋\n\n- 🏦 Vipiskani
 
 function app() {
   return {
+    ehfFrom: '', ehfTo: '',
     mode: 'vipiska', page: 'home', dark: false, drag: false, chatOpen: false,
     dash: null, dashLoading: false, hov: {}, topSide: 'debitor', stock: null, stockLoading: false, stockSearch: '', stockCache: {}, cmpFilter: 'all', notionHelp: false,
     stockSrc: (() => { try { return localStorage.getItem('stockSrc') || '1c'; } catch (e) { return '1c'; } })(),
@@ -1655,7 +1668,7 @@ function app() {
     filesBox: false, filesInfo: null, filesUploading: false, filesResult: [], exporting: false,
     newRule: { kind: 'counterparty', match: '', direction: 'chiqim', doc_kind: 'bank', account: '', advance_account: '', locked: true },
 
-    get canPost() { return !!(this.me && this.me.can_post); },
+    get canPost() { return !!(this.me && this.me.can_post) && !this.snap?.read_only && !(this.mode === 'didox' && this.edocsEnabled()); },
 
     get snap() { return this.data[this.mode]; },
     get rows() { return (this.snap && this.snap.rows) || []; },
@@ -1696,7 +1709,7 @@ function app() {
       return [
         { id: 'home', icon: '🏠', label: 'Bosh sahifa', short: 'Bosh' },
         { id: 'bank', icon: '🏦', label: 'Bank vipiskalari', short: 'Bank', badge: bank || '' },
-        { id: 'didox', icon: '📑', label: 'Didox fakturalar', short: 'Didox', badge: didox || '' },
+        { id: 'didox', icon: '📑', label: 'EHF fakturalar', short: 'EHF', badge: didox || '' },
         { id: 'stock', icon: '📦', label: 'Sklad va qoldiqlar', short: 'Sklad' },
         { id: 'rules', icon: '📚', label: 'Hisob qoidalari', short: 'Qoidalar', badge: this.rulesSummary.conflicts || '' },
         { id: 'settings', icon: '⚙️', label: 'Sozlamalar', short: 'Sozlama' },
@@ -2210,7 +2223,7 @@ function app() {
       if (m === 'rules') { this.loadRules(); return; }
       // qoidalar o'zgargan bo'lsa — jadvalni yangi qoidalar bilan qayta tekshiramiz
       if (leavingRules && this.rulesDirty && this.data[m]?.rows?.length) { this.rulesDirty = false; this.recheck(); }
-      if (m === 'didox' && !this.data.didox?.rows?.length) this.loadDidox();
+      if (m === 'didox' && !this.data.didox?.rows?.length && !this.edocsEnabled()) this.loadDidox();
     },
     async busy(msg, fn) { this.loading = true; this.busyMsg = msg; try { return await fn(); } finally { this.loading = false; } },
     async upload(file) {
@@ -2226,15 +2239,20 @@ function app() {
       const s = await this.busy("🧪 Test vipiska 1C bilan solishtirilmoqda…", () => this.api('/api/vipiska/sample', { method: 'POST' }));
       if (s) { this.selected.vipiska = []; this.setSnap(s); this.toast("🧪 Test vipiska yuklandi: " + s.kpis.duplicates + " dublikat bloklandi", 'ok'); }
     },
+    edocsEnabled() { return !!this.status?.firm?.edocs_enabled; },
     async loadDidox() {
       this.mode = 'didox';
-      const s = await this.busy("📑 Didox EHF lar 1C bilan solishtirilmoqda…", () => this.api('/api/didox/load', { method: 'POST' }));
+      const query = new URLSearchParams();
+      if (this.edocsEnabled()) {
+        if (this.ehfFrom) query.set('date_from', this.ehfFrom);
+        if (this.ehfTo) query.set('date_to', this.ehfTo);
+      }
+      const s = await this.busy(this.edocsEnabled() ? "📑 E-DOCS fakturalari o‘qilmoqda…" : "📑 Didox EHF lar tekshirilmoqda…", () => this.api('/api/didox/load?' + query, { method: 'POST' }));
       if (s) { this.selected.didox = []; this.setSnap(s); }
     },
     async recheck() {
-      const s = this.mode === 'didox'
-        ? await this.busy('🔄 1C qayta tekshirilmoqda…', () => this.api('/api/didox/load', { method: 'POST' }))
-        : await this.busy('🔄 1C qayta tekshirilmoqda…', () => this.api('/api/vipiska/recheck', { method: 'POST' }));
+      if (this.mode === 'didox') { await this.loadDidox(); return; }
+      const s = await this.busy('🔄 1C qayta tekshirilmoqda…', () => this.api('/api/vipiska/recheck', { method: 'POST' }));
       if (s) { this.setSnap(s); this.toast('🔄 1C bilan qayta solishtirildi', 'ok'); }
     },
     downloadSample() {
@@ -2555,6 +2573,7 @@ function app() {
     // ---------------- chat
     chips() {
       const base = ["🏦 Vipiskani dublikatga tekshir", "🧠 Oldingi 1C tarixidan schyotlarni mosla", "✅ Yangi vipiskalarni 1C ga kirit", "📊 Kunlik pul oqimi tahlili"];
+      if (this.mode === 'didox' && this.edocsEnabled()) return ["📑 EHF larni tekshir", "📊 EHF tahlili"];
       return this.mode === 'didox' ? ["📑 Didox EHF ni 1C bilan solishtir", "✅ Yangi Didox EHF larni 1C ga kirit", ...base.slice(0, 2)] : base;
     },
     async send(text) {

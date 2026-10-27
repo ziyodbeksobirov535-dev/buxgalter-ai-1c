@@ -102,14 +102,16 @@ def _map_invoice(d: dict) -> dict:
             "kind": "Товары", "items": items}
 
 
-async def fetch_invoices(settings: dict) -> tuple[list[dict], str]:
+async def fetch_invoices(settings: dict, date_from: str = "", date_to: str = "") -> tuple[list[dict], str]:
     if settings.get("edocs_enabled"):
         from services_edocs import EdocsError
         from services_edocs_api import fetch_invoices as fetch_edocs
         try:
-            return await fetch_edocs(settings), "edocs"
+            return await fetch_edocs(settings, date_from=date_from, date_to=date_to), "edocs"
         except EdocsError as e:
             raise DidoxError(str(e), status=400) from None
+    if date_from or date_to:
+        raise DidoxError("Sana bo'yicha yuklash hozir E-DOCS manbasi uchun mavjud.", status=400)
     if settings.get("didox_demo_mode") or not settings.get("didox_user_key"):
         return _demo_invoices(), "demo"
     headers = {"user-key": settings["didox_user_key"]}

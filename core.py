@@ -7,7 +7,7 @@ import json
 import logging
 import secrets
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import config
 import db
@@ -268,6 +268,10 @@ def rows_of(session: Session, mode: str) -> list[dict]:
     return session.didox if mode == "didox" else session.vipiska
 
 
+def ehf_read_only(session: Session) -> bool:
+    return bool(firm_settings(session.firm_id).get("edocs_enabled") or session.didox_source.startswith("E-DOCS"))
+
+
 def snapshot(session: Session, mode: str = "vipiska") -> dict:
     rows = rows_of(session, mode)
     source = session.didox_source if mode == "didox" else (session.statement.source if session.statement else "")
@@ -291,6 +295,8 @@ def snapshot(session: Session, mode: str = "vipiska") -> dict:
         period = {"from": min(r.date for r in st.rows).isoformat(), "to": max(days).isoformat()}
     return {"mode": mode, "rows": rows, "kpis": kpis(rows), "source": source, "account_choices": choices, "write": write,
             "outdated": outdated, "period": period,
+            "read_only": mode == "didox" and ehf_read_only(session),
+            "loaded_at": session.analyzed_with.get("didox_loaded_at") if mode == "didox" else None,
             "onec_mode": onec_for(session).mode, "stale": stale, "offline": offline, "firm_id": session.firm_id,
             "files_mode": files, "files": files1c.summary(files1c.load_store(session.firm_id))["counts"] if files else None,
             "exportable": sum(1 for r in rows if files1c.exportable(r)) if mode == "vipiska" else 0,
@@ -384,20 +390,23 @@ async def recheck_vipiska(session: Session) -> dict:
     return snapshot(session, "vipiska")
 
 
-async def load_didox(session: Session) -> dict:
+async def load_didox(session: Session, date_from: str = "", date_to: str = "") -> dict:
     settings = firm_settings(session.firm_id)
     demo_didox = not settings.get("edocs_enabled") and (settings["didox_demo_mode"] or not settings.get("didox_user_key"))
     if demo_didox and onec_for(session).mode != "demo":
         # Demo hisob-fakturalar o'ylab topilgan — haqiqiy firmaning 1C si bilan solishtirish chalg'itadi
         raise DidoxError("📑 Bu firma uchun Didox API kaliti kiritilmagan (⚙️ Joriy firma → Didox). Demo "
                          "hisob-fakturalar faqat Demo firmada ko'rsatiladi.", status=400)
-    invoices, source = await fetch_invoices(settings)
+    period_args = {"date_from": date_from, "date_to": date_to} if date_from or date_to else {}
+    invoices, source = await fetch_invoices(settings, **period_args)
     async with session.lock:
         onec = onec_for(session)
+        if source == "edocs" and onec.mode == "demo":
+            onec = OneCService(OfflineOData("E-DOCS haqiqiy EHF demo 1C bilan solishtirilmaydi"))
         onec.invalidate()
         try:
             session.didox = await analyze_invoices(invoices, onec, session.didox, rules_of(session))
-            session.analyzed_with["didox"] = analysis_tag(session, onec)
+            session.analyzed_with["didox"] = (OFFLINE + onec_fingerprint(session.firm_id)) if onec.mode == "offline" else analysis_tag(session, onec)
         except ODataError as e:
             if onec.mode != "live":
                 raise
@@ -406,6 +415,11 @@ async def load_didox(session: Session) -> dict:
             session.didox = await analyze_invoices(invoices, fallback, session.didox, rules_of(session))
             session.analyzed_with["didox"] = files_tag(session.firm_id) if fs else OFFLINE + onec_fingerprint(session.firm_id)
         session.didox_source = "Didox (demo)" if source == "demo" else ("E-DOCS API (kiruvchi imzolangan EHF)" if source == "edocs" else "Didox API")
+        if source == "edocs":
+            for row in session.didox:
+                row["read_only"] = True
+                row["selectable"] = False
+        session.analyzed_with["didox_loaded_at"] = datetime.now(timezone.utc).isoformat()
         session.analyzed_with["didox_ver"] = ANALYSIS_VERSION
         save_session(session)
     return snapshot(session, "didox")
@@ -443,6 +457,8 @@ async def post(session: Session, mode: str, ids: list[str], force_ids: list[str]
                force_reason: str = "", by: str = "") -> dict:
     """Qoralama yozish. force_ids — buxgalter "baribir yozish"ni alohida tasdiqlagan qatorlar
     (faqat "farq bor" yoki "raqamsiz mos kelgan" qatorlar; to'liq dublikat hech qachon yozilmaydi)."""
+    if mode == "didox" and ehf_read_only(session):
+        raise ODataError("E-DOCS fakturalari faqat o'qish uchun. 1C ga yozish yopiq.")
     if (session.analyzed_with.get(mode) or "").startswith(FILES):
         raise ODataError("📁 Vipiska 1C eksport fayllari bo'yicha tekshirilgan — 1C ga 📤 «1C import fayli» orqali "
                          "kiriting (Банк и касса → Банковские выписки → Загрузить)")

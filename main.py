@@ -364,7 +364,7 @@ def _with_context(ctx: FirmCtx, snap: dict) -> dict:
         if owner else []
     snap["owner_firms"] = [{"id": f["id"], "name": f["name"], "inn": f["inn"]} for f in matches
                            if f["id"] != ctx.firm_id and db.user_can_access(ctx.user, f["id"])]
-    snap["can_post"] = ctx.can_post
+    snap["can_post"] = ctx.can_post and not snap.get("read_only")
     return snap
 
 
@@ -474,8 +474,10 @@ async def recheck(ctx: FirmCtx = Depends(firm_ctx)):
 
 
 @app.post("/api/didox/load")
-async def didox_load(ctx: FirmCtx = Depends(firm_ctx)):
-    return _with_context(ctx, await core.load_didox(ctx.session))
+async def didox_load(date_from: str = "", date_to: str = "", ctx: FirmCtx = Depends(firm_ctx)):
+    snap = await core.load_didox(ctx.session, date_from, date_to)
+    db.audit(ctx.user["id"], ctx.firm_id, "ehf_read", rows=len(snap["rows"]))
+    return _with_context(ctx, snap)
 
 
 class AccountIn(BaseModel):

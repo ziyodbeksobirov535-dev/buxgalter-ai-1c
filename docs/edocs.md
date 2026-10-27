@@ -46,3 +46,23 @@ Biroq sayt login/parol rejimida “faqat ko'rish, ma'lumotlarni o'zgartirish che
 `services_edocs.py` va `requirements-edocs.txt` oldingi eksperimental adapter sifatida qoldirilgan; asosiy EHF yuklash undan foydalanmaydi. Uning Playwright selektorlari va namunaviy JSON eksport shartnomasi haqiqiy saytga moslangan deb hisoblanmasin.
 
 Avval Chromium TLS xatosi berdi va doimiy NSS ishonch bazasiga CA qo'shish avtomatik ko'rikda rad etildi. Bu o'zgarish bajarilmadi, TLS tekshiruvi o'chirilmadi. Ishlayotgan API yo'li HTTPX va muhitning mavjud CA ishonch sozlamalarini ishlatadi.
+
+## BUXGALTER AI ichida foydalanish
+
+1. Sozlamalar → Joriy firma: STIR/JShShIR, “E-DOCS orqali o‘qish”, login va parolni kiriting, sozlamalarni saqlang.
+2. “Ulanishni tekshirish” tugmasini bosing.
+3. Chap menyudagi “EHF fakturalar” sahifasini oching. Kerak bo'lsa boshlanish/tugash sanasini tanlang; bo'sh davr barcha mavjud imzolangan fakturalarni oladi (1000 gacha).
+4. “E-DOCS’dan yuklash” tugmasini bosing. Manba, oxirgi yuklash vaqti va natijalar ko'rinadi.
+
+E-DOCS natijalari ushbu integratsiyada faqat o'qiladi: UI yozish tugmalarini yashiradi va server ham yozishni rad etadi. AI tasdiqlash kartasi chiqarmaydi. Haqiqiy fakturalar demo 1C bilan solishtirilmaydi; jonli 1C ulanmagan bo'lsa “tekshirilmagan” holatida ko'rsatiladi. Muvaffaqiyatsiz qayta yuklash oldingi jadvalni o'chirmaydi.
+
+Lokal kompyuterda `start.command` bilan ishlatayotgan foydalanuvchi loyiha nusxasini GitHub'dagi `work` branchidan yangilashi kerak. Avval mahalliy o'zgarishlarni `git status` bilan ko'ring; ularni reset/clean bilan o'chirmang. Git orqali yangilash mumkin bo'lsa:
+
+```sh
+git fetch origin
+git switch work
+git pull --ff-only origin work
+./start.command
+```
+
+Buyruqlar loyiha papkasida bajariladi. Branch almashish yoki pull mahalliy o'zgarish sabab to'xtasa, foydalanuvchi ishini saqlab masalani alohida hal qiling. `.env` va `data/` o'chirilmaydi. Bulutga kiritilgan maxfiy qiymatlar lokal kompyuterga avtomatik kelmaydi; lokal dastur sozlamalarida kiritiladi.
