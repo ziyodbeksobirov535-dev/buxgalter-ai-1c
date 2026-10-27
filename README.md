@@ -70,8 +70,13 @@ Bu ikki marta kiritish imkonsizligini isbotlaydi.
 
 ## 🏠 Sahifalar
 
-Manzil sahifani eslab qoladi (`#/home`, `#/bank`, `#/didox`, `#/stock`, `#/rules`, `#/settings`) — yangilansa ham
+Manzil sahifani eslab qoladi (`#/home`, `#/bank`, `#/didox`, `#/stock`, `#/settings`, `#/settings/rules`) — yangilansa ham
 joyida qoladi, Telegram'dan to'g'ridan-to'g'ri kerakli sahifani ochish mumkin.
+
+**Hisob qoidalari** endi **Sozlamalar → Hisob qoidalari** ichida. Eski `#/rules` havolasi ham shu joyga yo'naltiriladi.
+Sozlamalar **Tizim holati**, **Joriy firma**, **Ulanishlar**, **Hisob qoidalari**, **AI yordamchi**, **Firmalar**, **Foydalanuvchilar**, **Faoliyat jurnali** va **Akkaunt** bo'limlariga ajratilgan.
+Firma rekvizitlari «Joriy firma»da, 1C/E-DOCS/Didox/Notion esa «Ulanishlar»da sozlanadi.
+Buxgalter va kuzatuvchi hisob qoidalariga avvalgi huquqlari bilan kira oladi.
 
 - **🏠 Bosh sahifa** — **51.10 qoldig'i** (1C provodkalaridan; 1C yo'q bo'lsa — vipiskaning yakuniy qoldig'i).
   1C dagi qoldiq bugungi emas — **1C ga oxirgi kiritilgan bank hujjati sanasidagi** holat: shu sana va

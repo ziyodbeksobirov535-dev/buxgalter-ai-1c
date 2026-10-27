@@ -6,7 +6,7 @@ Bu saytning o'z ochiq mijozida ishlatiladigan API; ommaviy hamkorlik API shartno
 
 ## Sozlash
 
-Egasi → Sozlamalar → Joriy firma: firma STIRini kiriting, E-DOCS manbasini yoqing, login/parolni kiriting va saqlang. Parol bazada shifrlanadi, API javoblarida maskalanadi. Login o'zgarsa eski parol o'chiriladi. “Ulanishni tekshirish” faqat login va STIRni tekshiradi. EHF sahifasida yuklash fakturalarni API orqali olib mavjud 1C bilan solishtirish mantiqiga beradi.
+Egasi → Sozlamalar → Joriy firma: firma STIRini kiriting va saqlang. Keyin Sozlamalar → Ulanishlar bo‘limida E-DOCS manbasini yoqing, login/parolni kiriting va saqlang. Parol bazada shifrlanadi, API javoblarida maskalanadi. Login o'zgarsa eski parol o'chiriladi. “Ulanishni tekshirish” faqat login va STIRni tekshiradi. EHF sahifasida yuklash fakturalarni API orqali olib mavjud 1C bilan solishtirish mantiqiga beradi.
 
 Bulutda `EDOCS_LOGIN` va `EDOCS_PASSWORD` maxfiy bindinglari faqat `api.edocs.uz` manzili uchun; `EDOCS_INN` — kutiladigan firma STIR/JShShIRi. Mahalliy firma login/paroli ikkalasi ham yo'q bo'lsa, ushbu bindinglar faqat firma STIRi `EDOCS_INN` bilan aynan mos kelganda ishlatiladi. Mahalliy login va bulut paroli aralashtirilmaydi.
 
@@ -49,7 +49,7 @@ Avval Chromium TLS xatosi berdi va doimiy NSS ishonch bazasiga CA qo'shish avtom
 
 ## BUXGALTER AI ichida foydalanish
 
-1. Sozlamalar → Joriy firma: STIR/JShShIR, “E-DOCS orqali o‘qish”, login va parolni kiriting, sozlamalarni saqlang.
+1. Sozlamalar → Joriy firma bo‘limida STIR/JShShIRni saqlang. Sozlamalar → Ulanishlar bo‘limida “E-DOCS orqali o‘qish”ni yoqing, login/parolni kiriting va saqlang.
 2. “Ulanishni tekshirish” tugmasini bosing.
 3. Chap menyudagi “EHF fakturalar” sahifasini oching. Kerak bo'lsa boshlanish/tugash sanasini tanlang; bo'sh davr barcha mavjud imzolangan fakturalarni oladi (1000 gacha).
 4. “E-DOCS’dan yuklash” tugmasini bosing. Manba, oxirgi yuklash vaqti va natijalar ko'rinadi.

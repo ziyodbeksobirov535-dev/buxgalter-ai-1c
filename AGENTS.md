@@ -83,3 +83,12 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
 - Haqiqiy E-DOCS fakturalari demo 1C ga solishtirilmaydi; jonli ulanish bo'lmasa offline/unchecked ko'rsatiladi. Xatoda avvalgi jadval saqlanadi. `tests/test_edocs_app.py` ilova endpointlari, read-only, davr va qayta yuklash regressiyalarini tekshiradi.
 - Lokal ishga tushirish bo'yicha docs/edocs.md yangilandi. Bulut bindinglari lokal kompyuterga avtomatik ko'chmaydi. data/ va .env saqlanadi; lokal o'zgarishlarni reset/clean bilan yo'qotmang.
 - Tekshiruv: 273 test o‘tdi. Haqiqiy Chromium brauzerida mahalliy sun’iy hisob bilan login → EHF sahifasi → E-DOCS yuklash → faktura qatori → yozish tugmalari yo‘qligi ham tekshirildi. Sahifadagi suratlar faqat sun’iy sinov ma’lumotlaridan; haqiqiy fakturalar screenshotga olinmadi.
+
+## Codex → Claude: Sozlamalar va Hisob qoidalari (2026-10-27)
+- Foydalanuvchi Qoidalar tugmasini yuqori menyudan Sozlamalar ichiga ko'chirishni va Sozlamalarni tartiblashni so'radi.
+- Qoidalar kontenti yagona nusxada `Sozlamalar → Hisob qoidalari` ichida. `#/settings/rules` yangilashda saqlanadi; eski `#/rules` shu joyga yo'naltiriladi. Bank/EHF ish joyi endi alohida qoidalar sahifasini ko'rsatmaydi; qaytganda rulesDirty orqali qayta tekshirish mantiqi saqlangan.
+- Sozlamalar guruhlangan ichki menyuga ega: Umumiy; Firma va ulanishlar; Boshqaruv; Shaxsiy. Tizim holati alohida bo'limda; firma rekvizitlari va integratsiyalar alohida «Joriy firma» va «Ulanishlar»da. 1C yozish va Notion ichki havolalari yangi Ulanishlarga moslangan.
+- Buxgalter/kuzatuvchida qoidalar kirishi saqlangan, tahrirlash huquqi mavjud backend can_edit bo'yicha. Admin bo'limlar frontendda ham rolga qarab yashiriladi. Yangi API yoki ruxsat o'zgarishi kiritilmadi.
+- Firma va Ulanishlar o'rtasida saqlanmagan forma qiymatlari saqlanadi; firma almashtirilsa to'g'ri firmaga qayta yuklanadi.
+- `tests/test_settings_navigation.py` haqiqiy Chromium va sun'iy mahalliy hisoblar bilan eski/yangi marshrutlar, qayta ochish, qoida qo'shish, uch rol, forma saqlanishi, firma almashish va telefon kengligini tekshiradi. README va docs/edocs.md navigatsiya yo'llari yangilangan. Haqiqiy 1C/E-DOCS ga test so'rovlari yuborilmagan.
+- Yakuniy tekshiruv: 276 passed, bitta mavjud Starlette TestClient deprecation ogohlantirishi. Uch rolning brauzer sinovi ham to'liq o'tdi. Skrinshotlar sun'iy ma'lumotli sinov muhitidan olingan.
