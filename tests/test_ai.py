@@ -28,7 +28,7 @@ def test_gemini_retired_model_falls_back(monkeypatch):
             return pytypes.SimpleNamespace(function_calls=None, text="Salom")
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, **kw):
             self.aio = pytypes.SimpleNamespace(models=FakeModels())
 
     import google.genai
@@ -37,3 +37,26 @@ def test_gemini_retired_model_falls_back(monkeypatch):
     res = asyncio.run(services_ai.chat(core.get_session("ai", DEMO_FIRM), "salom", "vipiska"))
     assert used == ["gemini-retired", services_ai.GEMINI_FALLBACK_MODEL]
     assert res["engine"] == "gemini" and "Salom" in res["reply"] and "yopilgan" in res["reply"]
+
+
+def test_gemini_busy_models_fall_back_to_lite_and_stay_there(monkeypatch):
+    from google.genai import errors
+    used = []
+
+    class FakeModels:
+        async def generate_content(self, model, contents, config):
+            used.append(model)
+            if model != services_ai.GEMINI_LITE_MODEL:
+                raise errors.ServerError(503, {"error": {"code": 503, "message": "busy", "status": "UNAVAILABLE"}})
+            return pytypes.SimpleNamespace(function_calls=None, text="Salom")
+
+    class FakeClient:
+        def __init__(self, api_key, **kw):
+            self.aio = pytypes.SimpleNamespace(models=FakeModels())
+
+    import google.genai
+    monkeypatch.setattr(google.genai, "Client", FakeClient)
+    config.save_settings({"ai_provider": "gemini", "gemini_api_key": "k", "gemini_model": "gemini-busy"})
+    res = asyncio.run(services_ai.chat(core.get_session("ai", DEMO_FIRM), "salom", "vipiska"))
+    assert used == ["gemini-busy", services_ai.GEMINI_FALLBACK_MODEL, services_ai.GEMINI_LITE_MODEL]
+    assert res["engine"] == "gemini" and "Salom" in res["reply"] and "band" in res["reply"]

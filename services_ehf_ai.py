@@ -91,8 +91,7 @@ def state(session, row):
 async def _generate(context, history, message, settings):
     from google import genai
     from google.genai import errors, types
-    from services_ai import GEMINI_FALLBACK_MODEL
-    GEMINI_LITE_MODEL = 'gemini-flash-lite-latest'
+    from services_ai import GEMINI_FALLBACK_MODEL, GEMINI_LITE_MODEL
 
     contents = [types.Content(role='user', parts=[types.Part.from_text(text='Tanlangan faktura (JSON):\n' +
                 json.dumps(context, ensure_ascii=False))])]

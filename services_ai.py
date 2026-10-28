@@ -415,13 +415,15 @@ def _plain_summary(name: str, res: dict) -> str:
 # Sozlamalardagi model o'chirilsa (Google eski modellarni muntazam yopadi — 404 NOT_FOUND), shu alias bilan
 # qayta uriniladi: u har doim eng so'nggi Flash modelga ishora qiladi.
 GEMINI_FALLBACK_MODEL = "gemini-flash-latest"
+# Flash band (503/504) bo'lganda oxirgi zaxira — yengil model odatda bo'sh
+GEMINI_LITE_MODEL = "gemini-flash-lite-latest"
 
 
 async def _gemini(ctx: ToolContext, message: str, settings: dict) -> str:
     from google import genai
     from google.genai import errors, types
 
-    client = genai.Client(api_key=settings["gemini_api_key"])
+    client = genai.Client(api_key=settings["gemini_api_key"], http_options=types.HttpOptions(timeout=30000))
     cfg = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT + f"\nJoriy rejim: {ctx.mode}.",
         tools=[types.Tool(function_declarations=[types.FunctionDeclaration(**d) for d in TOOL_DECLARATIONS])],
@@ -429,20 +431,24 @@ async def _gemini(ctx: ToolContext, message: str, settings: dict) -> str:
     contents = [types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part.from_text(text=m["text"])])
                 for m in ctx.session.chat[-8:]]
     contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
-    model = settings["gemini_model"]
+    models = list(dict.fromkeys([settings["gemini_model"], GEMINI_FALLBACK_MODEL, GEMINI_LITE_MODEL]))
 
     async def generate():
-        nonlocal model
-        try:
-            return await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
-        except errors.ClientError as e:
-            if e.code != 404 or model == GEMINI_FALLBACK_MODEL:
-                raise
-            log.warning("Gemini modeli %s topilmadi — %s ishlatiladi", model, GEMINI_FALLBACK_MODEL)
-            ctx.notes.append(f"ℹ️ `{model}` modeli Google tomonidan yopilgan — `{GEMINI_FALLBACK_MODEL}` ishlatildi. "
-                             "⚙️ Sozlamalarda modelni yangilang.")
-            model = GEMINI_FALLBACK_MODEL
-            return await client.aio.models.generate_content(model=model, contents=contents, config=cfg)
+        # Model yopilgan (404) yoki band (5xx/timeout) bo'lsa keyingisiga o'tamiz va shu suhbatda o'shanda qolamiz
+        while True:
+            try:
+                return await client.aio.models.generate_content(model=models[0], contents=contents, config=cfg)
+            except Exception as e:
+                if isinstance(e, errors.ClientError) and e.code != 404 or len(models) == 1:
+                    raise
+                code = getattr(e, "code", type(e).__name__)
+                log.warning("Gemini %s javob bermadi (%s) — %s ishlatiladi", models[0], code, models[1])
+                if code == 404:
+                    ctx.notes.append(f"ℹ️ `{models[0]}` modeli Google tomonidan yopilgan — `{models[1]}` ishlatildi. "
+                                     "⚙️ Sozlamalarda modelni yangilang.")
+                else:
+                    ctx.notes.append(f"ℹ️ `{models[0]}` hozir band — `{models[1]}` zaxira modeli ishlatildi.")
+                models.pop(0)
 
     for _ in range(5):
         resp = await generate()
