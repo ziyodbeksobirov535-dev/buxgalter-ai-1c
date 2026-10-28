@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from services_ehf import reconcile, ENTITIES
+from services_ehf import reconcile, ENTITIES, compare_items
 from services_1c import ODataError
 
 IN, OUT = ENTITIES['in'][0], ENTITIES['out'][0]
@@ -197,3 +197,19 @@ def test_missing_vat_detail_is_unknown_and_real_extra_line_is_difference():
     onec.t.get=get
     rows,_=asyncio.run(reconcile([invoice()],onec,'000000000'))
     assert rows[0]['reconcile']=='differences' and any('qo‘shimcha' in d for d in rows[0]['diffs'])
+
+
+def test_item_names_with_1c_suffix_and_unicode_x_match():
+    # 1C nomida «-145» qo'shimchasi, EHFda «×» va nuqta; hamma qatorda bir xil MXIK
+    code = '00000000000000001'
+    ehf = [{'name': 'Kabel A 4x2x0,52', 'ikpu': code, 'qty': 10, 'total': 100, 'vat_sum': 10},
+           {'name': 'Kabel B 4×2×0.57', 'ikpu': code, 'qty': 5, 'total': 50, 'vat_sum': 5},
+           {'name': 'Kabel C', 'ikpu': code, 'qty': 3, 'total': 30, 'vat_sum': 3}]
+    onec = [{'name': 'Kabel B 4x2x0,57-145', 'ikpu': code, 'qty': 5, 'total': 50, 'vat_sum': 5},
+            {'name': 'Kabel A 4x2x0,52-145', 'ikpu': code, 'qty': 10, 'total': 100, 'vat_sum': 10},
+            {'name': 'Boshqa nom', 'ikpu': code, 'qty': 3, 'total': 30, 'vat_sum': 3}]
+    diffs, warnings = compare_items({'items': ehf}, {'items': onec})
+    assert diffs == [] and warnings == []
+    onec[1]['qty'] = 11
+    diffs, _ = compare_items({'items': ehf}, {'items': onec})
+    assert diffs == ['Miqdor farqli: Kabel A 4x2x0,52']

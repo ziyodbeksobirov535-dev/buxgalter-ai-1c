@@ -137,6 +137,31 @@ def test_sdk_uses_no_tools_and_retired_model_fallback(monkeypatch):
     assert 'Synthetic product' in calls[0][1][0].parts[0].text
 
 
+def test_busy_model_503_falls_back_but_bad_key_does_not(monkeypatch):
+    import google.genai
+    from google.genai import errors
+    calls = []
+    class FakeAio:
+        def __init__(self): self.models = self
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def generate_content(self, *, model, contents, config):
+            calls.append(model)
+            if model == 'busy-synthetic':
+                raise errors.ServerError(503, {'error': {'code': 503, 'message': 'busy'}})
+            if model == 'badkey-synthetic':
+                raise errors.ClientError(400, {'error': {'code': 400, 'message': 'bad key'}})
+            return SimpleNamespace(text='Synthetic answer')
+    monkeypatch.setattr(google.genai, 'Client', lambda **kw: SimpleNamespace(aio=FakeAio()))
+    s = session()
+    result = asyncio.run(ai._generate(ai.context_for(s, s.didox[0]), [], 'Explain',
+                                     {'gemini_api_key': 'synthetic-key', 'gemini_model': 'busy-synthetic'}))
+    assert result[:2] == ('Synthetic answer', 'gemini-flash-latest') and calls == ['busy-synthetic', 'gemini-flash-latest']
+    with pytest.raises(errors.ClientError):
+        asyncio.run(ai._generate(ai.context_for(s, s.didox[0]), [], 'Explain',
+                                 {'gemini_api_key': 'synthetic-key', 'gemini_model': 'badkey-synthetic'}))
+
+
 def test_endpoint_auth_firm_scope_viewer_access_and_stale_revision(monkeypatch):
     user = db.create_user('synthetic-viewer', 'synthetic-password', 'viewer', firm_ids=[1])
     forbidden = db.create_firm({'name': 'Synthetic other firm', 'inn': '000000002'})

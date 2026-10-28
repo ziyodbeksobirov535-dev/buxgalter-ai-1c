@@ -92,24 +92,30 @@ async def _generate(context, history, message, settings):
     from google import genai
     from google.genai import errors, types
     from services_ai import GEMINI_FALLBACK_MODEL
+    GEMINI_LITE_MODEL = 'gemini-flash-lite-latest'
 
     contents = [types.Content(role='user', parts=[types.Part.from_text(text='Tanlangan faktura (JSON):\n' +
                 json.dumps(context, ensure_ascii=False))])]
     contents += [types.Content(role=m['role'], parts=[types.Part.from_text(text=m['text'])]) for m in history[-8:]]
     contents.append(types.Content(role='user', parts=[types.Part.from_text(text=message)]))
     cfg = types.GenerateContentConfig(system_instruction=PROMPT, temperature=.2, max_output_tokens=4096)
-    model = settings.get('gemini_model') or GEMINI_FALLBACK_MODEL
+    # Band (503) yoki yopilgan (404) model bo'lsa navbatdagi Flash modelga o'tamiz
+    models = list(dict.fromkeys([settings.get('gemini_model') or GEMINI_FALLBACK_MODEL,
+                                 GEMINI_FALLBACK_MODEL, GEMINI_LITE_MODEL]))
     note = ''
-    async with asyncio.timeout(55):
-        async with genai.Client(api_key=settings['gemini_api_key'], http_options=types.HttpOptions(timeout=45000)).aio as client:
-            try:
-                response = await client.models.generate_content(model=model, contents=contents, config=cfg)
-            except errors.ClientError as error:
-                if error.code != 404 or model == GEMINI_FALLBACK_MODEL:
-                    raise
-                model = GEMINI_FALLBACK_MODEL
-                note = 'Sozlangan model topilmadi; Gemini Flash zaxira modeli ishlatildi.'
-                response = await client.models.generate_content(model=model, contents=contents, config=cfg)
+    async with asyncio.timeout(80):
+        async with genai.Client(api_key=settings['gemini_api_key'], http_options=types.HttpOptions(timeout=25000)).aio as client:
+            for n, model in enumerate(models):
+                try:
+                    response = await client.models.generate_content(model=model, contents=contents, config=cfg)
+                    break
+                except Exception as error:
+                    # Kalit/so'rov xatosi (4xx) boshqa modelda ham takrorlanadi
+                    if isinstance(error, errors.ClientError) and error.code != 404 or n == len(models) - 1:
+                        raise
+                    log.warning('EHF Gemini %s: %s — %s modeliga o‘tiladi', model,
+                                getattr(error, 'code', type(error).__name__), models[n + 1])
+                    note = 'Asosiy Gemini modeli band yoki yopiq; zaxira model ishlatildi.'
     reply = (response.text or '').strip()
     if not reply:
         raise ValueError('empty response')
@@ -145,7 +151,7 @@ async def ask(session, row_id, message, revision):
                 engine, label = 'gemini', 'Gemini · ' + model
             except Exception as error:
                 # Xato matnida API kaliti/so'rov bo'lishi mumkin — log va javobga chiqarmaymiz.
-                log.warning('EHF Gemini javobi olinmadi: %s', type(error).__name__)
+                log.warning('EHF Gemini javobi olinmadi: %s %s', type(error).__name__, getattr(error, 'code', ''))
                 notice = 'Gemini javob bermadi. Quyida mahalliy izoh; keyinroq qayta so‘rang yoki AI sozlamalarini tekshiring.'
                 reply = _local_explanation(context)
         else:

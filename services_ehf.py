@@ -177,6 +177,32 @@ def matching(row, candidates):
     return cands, list(dict.fromkeys(diffs))
 
 
+def _item_key(v):
+    # «4×2×0.57» va «4x2x0,57» bir xil; bo'shliqlar ahamiyatsiz
+    return re.sub(r'\s+', '', str(v or '').replace('×', 'x').replace('х', 'x').replace(',', '.')).casefold()
+
+
+def _same_numbers(a, b):
+    return all(x is not None and y is not None and abs(x - y) <= tol
+               for x, y, tol in [(a.get('qty'), b.get('qty'), .000001), (a.get('total'), b.get('total'), .02)])
+
+
+def _item_choices(item, target, remaining):
+    """EHF qatoriga 1C qatorini topish: nom → nom boshi (1C dagi «-145» kabi qo'shimcha) → MXIK.
+    Bir nechta nomzod bo'lsa, miqdor va summa bilan toraytiriladi."""
+    key = _item_key(item['name'])
+    steps = [lambda o: _item_key(o['name']) == key,
+             lambda o: key and (_item_key(o['name']).startswith(key) or key.startswith(_item_key(o['name']) or '\0')),
+             lambda o: item.get('ikpu') and o.get('ikpu') == item['ikpu']]
+    for test in steps:
+        choices = [i for i in remaining if test(target[i])]
+        if len(choices) > 1:
+            choices = [i for i in choices if _same_numbers(item, target[i])] or choices
+        if choices:
+            return choices
+    return []
+
+
 def compare_items(row, candidate):
     """Tasdiqlangan farq va moslashtirishdagi noaniqlik alohida qaytadi."""
     if not candidate.get('items') or not row['items']:
@@ -185,11 +211,8 @@ def compare_items(row, candidate):
     remaining = list(range(len(target)))
     diffs, warnings = [], []
     unresolved = False
-    norm = lambda v: re.sub(r'\s+', ' ', str(v or '').strip()).casefold()
     for item in row['items']:
-        choices = [i for i in remaining if norm(target[i]['name']) == norm(item['name'])]
-        if not choices and item.get('ikpu'):
-            choices = [i for i in remaining if target[i].get('ikpu') == item['ikpu']]
+        choices = _item_choices(item, target, remaining)
         if len(choices) != 1:
             warnings.append('Tovar nomi/MXIK bo‘yicha aniq moslik topilmadi: ' + item['name'])
             unresolved = True
