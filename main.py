@@ -805,6 +805,68 @@ async def ehf_chat(row_id: str, body: EhfChatIn, ctx: FirmCtx = Depends(firm_ctx
     return res
 
 
+def _didox_draft_ctx(ctx: FirmCtx, row_id: str):
+    """Didox qoralamasi: buxgalter/egasi, firma ruxsati yoqilgan, qator EHF sessiyasida bor."""
+    ctx.require_post()
+    settings = db.firm_settings(ctx.firm_id)
+    if not settings.get("didox_drafts_enabled"):
+        raise HTTPException(403, "Didox qoralama yaratish o'chiq. Egasi: Sozlamalar → Ulanishlar → Didox.")
+    row = next((r for r in ctx.session.didox if r.get("id") == row_id), None)
+    if not row:
+        raise HTTPException(404, "Qator topilmadi — EHF ni qayta yuklang")
+    return settings, row
+
+
+@app.get("/api/didox/drafts")
+async def didox_drafts_list(ctx: FirmCtx = Depends(firm_ctx)):
+    settings = db.firm_settings(ctx.firm_id)
+    return {"enabled": bool(settings.get("didox_drafts_enabled")) and ctx.can_post,
+            "drafts": db.didox_drafts(ctx.firm_id)}
+
+
+@app.post("/api/didox/drafts/{row_id}/prepare")
+async def didox_draft_prepare(row_id: str, ctx: FirmCtx = Depends(firm_ctx)):
+    from services_didox_draft import DraftError, prepare
+    settings, row = _didox_draft_ctx(ctx, row_id)
+    existing = db.didox_draft(ctx.firm_id, (row.get("match") or {}).get("ref", ""))
+    if existing:
+        return {"existing": existing}
+    try:
+        res = await prepare(row, settings, core.onec_for(ctx.session))
+    except DraftError as e:
+        raise HTTPException(e.status if 400 <= e.status < 500 else 502, str(e)) from None
+    ctx.session.didox_prepared[row_id] = res
+    return {k: v for k, v in res.items() if k != "body"}
+
+
+class DidoxDraftIn(BaseModel):
+    revision: str = Field(..., pattern=r"^[a-f0-9]{16}$")
+    confirm: bool
+
+
+@app.post("/api/didox/drafts/{row_id}/create")
+async def didox_draft_create(row_id: str, body: DidoxDraftIn, ctx: FirmCtx = Depends(firm_ctx)):
+    from services_didox_draft import DraftError, create
+    settings, row = _didox_draft_ctx(ctx, row_id)
+    prepared = ctx.session.didox_prepared.get(row_id)
+    if not body.confirm or not prepared or prepared.get("revision") != body.revision:
+        raise HTTPException(409, "Qoralama ko'rinishi eskirgan — qayta tayyorlang")
+    ref = row["match"]["ref"]
+    if not db.claim_didox_draft(ctx.firm_id, ref, prepared["sale"].get("number") or "", ctx.user["id"]):
+        raise HTTPException(409, "Bu sotuv uchun qoralama allaqachon yuborilgan — Didox'da tekshiring")
+    try:
+        doc_id = await create(prepared, settings)
+    except DraftError as e:
+        db.finish_didox_draft(ctx.firm_id, ref, "rejected" if e.rejected else "unknown")
+        db.audit(ctx.user["id"], ctx.firm_id, "didox_draft_failed", sale_ref=ref, rejected=e.rejected)
+        raise HTTPException(502, str(e) + ("" if e.rejected else
+                            " Natija noma'lum: Didox qoralamalarini tekshiring, dastur qayta yubormaydi.")) from None
+    db.finish_didox_draft(ctx.firm_id, ref, "created", doc_id)
+    db.audit(ctx.user["id"], ctx.firm_id, "didox_draft", sale_ref=ref, doc_id=doc_id)
+    ctx.session.didox_prepared.pop(row_id, None)
+    return {"doc_id": doc_id, "draft": db.didox_draft(ctx.firm_id, ref)}
+
+
 @app.post("/api/chat")
 async def chat(body: ChatIn, ctx: FirmCtx = Depends(firm_ctx)):
     res = await services_ai.chat(ctx.session, body.message, _mode(body.mode))

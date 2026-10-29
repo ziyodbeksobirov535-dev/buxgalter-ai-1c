@@ -39,11 +39,14 @@ MIN_PASSWORD = 8
 
 FIRM_FIELDS = ("name", "inn", "onec_demo_mode", "onec_base_url", "onec_user", "onec_password", "didox_demo_mode",
                "didox_base_url", "didox_user_key", "didox_partner_token", "bank_accounts",
-               "notion_token", "notion_stock_db", "edocs_enabled", "edocs_login", "edocs_password")
-FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token", "notion_token", "edocs_password")
-FIRM_BOOLS = ("onec_demo_mode", "didox_demo_mode", "edocs_enabled")
+               "notion_token", "notion_stock_db", "edocs_enabled", "edocs_login", "edocs_password",
+               "didox_password", "didox_drafts_enabled")
+FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token", "notion_token", "edocs_password",
+                "didox_password")
+# didox_drafts_enabled — Didox'da faqat QORALAMA yaratishga ruxsat (imzo/yuborish hech qachon); 1C qulfiga aloqasi yo'q
+FIRM_BOOLS = ("onec_demo_mode", "didox_demo_mode", "edocs_enabled", "didox_drafts_enabled")
 # Maxfiy qiymat qaysi manzil/loginga tegishli: ular o'zgarsa va yangi qiymat berilmasa — eskisi o'chiriladi
-FIRM_SECRET_BOUND_TO = {"edocs_password": ("edocs_login",), "onec_password": ("onec_base_url", "onec_user"),
+FIRM_SECRET_BOUND_TO = {"edocs_password": ("edocs_login",), "didox_password": ("inn",), "onec_password": ("onec_base_url", "onec_user"),
                         "didox_user_key": ("didox_base_url",), "didox_partner_token": ("didox_base_url",)}
 
 # 1C ga yozish ruxsati — umumiy firma sozlamalaridan ALOHIDA (PUT /api/firms orqali o'zgartirib bo'lmaydi):
@@ -151,6 +154,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
     firm_id INTEGER,
     action TEXT NOT NULL,
     details TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS didox_drafts (
+    firm_id INTEGER NOT NULL,
+    sale_ref TEXT NOT NULL,
+    status TEXT NOT NULL,
+    doc_id TEXT NOT NULL DEFAULT '',
+    number TEXT NOT NULL DEFAULT '',
+    user_id INTEGER,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (firm_id, sale_ref)
 );
 CREATE TABLE IF NOT EXISTS sessions_store (
     sid TEXT PRIMARY KEY,
@@ -266,7 +279,8 @@ def init() -> None:
             c.execute("ALTER TABLE account_rules ADD COLUMN advance_account TEXT NOT NULL DEFAULT ''")
         firm_cols = [r[1] for r in c.execute("PRAGMA table_info(firms)")]
         for col, ddl in {**WRITE_ACCESS_COLUMNS, **NOTION_COLUMNS, "edocs_enabled": "INTEGER NOT NULL DEFAULT 0",
-                         "edocs_login": "TEXT NOT NULL DEFAULT ''", "edocs_password": "TEXT NOT NULL DEFAULT ''"}.items():  # 1C yozish ruxsati, Notion
+                         "edocs_login": "TEXT NOT NULL DEFAULT ''", "edocs_password": "TEXT NOT NULL DEFAULT ''",
+                         "didox_password": "TEXT NOT NULL DEFAULT ''", "didox_drafts_enabled": "INTEGER NOT NULL DEFAULT 0"}.items():  # 1C yozish ruxsati, Notion
             if col not in firm_cols:
                 c.execute(f"ALTER TABLE firms ADD COLUMN {col} {ddl}")
     _chmod600(DB_FILE)
@@ -740,6 +754,36 @@ def audit(user_id: int | None, firm_id: int | None, action: str, **details) -> N
     with tx() as c:
         c.execute("INSERT INTO audit_log (ts, user_id, firm_id, action, details) VALUES (?,?,?,?,?)",
                   (_iso(now()), user_id, firm_id, action, json.dumps(details, ensure_ascii=False, default=str)))
+
+
+# Didox qoralamalari: bitta 1C sotuvidan faqat bitta qoralama. Yuborishdan OLDIN «pending» bilan band qilinadi;
+# javob noma'lum bo'lsa «unknown» qoladi va qayta yuborilmaydi (Didox'da qo'lda tekshiriladi).
+def didox_draft(firm_id: int, sale_ref: str) -> dict | None:
+    with tx() as c:
+        row = c.execute("SELECT * FROM didox_drafts WHERE firm_id = ? AND sale_ref = ?", (firm_id, sale_ref)).fetchone()
+    return dict(row) if row else None
+
+
+def didox_drafts(firm_id: int) -> dict:
+    with tx() as c:
+        rows = c.execute("SELECT * FROM didox_drafts WHERE firm_id = ?", (firm_id,)).fetchall()
+    return {r["sale_ref"]: dict(r) for r in rows}
+
+
+def claim_didox_draft(firm_id: int, sale_ref: str, number: str, user_id: int | None) -> bool:
+    with tx() as c:
+        cur = c.execute("INSERT OR IGNORE INTO didox_drafts (firm_id, sale_ref, status, number, user_id, created_at) "
+                        "VALUES (?,?,?,?,?,?)", (firm_id, sale_ref, "pending", number, user_id, _iso(now())))
+        return cur.rowcount == 1
+
+
+def finish_didox_draft(firm_id: int, sale_ref: str, status: str, doc_id: str = "") -> None:
+    with tx() as c:
+        if status == "rejected":  # Didox aniq rad etdi — hech narsa yaratilmagan, qayta urinish mumkin
+            c.execute("DELETE FROM didox_drafts WHERE firm_id = ? AND sale_ref = ?", (firm_id, sale_ref))
+        else:
+            c.execute("UPDATE didox_drafts SET status = ?, doc_id = ? WHERE firm_id = ? AND sale_ref = ?",
+                      (status, doc_id, firm_id, sale_ref))
 
 
 def list_audit(limit: int = 100, firm_id: int | None = None) -> list[dict]:

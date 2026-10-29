@@ -31,6 +31,17 @@ def day(value):
         return None
 
 
+def vat_rate(value):
+    """1C dagi «НДС12» / «БезНДС» / «НДС0» → 12 / 0 / 0; noma'lum bo'lsa None."""
+    text = str(value or '')
+    if not text:
+        return None
+    if 'Без' in text or 'НеОблага' in text:
+        return 0.0
+    digits = re.search(r'\d+', text)
+    return float(digits[0]) if digits else None
+
+
 def base_row(inv):
     flow = inv.get('flow', 'in')
     row = {'id': 'e-' + hashlib.sha1(f"{flow}|{inv['id']}".encode()).hexdigest()[:12],
@@ -142,12 +153,14 @@ def candidate(rec, names, products=None):
         gross = (value if rec.get('СуммаВключаетНДС') is True else value + vat if value is not None and vat is not None and rec.get('СуммаВключаетНДС') is False else None)
         items.append({'name': product.get('Description') or line.get('Содержание') or '',
                       'ikpu': product.get('КодИКПУ') or product.get('КодИзКлассификатора'),
-                      'qty': qty, 'total': gross, 'vat_sum': vat})
+                      'qty': qty, 'total': gross, 'vat_sum': vat, 'vat_rate': vat_rate(line.get('СтавкаНДС')),
+                      # Didox qoralamasi uchun: o'lchov birligi (nomi keyin 1C dan o'qiladi)
+                      'unit_key': line.get('ЕдиницаИзмерения_Key') or product.get('ЕдиницаИзмерения_Key')})
     return {'ref': rec['Ref_Key'], 'entity': rec['_entity'], 'number': rec.get('Number'),
             'in_number': nums[0], 'in_date': date_value.isoformat() if date_value else '',
             'date': str(rec.get('Date', ''))[:10], 'amount': amount, 'posted': bool(rec.get('Posted')),
             'deleted': bool(rec.get('DeletionMark')), 'inn': str(cp.get('ИНН') or cp.get('ПИНФЛ') or ''),
-            'counterparty': cp.get('Description') or '',
+            'counterparty': cp.get('Description') or '', 'contract_key': rec.get('ДоговорКонтрагента_Key'),
             'external_ids': [str(rec[k]).lower() for k in ('ИдентификаторЭДО', 'ИдентификаторДокументаЭДО', 'ИдентификаторДокумента', 'ИдентификаторСчетаФактуры') if rec.get(k)], 'numbers': [number(v) for v in nums if v], 'items': items}
 
 

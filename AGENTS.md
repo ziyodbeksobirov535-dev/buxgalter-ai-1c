@@ -26,6 +26,9 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
    matniga tushmasin. `data/` va `.env` — maxfiy, git va Docker obraziga kirmaydi.
 5. GitHub'ga `push` — faqat foydalanuvchi aniq "push qil" deganda. Mahalliy commit — mumkin.
 6. Demo ma'lumotlarni (`demo_data.py`) haqiqiy mantiqqa (masalan `TAX_INNS`) qo'shmang.
+7. Didox'ga yozish faqat `services_didox_draft.ALLOWED_POST`: STIR+parol bilan kirish va 002 hisob-faktura
+   QORALAMASI. Imzolash, yuborish, rad etish, o'chirish endpointlarini qo'shmang. Firma sozlamasi
+   `didox_drafts_enabled` (egasi yoqadi) + har bir qoralama uchun buxgalter tasdig'i shart.
 
 ## Ish tartibi
 - Testlar: `.venv/bin/python -m pytest -q` — har o'zgarishdan keyin hammasi o'tishi shart; yangi funksiyaga test.
@@ -111,3 +114,15 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
 - Sverkada haqiqiy farq bilan noaniq moslashtirish ajratildi: `comparison_warnings` sariq, `partial` alohida filtr/KPI. Raqam/sana/summa/STIR mos, tovar/MXIK mosligi yetarli bo'lmasa “Rekvizitlar mos; tovarlar to'liq tekshirilmadi”. Moslashtirilmagan 1C qatori avtomatik ortiqcha deb tasdiqlanmaydi; tasdiqlangan miqdor/summa/QQS/MXIK farqlari qizil qoladi. EHF analysis versiyasi oshirildi: eski natijani qayta yuklang.
 - Mahalliy brauzerda modal yopilganda `inspect=null` bilan Alpine ichki effektlari orasidagi xato ham tuzatildi; modal endi barqaror `detail` kontekstidan foydalanadi. `docs/ehf-reconciliation.md` ishga tushirish va cheklovlarni tushuntiradi. Barcha test/suratlarda faqat sun'iy firma ma'lumotlari ishlatildi. Bulutda Gemini kaliti yo'q: haqiqiy Google javobi va jonli 1C bu ishda sinalmadi, adapter soxta Google mijozida tekshirildi.
 - Yakuniy tekshiruv: 316 passed, bitta mavjud Starlette TestClient deprecation ogohlantirishi. Gemini kontekstidagi tovar/QQS tafsiloti, allowlist/qisqartirish, follow-up va restart, firma/login huquqi, eskirgan kontekst 409, kalit/provider xatosi, 404 model fallback, noaniq/tasdiqlangan farqlar, desktop/telefon Chromium suhbat oqimi tekshirildi. Lokal nusxa `work`dan yangilanib `start.command` qayta ishga tushirilgach EHF qayta yuklansin.
+
+## Claude: Didox chiqim faktura qoralamasi (2026-10-29)
+- Egasi so'radi: 1C sotuvlaridan (Реализация) Didox'da chiqim faktura qoralamasi, imzoni o'zi Didox'da qo'yadi.
+- `services_didox_draft.py`: `https://api.didox.uz/`, `POST v1/auth/{STIR}/password/ru` (bir urinish; rad etilgan parol
+  o'zgarmaguncha qayta yuborilmaydi), GET profil/xaridor/`v1/measures/all`, `POST v1/documents/002/create`. Token 20 daqiqa
+  xotirada. Yo'llar va maydonlar ochiq SDK/integratsiyalardan olingan — Didox'ning rasmiy hujjati topilmadi, JONLI TASDIQLANMAGAN.
+- Qoralama faqat EHF sverkasida `onec_only` bo'lgan, o'tkazilgan `РеализацияТоваровУслуг` uchun. 1C dan faqat GET: birlik
+  (`Catalog_КлассификаторЕдиницИзмерения`) va shartnoma. MXIK, birlik, QQS, xaridor STIRi yetishmasa yuborilmaydi.
+- `didox_drafts` jadvali: yuborishdan oldin band qilinadi; aniq 4xx rad — o'chiriladi, noma'lum natija — `unknown`, qayta
+  yuborilmaydi. Audit logga yoziladi. UI: EHF tekshirish oynasi → «Didox'da chiqim faktura qoralamasi»; sozlama: Ulanishlar → Didox.
+- Tekshiruv: 321 test; sun'iy nusxada UI ko'rindi, parolsiz holatda Didox'ga so'rov ketmadi. Jonli Didox va haqiqiy 1C
+  birligi/shartnoma maydon nomlari sinalmagan. Partner kaliti kerak bo'lishi mumkin (`didox_partner_token`).

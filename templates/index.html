@@ -812,6 +812,11 @@
               <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
               <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
             </div>
+            <div class="rounded-lg border border-amber-200 dark:border-amber-800 p-3 space-y-2">
+              <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_drafts_enabled" class="rounded"> Didox'da chiqim faktura <b>qoralamasini</b> yaratishga ruxsat</label>
+              <input type="password" x-model="firmForm.didox_password" placeholder="Didox paroli (firma STIRi bilan kiriladi)" autocomplete="new-password" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <p class="text-xs text-slate-500">Faqat qoralama: dastur imzolamaydi, yubormaydi, o'chirmaydi — Didox'da o'zingiz tekshirib imzolaysiz. Noto'g'ri parol bo'lsa qayta urinilmaydi. 1C ga yozish qulfi bunga bog'liq emas va yopiq qoladi.</p>
+            </div>
           </div>
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
             <div class="font-semibold" id="notion-settings">📓 Notion sklad (ixtiyoriy)</div>
@@ -1618,6 +1623,36 @@
             <template x-for="d in (detail.row.diffs || [])" :key="d"><div class="mt-1 text-xs text-rose-600" x-text="'🔴 ' + d"></div></template>
             <template x-for="w in (detail.row.comparison_warnings || [])" :key="w"><div class="mt-1 text-xs text-amber-700 dark:text-amber-300" x-text="'⚠️ ' + w"></div></template>
           </div>
+
+          <template x-if="detail.row.reconcile==='onec_only' && detail.row.flow==='out' && canPost">
+            <section x-data="{dd: null, ddErr: '', ddDone: null}" aria-label="Didox qoralama" class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-3 space-y-2">
+              <h4 class="font-semibold">📝 Didox'da chiqim faktura qoralamasi</h4>
+              <p class="text-xs text-slate-500">Shu 1C sotuvidan Didox'da qoralama tayyorlanadi. Imzo va yuborishni Didox'da o'zingiz qilasiz.</p>
+              <button x-show="!dd && !ddDone" @click="ddErr=''; busy('Didox qoralamasi tayyorlanmoqda…', async () => { const r = await api('/api/didox/drafts/' + detail.row.id + '/prepare', {method:'POST'}); if (r) { if (r.existing) ddDone = r.existing; else dd = r; } })" class="rounded-lg border border-amber-400 px-3 py-1.5 text-sm">Qoralamani tayyorlash</button>
+              <p x-show="ddErr" role="alert" class="text-xs text-rose-600" x-text="ddErr"></p>
+              <template x-if="ddDone">
+                <p class="text-sm" x-text="ddDone.status==='created' ? ('✅ Didox’da qoralama bor (ID ' + ddDone.doc_id + '). Didox’da tekshirib imzolang.') : ddDone.status==='pending' ? '⏳ Qoralama yuborilmoqda…' : '⚠️ Oldingi yuborish natijasi noma’lum — Didox qoralamalarini tekshiring. Dastur qayta yubormaydi.'"></p>
+              </template>
+              <template x-if="dd">
+                <div class="space-y-2">
+                  <div class="text-xs grid grid-cols-2 gap-1 num">
+                    <div class="text-slate-500">Faktura №/sana</div><div x-text="(dd.sale.number || '—') + ' · ' + fmtDate(dd.sale.date)"></div>
+                    <div class="text-slate-500">Xaridor</div><div x-text="(dd.buyer_name || dd.sale.counterparty || '—') + ' · ' + (dd.sale.inn || '—')"></div>
+                    <div class="text-slate-500">Shartnoma</div><div x-text="dd.sale.contract_no ? (dd.sale.contract_no + ' · ' + fmtDate(dd.sale.contract_date)) : '—'"></div>
+                  </div>
+                  <div class="overflow-x-auto"><table class="w-full text-xs num">
+                    <thead><tr class="text-left text-slate-500"><th class="py-1">Tovar / MXIK</th><th>Birlik</th><th>Miqdor</th><th>Narx</th><th>QQS</th><th>Jami</th></tr></thead>
+                    <tbody><template x-for="(l, i) in dd.lines" :key="i"><tr class="border-t border-slate-200 dark:border-slate-700">
+                      <td class="py-1"><div x-text="l.name"></div><div class="text-slate-400" x-text="l.ikpu || '—'"></div></td>
+                      <td x-text="l.unit || '—'"></td><td x-text="fmt(l.qty)"></td><td x-text="fmt(l.price)"></td>
+                      <td x-text="l.vat_rate + '% · ' + fmt(l.vat_sum)"></td><td x-text="fmt(l.total)"></td></tr></template></tbody>
+                  </table></div>
+                  <template x-for="p in dd.problems" :key="p"><div class="text-xs text-rose-600" x-text="'🔴 ' + p"></div></template>
+                  <button x-show="dd.ready" @click="if (!confirm('Didox’da shu faktura QORALAMASI yaratilsinmi? Imzolanmaydi va yuborilmaydi.')) return; busy('Didox’ga qoralama yuborilmoqda…', async () => { const r = await api('/api/didox/drafts/' + detail.row.id + '/create', {json: {revision: dd.revision, confirm: true}}); dd = null; if (r) ddDone = r.draft; else ddErr = 'Qoralama yaratilmadi — xabarni o‘qing va qayta tayyorlang.'; })" class="rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2">Didox’ga qoralama sifatida saqlash</button>
+                </div>
+              </template>
+            </section>
+          </template>
 
           <template x-if="detail.ai">
             <section aria-label="Faktura bo‘yicha Gemini" class="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 p-3 space-y-3">

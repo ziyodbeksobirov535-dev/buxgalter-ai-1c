@@ -35,6 +35,8 @@ class Session:
     ehf_history: list[dict] = field(default_factory=list)
     ehf_chats: dict = field(default_factory=dict)
     ehf_ai_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Didox qoralamasi: ko'rsatilgan (tasdiqlanadigan) tana faqat xotirada; yuborishda aynan shu ishlatiladi
+    didox_prepared: dict = field(default_factory=dict)
     chat: list[dict] = field(default_factory=list)
     # Telegram tugmalari uchun: token -> aniq qatorlar to'plami (tugma faqat o'zi ko'rsatgan qatorlarni yozadi)
     batches: dict = field(default_factory=dict)
@@ -348,7 +350,7 @@ OFFLINE = "offline:"
 FILES = "files:"
 # Tahlil qoidalari o'zgarganda oshiriladi — eski tahlil qilingan jadvalda "qayta tekshiring" ogohlantirishi chiqadi
 ANALYSIS_VERSION = "2026-10-18.6"
-EHF_ANALYSIS_VERSION = "2026-10-27.2"
+EHF_ANALYSIS_VERSION = "2026-10-29.1"
 
 
 async def load_statement(session: Session, filename: str, content: bytes, is_sample: bool = False) -> dict:
