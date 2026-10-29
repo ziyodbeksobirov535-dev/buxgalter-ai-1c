@@ -62,7 +62,11 @@ def client_for(firm_id, role="accountant", username="buh"):
 # ---------------------------------------------------------------- haqiqiy firmada demo ma'lumot ko'rsatilmaydi
 def test_demo_didox_invoices_are_not_shown_for_a_real_firm(files_firm):
     session = core.get_session("r1", files_firm)
-    with pytest.raises(DidoxError, match="Didox API kaliti"):
+    with pytest.raises(DidoxError, match="Demo hisob-fakturalar faqat Demo firmada"):
+        run(core.load_didox(session))
+    # Didox tanlangan, lekin hamkor kaliti yo'q — tarmoqqa chiqilmaydi, demo ham ko'rsatilmaydi
+    db.update_firm(files_firm, {"didox_demo_mode": False, "didox_password": "synthetic-password"})
+    with pytest.raises(DidoxError, match="hamkor kaliti"):
         run(core.load_didox(session))
 
 

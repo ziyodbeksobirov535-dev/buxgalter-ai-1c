@@ -113,19 +113,26 @@ async def fetch_invoices(settings: dict, date_from: str = "", date_to: str = "",
             raise DidoxError(str(e), status=400) from None
     if date_from or date_to:
         raise DidoxError("Sana bo'yicha yuklash hozir E-DOCS manbasi uchun mavjud.", status=400)
-    if settings.get("didox_demo_mode") or not settings.get("didox_user_key"):
+    if settings.get("didox_demo_mode"):
         return _demo_invoices(), "demo"
-    headers = {"user-key": settings["didox_user_key"]}
-    if settings.get("didox_partner_token"):
-        headers["Partner-Authorization"] = settings["didox_partner_token"]
-    url = settings["didox_base_url"].rstrip("/") + DIDOX_LIST_PATH
+    if not settings.get("didox_partner_token"):
+        # Kalitsiz Didox kirishni rad etadi — parolni behuda yubormaymiz, demo'ga ham yashirin o'tmaymiz
+        raise DidoxError("Didox hamkor kaliti (partner token) kiritilmagan. Sozlamalar → Ulanishlar → EHF manbasi: "
+                         "Didox'dan olingan kalitni kiriting yoki E-DOCS'ni tanlang.", status=400)
+    if not settings.get("didox_user_key") and not settings.get("didox_password"):
+        raise DidoxError("Didox paroli yoki user-key kiritilmagan (Sozlamalar → Ulanishlar).", status=400)
+    from services_didox_draft import DidoxDraftClient, DraftError
     try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.get(url, headers=headers, params={"owner": 0, "doctype": "002", "limit": 100, "page": 1})
-    except httpx.HTTPError as e:
-        raise DidoxError(f"Didox serveriga ulanib bo'lmadi: {e}") from e
+        async with DidoxDraftClient(settings) as client:
+            if settings.get("didox_user_key"):
+                client.token = settings["didox_user_key"]
+            else:
+                await client.login()
+            r = await client._send("GET", "v1/documents?owner=0&doctype=002&limit=100&page=1")
+    except DraftError as e:
+        raise DidoxError(str(e), status=400 if e.status < 500 else 502) from None
     if r.status_code >= 400:
-        raise DidoxError(f"Didox xatosi {r.status_code}: {r.text[:300]}")
+        raise DidoxError(f"Didox xatosi {r.status_code}. Kalit/parol huquqlarini tekshiring; qayta urinilmadi.")
     data = r.json()
     docs = data.get("data") or data.get("items") or data.get("documents") or (data if isinstance(data, list) else [])
     return [_map_invoice(d) for d in docs], "live"

@@ -798,7 +798,11 @@
 
           <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
             <div class="font-semibold">📑 EHF manbasi</div>
-            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.edocs_enabled"> E-DOCS orqali o‘qish</label>
+            <p class="text-xs text-slate-500">Fakturalar faqat tanlangan bitta manbadan tortiladi — ikkalasidan bir vaqtda emas.</p>
+            <div class="flex flex-wrap gap-4">
+              <label class="flex items-center gap-2"><input type="radio" name="ehf-source" :checked="firmForm.edocs_enabled" @change="firmForm.edocs_enabled = true"> E-DOCS</label>
+              <label class="flex items-center gap-2"><input type="radio" name="ehf-source" :checked="!firmForm.edocs_enabled" @change="firmForm.edocs_enabled = false; firmForm.didox_demo_mode = false"> Didox</label>
+            </div>
             <div x-show="firmForm.edocs_enabled" class="space-y-2">
               <input x-model="firmForm.edocs_login" placeholder="E-DOCS login" autocomplete="off" class="w-full rounded-lg border p-2 text-slate-900">
               <input type="password" x-model="firmForm.edocs_password" placeholder="E-DOCS parol" autocomplete="new-password" class="w-full rounded-lg border p-2 text-slate-900">
@@ -806,11 +810,10 @@
               <button type="button" @click="busy('E-DOCS tekshirilmoqda…', async () => { const r = await api('/api/firms/' + firmId + '/edocs/check', {method: 'POST'}); if (r) alert(r.detail); })" class="rounded-lg border px-3 py-2">Ulanishni tekshirish</button>
             </div>
             <div class="font-semibold">📑 Didox</div>
-            <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_demo_mode" class="rounded"> Demo EHF ma'lumotlari</label>
-            <div x-show="!firmForm.didox_demo_mode && !firmForm.edocs_enabled" class="space-y-2">
-              <input x-model="firmForm.didox_base_url" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
-              <input type="password" x-model="firmForm.didox_partner_token" placeholder="Partner token (ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+            <div x-show="!firmForm.edocs_enabled" class="space-y-2">
+              <input type="password" x-model="firmForm.didox_partner_token" placeholder="Didox hamkor kaliti (partner token) — majburiy" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <input type="password" x-model="firmForm.didox_user_key" placeholder="Didox user-key (parol o‘rniga, ixtiyoriy)" autocomplete="off" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
+              <p class="text-xs text-slate-500">Didox API har bir so‘rovda Didox beradigan hamkor kalitini talab qiladi. Kalitsiz parol bilan kirishga urinilmaydi (hisob bloklanmasligi uchun). Kalitni Didox’dan API-integratsiya so‘rab olasiz.</p>
             </div>
             <div class="rounded-lg border border-amber-200 dark:border-amber-800 p-3 space-y-2">
               <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_drafts_enabled" class="rounded"> Didox'da chiqim faktura <b>qoralamasini</b> yaratishga ruxsat</label>

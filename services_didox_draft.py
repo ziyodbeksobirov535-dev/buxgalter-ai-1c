@@ -105,6 +105,9 @@ class DidoxDraftClient:
         if not re.fullmatch(r'\d{9}', tin) or not password:
             raise DraftError('Didox uchun firma STIRi (9 raqam) va Didox paroli kiritilmagan '
                              '(Sozlamalar → Ulanishlar).', 400)
+        if not self.s.get('didox_partner_token'):
+            raise DraftError('Didox hamkor kaliti (partner token) kiritilmagan — kalitsiz Didox kirishni rad etadi, '
+                             'shuning uchun urinilmadi.', 400)
         fp = _fingerprint(self.s)
         cached = _tokens.get(self.firm_id)
         if cached and cached[2] == fp and cached[1] > time.time():

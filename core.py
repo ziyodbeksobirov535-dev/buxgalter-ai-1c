@@ -405,11 +405,11 @@ async def recheck_vipiska(session: Session) -> dict:
 
 async def load_didox(session: Session, date_from: str = "", date_to: str = "") -> dict:
     settings = firm_settings(session.firm_id)
-    demo_didox = not settings.get("edocs_enabled") and (settings["didox_demo_mode"] or not settings.get("didox_user_key"))
+    demo_didox = not settings.get("edocs_enabled") and settings["didox_demo_mode"]
     if demo_didox and onec_for(session).mode != "demo":
         # Demo hisob-fakturalar o'ylab topilgan — haqiqiy firmaning 1C si bilan solishtirish chalg'itadi
-        raise DidoxError("📑 Bu firma uchun Didox API kaliti kiritilmagan (⚙️ Joriy firma → Didox). Demo "
-                         "hisob-fakturalar faqat Demo firmada ko'rsatiladi.", status=400)
+        raise DidoxError("📑 Demo hisob-fakturalar faqat Demo firmada ko'rsatiladi. Sozlamalar → Ulanishlar → "
+                         "EHF manbasida E-DOCS yoki Didox'ni tanlang.", status=400)
     period_args = {"date_from": date_from, "date_to": date_to} if date_from or date_to else {}
     history = {(r['flow'], r['id']): r for r in session.ehf_history}
     if settings.get('edocs_enabled'):

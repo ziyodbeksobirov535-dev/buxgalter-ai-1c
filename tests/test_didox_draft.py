@@ -18,7 +18,8 @@ SALE = {'ref': 'sale-1', 'entity': dd.SALE_ENTITY, 'posted': True, 'number': 'S-
         'inn': BUYER, 'counterparty': 'Synthetic buyer', 'amount': 112.0, 'contract_key': 'contract-1',
         'items': [{'name': 'Synthetic cable', 'ikpu': '00000000000000001', 'qty': 2, 'total': 112.0,
                    'vat_sum': 12.0, 'vat_rate': 12.0, 'unit_key': 'unit-1'}]}
-SETTINGS = {'id': 7, 'inn': SELLER, 'didox_password': 'synthetic-password', 'didox_drafts_enabled': True}
+SETTINGS = {'id': 7, 'inn': SELLER, 'didox_password': 'synthetic-password', 'didox_drafts_enabled': True,
+            'didox_partner_token': 'synthetic-partner'}
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +41,7 @@ class FakeOneC:
 def didox(calls, login_status=200):
     def handler(request: httpx.Request):
         calls.append((request.method, request.url.path, request.headers.get('user-key')))
+        assert request.headers.get('Partner-Authorization') == 'synthetic-partner'
         path = request.url.path
         if path == f'/v1/auth/{SELLER}/password/ru':
             assert json.loads(request.content) == {'password': 'synthetic-password'}
@@ -155,3 +157,10 @@ def test_endpoint_requires_setting_and_post_role():
         assert client.post('/api/didox/drafts/r-1/prepare').status_code == 403
     with _client_with_row(role='viewer') as client:
         assert client.post('/api/didox/drafts/r-1/prepare').status_code == 403
+
+
+def test_without_partner_token_no_login_is_attempted():
+    calls = []
+    with pytest.raises(dd.DraftError, match='hamkor kaliti'):
+        asyncio.run(dd.prepare(row(), dict(SETTINGS, didox_partner_token=''), FakeOneC(), didox(calls)))
+    assert calls == []

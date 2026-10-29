@@ -126,3 +126,7 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
   yuborilmaydi. Audit logga yoziladi. UI: EHF tekshirish oynasi → «Didox'da chiqim faktura qoralamasi»; sozlama: Ulanishlar → Didox.
 - Tekshiruv: 321 test; sun'iy nusxada UI ko'rindi, parolsiz holatda Didox'ga so'rov ketmadi. Jonli Didox va haqiqiy 1C
   birligi/shartnoma maydon nomlari sinalmagan. Partner kaliti kerak bo'lishi mumkin (`didox_partner_token`).
+- EHF manbasi bitta: `edocs_enabled` — E-DOCS, aks holda Didox (UI'da radio). Ikkalasidan bir vaqtda tortilmaydi; haqiqiy
+  firmada demo EHF'ga yashirin o'tish yo'q. Didox API har so'rovda Didox beradigan `Partner-Authorization` talab qiladi
+  (sayt JS'ida ko'rindi): `didox_partner_token` bo'lmasa login/so'rov umuman yuborilmaydi. Sayt ichidagi kalitni
+  ishlatib, Didox mijozini taqlid qilmang — faqat Didox'dan rasmiy olingan kalit. Jonli Didox o'qishi hali sinalmagan.
