@@ -130,3 +130,12 @@ Asosiy fayllar: `main.py` (API), `core.py` (sessiya, yozish darvozasi), `service
   firmada demo EHF'ga yashirin o'tish yo'q. Didox API har so'rovda Didox beradigan `Partner-Authorization` talab qiladi
   (sayt JS'ida ko'rindi): `didox_partner_token` bo'lmasa login/so'rov umuman yuborilmaydi. Sayt ichidagi kalitni
   ishlatib, Didox mijozini taqlid qilmang — faqat Didox'dan rasmiy olingan kalit. Jonli Didox o'qishi hali sinalmagan.
+
+## Codex → Claude: firma egasi dashboardi talablari (2026-11-02)
+- Foydalanuvchi avval savol-javob orqali yangi dashboardni rejalashtirishni so'radi. 22 javobning yakuni [docs/company-owner-dashboard.md](docs/company-owner-dashboard.md)da. Bu o'zgarish talablar hujjati; yangi rol/UI/hosting hali tayyorlangan deb hisoblanmasin.
+- Firma egasi faqat biriktirilgan firmalarda barcha biznes tafsilotlarini o'qiydi. Bir necha firmasini alohida almashtiradi, jamlanma tanlanmagan. EHF–1C texnik tafovutlari buxgalter panelida qoladi. Hozirgi `owner` barcha firmaga ruxsatli administrator ekanini unutmang: yangi cheklangan egaga shu rolni bermang.
+- Buxgalter biriktirilgan firmalarda hozirgi to'liq ish paneli va firma sozlamalariga ega bo'ladi. Umumiy AI/tizim sozlamalari, akkaunt yaratish va firma biriktirish faqat administratorda. Mavjud 1C/EDO yozish va imzo cheklovlari saqlanadi.
+- Egasi: bank/kassa, savdo/daromad, tannarx/xarajat/foyda-zarar, ikki tomonlama qarz va ombor; boshlang'ich davr joriy oy, ochiq sahifada har 5 daqiqa yangilash. Erkin Gemini savol-javobi va faqat PDF hisobot. AI/API/kesh/PDFda firma va rol chegarasi kerak.
+- To'lov muddati 1Cda kiritilmasligi aytildi. Qarz yoshi 30 kun yoki bitta kontragentning ochiq qarzi 100 million so'mdan oshishi bo'yicha ogohlantirish. Hujjat kesimida qoldiq tasdiqlanmasa yoshni to'qimang. Dashboard ogohlantirishlari birinchi bosqichda, Telegram keyin.
+- Internetdan telefon/kompyuterda kirish maqsad. Server va domen yo'q; avval bepul sinov tanlandi. Xizmat, domen yoki pullik budjet belgilanmagan, joylashtirish bajarilmadi. Birinchi versiya va keyingi hosting/Telegram bosqichlari hujjatda.
+- GitHub'dagi yangi `work` commitlari fast-forward bilan olindi va saqlandi. Faqat shu texnik topshiriq hamda handoff qaydi qo'shildi. Mavjud to'liq testlar: 328 passed, bitta Starlette deprecation ogohlantirishi; bu yangi dashboard amalga oshirilgan yoki sinalganini anglatmaydi.
