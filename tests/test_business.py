@@ -1,7 +1,7 @@
 """Firma egasi: ruxsat, tashkilot chegarasi, real hisob mantiqi, AI va PDF. Barcha ma'lumotlar sun'iy."""
 import asyncio
 from copy import deepcopy
-from datetime import datetime,timedelta
+from datetime import date,datetime,timedelta
 import json
 import sqlite3
 from urllib.parse import parse_qs,urlsplit
@@ -42,11 +42,20 @@ class Transport:
         self.ledger=[{'Организация_Key':ORG,'Active':True,'Period':TODAY.isoformat(),'LineNumber':i,'Recorder':'rec',
                       'AccountDr_Key':dt,'AccountCr_Key':kt,'Сумма':v} for i,(dt,kt,v) in enumerate([
                       ('4010','9010',1000),('9110','2910',600),('9420','6010',100),('9010','9910',1000),('9910','9110',600)])]
+        # Qarzni oshirgan provodkalar (субконто bilan): (schyot, tomoni, kontragent, necha kun oldin, summa)
+        self.moves=[('4010','Dr','cp3',5,150_000_000),('4010','Dr','cp1',5,100_000_000)]
     async def _request(self,method,path):
         self.calls.append((method,path));assert method=='GET'
         if self.fail:raise ODataError('PRIVATE-CONNECTION-URL')
         params=parse_qs(urlsplit(path).query)
         assert ORG in params['$filter'][0] and 'Организация_Key' in params['$filter'][0]
+        if 'RecordsWithExtDimensions' in path:
+            start=int(params['$skip'][0])
+            rows=[{'Организация_Key':ORG,'Active':True,'Period':(TODAY-timedelta(days=ago)).isoformat()+'T00:00:00',
+                   'Account'+col+'_Key':acc,'ExtDimension'+col+'1':cp,'ExtDimension'+col+'1_Type':'StandardODATA.'+E_COUNTERPARTY,
+                   'Сумма':v} for acc,col,cp,ago,v in self.moves
+                  if "Account"+col+"_Key eq guid'"+acc+"'" in params['$filter'][0]]
+            return {'value':rows[start:start+b.PAGE]}
         rows=deepcopy(self.bal)
         if self.wrong:rows[0]['Организация_Key']='other-org'
         start=int(params['$skip'][0]);return {'value':rows[start:start+b.PAGE]}
@@ -89,7 +98,7 @@ def test_true_income_excludes_closing_entries_and_debts_use_outstanding_balance(
     cp=next(r for r in rows if r['id']=='cp1' and r['side']=='receivable')
     assert cp['amount']==150_000_000 and cp['old_amount']==110_000_000 and cp['oldest_days']==35 and len(cp['reasons'])==2
     unknown=next(r for r in rows if r['id']=='cp3')
-    assert unknown['oldest_days'] is None and unknown['unknown_amount']==150_000_000 and len(unknown['reasons'])==1
+    assert unknown['oldest_days']==5 and unknown['unknown_amount']==0 and unknown['age_method']=='fifo' and len(unknown['reasons'])==1
     adv=next(r for r in rows if r['side']=='advance_paid')
     assert adv['amount']==15_000_000 and not adv['reasons']
     assert data['updated_at'] and not data['partial']
@@ -114,7 +123,7 @@ def test_limits_partial_payment_boundary_and_missing_age(live):
     live.t.bal=[balance('4010',100_000_000,cp='cp1',doc='missing'),balance('6010',-1,cp='cp2',doc='old')]
     data=asyncio.run(b.build(core.Session('synthetic',1)))
     cp1=next(r for r in data['balances']['debts'] if r['id']=='cp1')
-    assert cp1['oldest_days'] is None and not cp1['reasons'] # Teng summa katta deb belgilanmaydi.
+    assert cp1['oldest_days']==5 and not cp1['reasons'] # Teng summa katta deb belgilanmaydi.
     cp2=next(r for r in data['balances']['debts'] if r['id']=='cp2')
     assert len(cp2['reasons'])==1 and cp2['old_amount']==1 # Faktura asl summasi emas, qolgan qarz.
     db.update_firm(1,{'debt_age_days':40,'debt_large_amount':90_000_000})
@@ -362,3 +371,24 @@ def test_refresh_reuses_catalog_names_but_rereads_balances(live):
     asyncio.run(b.build(core.Session('synthetic',1),refresh=True))
     again=[c for c in live.t.calls if len(c)==3 and c[1] in b.STATIC]
     assert not again and live.t.calls and any(len(c)==3 and c[1]==E_COUNTERPARTY for c in first)
+
+
+def test_fifo_split_covers_newest_first_and_marks_older_than_window():
+    end=date(2026,6,30)
+    moves=[(date(2026,6,25),40),(date(2026,5,1),50),(date(2026,4,1),100)]
+    assert b.fifo_split(60,moves,end,30)==(20,60,False)  # 40 yangi + 20 eski (60 kun)
+    assert b.fifo_split(40,moves,end,30)==(0,5,False)
+    old,days,beyond=b.fifo_split(300,moves,end,30)
+    assert beyond and days==b.AGE_WINDOW and old==260
+    assert b.fifo_split(30,[(date(2026,6,29),-10),(date(2026,6,28),50)],end,30)==(0,2,False)  # storno
+
+
+def test_fifo_ages_counterparty_debt_without_document_dimension(live):
+    live.t.moves=[('4010','Dr','cp3',3,100_000_000),('4010','Dr','cp3',45,80_000_000)]
+    data=asyncio.run(b.build(core.Session('synthetic',1)))
+    cp3=next(r for r in data['balances']['debts'] if r['id']=='cp3')
+    assert cp3['oldest_days']==45 and cp3['old_amount']==50_000_000 and len(cp3['reasons'])==2
+    live.t.moves=[]
+    data=asyncio.run(b.build(core.Session('synthetic',1),refresh=True))
+    cp3=next(r for r in data['balances']['debts'] if r['id']=='cp3')
+    assert cp3['age_beyond'] and cp3['oldest_days']==b.AGE_WINDOW and cp3['old_amount']==150_000_000

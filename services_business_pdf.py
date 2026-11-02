@@ -42,7 +42,7 @@ def report(data):
     story += [p('Qarz va avanslar','Heading2'),p('Qarz yoshi to‘lov muddati emas; hujjatga bog‘lanmagan qoldiq yoshi aniqlanmagan.')]
     rows=[['Kontragent / tomoni','Qoldiq','Qarz yoshi / ogohlantirish']]
     for r in debts[:2000]:
-        age=str(r['oldest_days'])+' kun' if r['oldest_days'] is not None else 'Aniqlanmadi'
+        age=str(r['oldest_days'])+('+' if r.get('age_beyond') else '')+' kun'+(' (FIFO)' if r.get('age_method')=='fifo' else '') if r['oldest_days'] is not None else 'Aniqlanmadi'
         if r['unknown_amount']>0:age+='; yoshi noma’lum qoldiq: '+money(r['unknown_amount'])
         rows.append([r['name']+' · '+labels[r['side']],money(r['amount']),age+'; '+'; '.join(r['reasons'])])
     story += [table(rows,[220,125,175]),Spacer(1,16),p('Ombor qoldiqlari','Heading2')]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import math
 import re
 import time as clock
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import core
 import db
 from services_1c import (Cond, DT, Guid, ODataError, OfflineOData, E_ACCOUNTS, E_COUNTERPARTY, E_NOMENCLATURE,
-                         E_REGISTER, E_REGISTER_ROWS, OneCService, encode_query)
+                         E_REGISTER, E_REGISTER_ROWS, OneCService, encode_query, render_filter)
 from services_insight import DOC_TYPES
 
 TZ = ZoneInfo('Asia/Tashkent')
@@ -26,6 +26,7 @@ REF_TTL = 1800
 # Kam o'zgaradigan kataloglar: har 5 daqiqalik yangilanishda yuzlab GET qayta yuborilmasin.
 STATIC = {E_ACCOUNTS, E_COUNTERPARTY, E_NOMENCLATURE, 'Catalog_КлассификаторЕдиницИзмерения'}
 PAGE = 500
+AGE_WINDOW = 180
 LIMIT = 20000
 
 
@@ -149,6 +150,33 @@ class Reader:
             if len(chunk) < PAGE: return result
         raise ValueError('1C qoldiqlari to‘liq olinmadi — o‘qish chegarasi')
 
+    async def increases(self, account_key, column, start, end):
+        # Субконто bilan provodkalar: qarzni oshirgan tomon (40 — Dr, 60 — Cr) bo'yicha.
+        path = quote(f"{E_REGISTER}/RecordsWithExtDimensions(StartPeriod=datetime'{start:%Y-%m-%dT%H:%M:%S}',"
+                     f"EndPeriod=datetime'{end:%Y-%m-%dT%H:%M:%S}')", safe="(),='/")
+        conds = [Cond('Account' + column + '_Key', 'eq', Guid(account_key)), Cond('Организация_Key', 'eq', Guid(self.org['Ref_Key']))]
+        result, seen = [], set()
+        for skip in range(0, LIMIT, PAGE):
+            params = {'$format': 'json', '$filter': render_filter(conds), '$top': str(PAGE), '$skip': str(skip),
+                      '$orderby': 'Period,Recorder,LineNumber'}
+            body = await self.onec.t._request('GET', path + '?' + encode_query(params))
+            chunk = body.get('value')
+            if not isinstance(chunk, list): raise ValueError('1C provodkalar javobi noto‘g‘ri')
+            self.check_org(chunk)
+            for row in chunk:
+                signature = repr(sorted(row.items()))
+                if signature in seen: raise ValueError('1C provodkalari sahifalashda takrorlandi')
+                seen.add(signature)
+                if row.get('Account' + column + '_Key') != account_key: raise ValueError('1C provodka filtri tasdiqlanmadi')
+                if row.get('Active') is False: continue
+                cp = next((row.get(f'ExtDimension{column}{i}') for i in (1, 2, 3)
+                           if str(row.get(f'ExtDimension{column}{i}_Type') or '').split('.')[-1] == E_COUNTERPARTY), None)
+                try: d = date.fromisoformat(str(row.get('Period'))[:10])
+                except ValueError: raise ValueError('Provodka sanasi aniqlanmadi') from None
+                if cp: result.append((cp, d, amount(row.get('Сумма'))))
+            if len(chunk) < PAGE: return result
+        raise ValueError('1C provodkalari to‘liq olinmadi — o‘qish chegarasi')
+
     async def ledger(self, start, end):
         if self.onec.mode == 'demo':
             # Faqat demo transportining maxsus sun'iy provodkalari.
@@ -214,8 +242,44 @@ def income(ledger):
     return {k: round(v, 2) for k,v in values.items()}
 
 
+def fifo_split(balance, moves, end, limit):
+    # Qoldiqni eng yangi oshirishlardan eskisiga qarab yopamiz: to'lovlar eng eski qarzni yopadi deb olinadi.
+    remaining, old, oldest = balance, 0., None
+    for d, value in sorted(moves, reverse=True):
+        if remaining <= .005: break
+        if value < 0: remaining -= value; continue
+        take = min(value, remaining)
+        remaining -= take
+        oldest = d
+        if (end - d).days >= limit: old += take
+    beyond = remaining > .005
+    if beyond: old += remaining
+    return old, (AGE_WINDOW if beyond else (end - oldest).days if oldest else None), beyond
+
+
+async def fifo_age(reader, debt, accounts, end, limits):
+    # Hujjat kesimi yo'q hisob-kitoblarda qarz yoshi kontragent provodkalaridan FIFO bilan topiladi.
+    todo = [e for e in debt.values() if e['side'] in ('receivable', 'payable') and e['unknown_amount'] > .005]
+    if not todo or reader.onec.mode != 'live': return
+    start = datetime.combine(end - timedelta(days=AGE_WINDOW), time.min)
+    moves = {}
+    for side, column in (('receivable', 'Dr'), ('payable', 'Cr')):
+        if not any(e['side'] == side for e in todo): continue
+        for key in sorted(k for k in accounts.get(side, ()) if k):
+            for cp, d, value in await reader.increases(key, column, start, datetime.combine(end, time(23, 59, 59))):
+                moves.setdefault((side, cp), []).append((d, value))
+    for e in todo:
+        old, days, beyond = fifo_split(e['unknown_amount'], moves.get((e['side'], e['counterparty_id']), []), end,
+                                       limits['debt_age_days'])
+        e['old_amount'] += old
+        e['oldest_days'] = max(e['oldest_days'] or 0, days) if days is not None else e['oldest_days']
+        e['age_beyond'] = beyond
+        e['age_method'] = 'fifo'
+        e['unknown_amount'] = 0.
+
+
 async def balance_summary(reader, rows, end, limits):
-    cash, bank, stock, debt = 0., 0., {}, {}
+    cash, bank, stock, debt, fifo = 0., 0., {}, {}, {}
     warnings = []
     for r in rows:
         code, value = r['_code'], amount(r.get('СуммаBalance'))
@@ -246,6 +310,7 @@ async def balance_summary(reader, rows, end, limits):
             {'id':cp+'-'+code if reversed_balance else cp, 'counterparty_id':cp, 'account':code,
              'side':side, 'amount':0., 'old_amount':0., 'oldest_days':None, 'unknown_amount':0.})
         entry['amount'] += value * sign
+        if not reversed_balance: fifo.setdefault(side, set()).add(r.get('Account_Key'))
         doc = next(((t,k) for t,k in dims if t in DOC_TYPES.values()), None)
         days = None
         if doc:
@@ -259,6 +324,9 @@ async def balance_summary(reader, rows, end, limits):
         else:
             entry['oldest_days'] = max(entry['oldest_days'] or 0, days)
             if days >= limits['debt_age_days']: entry['old_amount'] += value * sign
+    try: await fifo_age(reader, debt, fifo, end, limits)
+    except (ODataError, ValueError) as error:
+        warnings.append('Qarz yoshi FIFO bo‘yicha hisoblanmadi: ' + explain(error))
     for item in stock.values():
         rec = await reader.ref(E_NOMENCLATURE, item['id'])
         item.update(name=rec.get('Description') or 'Nomi olinmagan', ikpu=rec.get('КодИКПУ') or rec.get('КодИзКлассификатора') or '')
