@@ -68,6 +68,16 @@ if STATIC_DIR.exists():
 
 
 @app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    """Ilova CSS/JS fayllari yangilangach brauzer eski nusxani ko'rsatmasin (ETag bilan 304 — arzon)."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") and not path.startswith(("/static/vendor/", "/static/fonts/")):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
+
+
+@app.middleware("http")
 async def same_origin_only(request: Request, call_next):
     """Boshqa saytdan yuborilgan o'zgartiruvchi so'rovlarni rad etish (CSRF himoyasi, SameSite cookie'ga qo'shimcha)."""
     if request.method not in ("GET", "HEAD", "OPTIONS"):

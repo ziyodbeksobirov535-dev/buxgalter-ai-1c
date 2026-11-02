@@ -16,3 +16,25 @@
 @media(prefers-reduced-motion:reduce){.loader-ring span,.loader-ring b,.loader-bar i,.loader-step{animation-duration:4s}}
 @media(max-width:1050px){.loader{left:208px}}
 @media(max-width:700px){.loader{left:0;align-items:flex-end;padding-bottom:12vh}.loader-card{padding:26px 20px 22px}}
+
+/* Rang tizimi: yashil — bizga keladigan, qizil — biz to'laydigan, sariq — olingan avans/tannarx, ko'k — pul, binafsha — ombor */
+:root{--pos:#0f9d6b;--pos-bg:#e6f6ee;--pos-soft:#bfe8d3;--neg:#d64545;--neg-bg:#fdeceb;--neg-soft:#f6c4c0;--warn:#d98a14;--warn-bg:#fdf3e2;--warn-soft:#f3d9a8;--cash:#2563c9;--cash-bg:#e9f0fd;--cash-soft:#c5d6f6;--stock:#7a4fd1;--stock-bg:#f1ebfc;--stock-soft:#d9cbf5;--muted:#6f8287;--muted-bg:#eef3f4}
+.tone-pos,.t-pos{--c:var(--pos);--bg:var(--pos-bg);--soft:var(--pos-soft)}.tone-neg,.t-neg{--c:var(--neg);--bg:var(--neg-bg);--soft:var(--neg-soft)}.tone-warn,.t-warn{--c:var(--warn);--bg:var(--warn-bg);--soft:var(--warn-soft)}.tone-cash,.t-cash{--c:var(--cash);--bg:var(--cash-bg);--soft:var(--cash-soft)}.tone-stock,.t-stock{--c:var(--stock);--bg:var(--stock-bg);--soft:var(--stock-soft)}.t-muted{--c:var(--muted);--bg:var(--muted-bg);--soft:#dde5e7}
+.tone-text{color:var(--c,inherit)}
+.metric{position:relative;overflow:hidden;border-top:4px solid var(--c,#e3e9eb);background:linear-gradient(180deg,var(--bg,#fff) 0,#fff 62%)}
+.metric:hover{border-color:var(--soft,#6ab89d);border-top-color:var(--c);box-shadow:0 10px 24px #213d4218;transform:translateY(-1px)}.metric{transition:box-shadow .2s,transform .2s,border-color .2s}
+.metric-top{display:flex;justify-content:space-between;align-items:center;gap:8px}.metric-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--bg,#eef3f4);color:var(--c,#6a8085);font-size:16px;font-weight:bold;flex-shrink:0;border:1px solid var(--soft,transparent)}
+.bar.income{background:var(--pos)}.bar.other{background:#7fd0ad}.bar.cost{background:var(--warn)}.bar.expense{background:var(--neg)}
+.profit-line.pl-pos{background:var(--pos-bg);border-radius:10px;padding:16px 14px;border-top:0;margin-top:8px}.profit-line.pl-pos strong{color:var(--pos)}
+.profit-line.pl-neg{background:var(--neg-bg);border-radius:10px;padding:16px 14px;border-top:0;margin-top:8px}.profit-line.pl-neg strong{color:var(--neg)}
+.alert-row{align-items:center}.alert-row>span{flex:1;min-width:0}.dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex-shrink:0;box-shadow:0 0 0 4px var(--bg)}
+.pill{display:inline-block;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--bg);color:var(--c);border:1px solid var(--soft);white-space:nowrap}
+tr.row-pos td:first-child{box-shadow:inset 3px 0 0 var(--pos)}tr.row-neg td:first-child{box-shadow:inset 3px 0 0 var(--neg)}tr.row-warn td:first-child{box-shadow:inset 3px 0 0 var(--warn)}tr.row-muted td:first-child{box-shadow:inset 3px 0 0 #cfd8db}
+td.tone-text{font-weight:600}
+.side-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:4px 0 18px}
+.side-card{display:grid;gap:6px;text-align:left;padding:14px 16px;border-radius:12px;border:1px solid var(--soft);background:var(--bg);color:#1d2e35;transition:box-shadow .2s,transform .2s}
+.side-card span{font-size:11px;color:var(--c);font-weight:600}.side-card strong{font-size:17px;color:var(--c);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.side-card small{font-size:10px;color:#7d8d91}
+.side-card:hover{transform:translateY(-1px);box-shadow:0 8px 18px #213d4214}.side-card.active{box-shadow:0 0 0 2px var(--c)}
+.party-amount{display:block;font-size:26px;margin:6px 0 10px}
+@media(max-width:1050px){.side-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.metric-icon{width:26px;height:26px;font-size:13px}.side-card{padding:12px}.side-card strong{font-size:13px;overflow-wrap:normal;letter-spacing:-.3px}}

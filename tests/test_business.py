@@ -408,3 +408,11 @@ def test_future_period_end_is_clamped_to_today(live):
     users();c=login('owner1')
     r=c.get('/api/business/dashboard',params={'date_from':TODAY.replace(month=1,day=1).isoformat(),'date_to':(TODAY+timedelta(days=60)).isoformat()})
     assert r.status_code==200 and r.json()['period']['to']==TODAY.isoformat() and r.json()['income']['revenue']==1000
+
+
+def test_app_assets_are_revalidated_but_vendor_is_not_forced():
+    from fastapi.testclient import TestClient
+    import main
+    c=TestClient(main.app,base_url='http://127.0.0.1:8000')
+    assert c.get('/static/business.css').headers['cache-control']=='no-cache'
+    assert 'cache-control' not in c.get('/static/vendor/alpine.min.js').headers
