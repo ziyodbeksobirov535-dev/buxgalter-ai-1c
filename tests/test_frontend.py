@@ -56,7 +56,7 @@ def problems(src: str) -> list[str]:
     return out
 
 
-@pytest.mark.parametrize("name", ["index.html", "login.html"])
+@pytest.mark.parametrize("name", ["index.html", "login.html", "business.html"])
 def test_no_broken_js_strings(name):
     assert problems((TEMPLATES / name).read_text(encoding="utf-8")) == []
 

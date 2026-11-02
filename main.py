@@ -25,7 +25,7 @@ import services_dashboard
 import services_files1c
 import services_notion
 import services_rules
-from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, set_session_cookie
+from auth import COOKIE, FirmCtx, client_ip, current_user, firm_ctx, is_local, require_owner, require_firm_manager, firm_public, set_session_cookie
 from demo_data import build_sample_xlsx
 from services_1c import ODataError
 from services_didox import DidoxError
@@ -57,6 +57,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="BUXGALTER AI", version="2.0.0", lifespan=lifespan)
+from business_routes import router as business_router
+app.include_router(business_router)
 # Begona domen nomi bilan kelgan so'rovlarni rad etish (DNS rebinding hujumidan himoya)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=config.ALLOWED_HOSTS)
 
@@ -72,7 +74,10 @@ async def same_origin_only(request: Request, call_next):
         origin = request.headers.get("origin")
         if origin and urlparse(origin).netloc != request.headers.get("host", ""):
             return JSONResponse({"detail": "So'rov boshqa saytdan keldi — rad etildi"}, status_code=403)
-    return await call_next(request)
+    response=await call_next(request)
+    if request.url.path.startswith('/api/business/'):
+        response.headers['Cache-Control']='no-store'
+    return response
 
 
 @app.exception_handler(StatementError)
@@ -97,13 +102,20 @@ async def _didox_error(_r, e):
 
 # ---------------------------------------------------------------- sahifalar
 @app.get("/", include_in_schema=False)
-async def index():
-    return FileResponse(TEMPLATES / "index.html", headers=NO_CACHE)
+async def index(request: Request):
+    user = db.user_from_web_session(request.cookies.get(COOKIE, ""))
+    template = "business.html" if user and user['role'] == 'business_owner' else "index.html"
+    return FileResponse(TEMPLATES / template, headers=NO_CACHE)
 
 
 @app.get("/login", include_in_schema=False)
 async def login_page():
     return FileResponse(TEMPLATES / "login.html", headers=NO_CACHE)
+
+
+@app.get('/business', include_in_schema=False)
+async def business_page():
+    return FileResponse(TEMPLATES/'business.html',headers=NO_CACHE)
 
 
 @app.get("/api/accounts")
@@ -175,8 +187,8 @@ async def auth_logout(request: Request, response: Response):
 
 @app.get("/api/auth/me")
 async def auth_me(user: dict = Depends(current_user)):
-    return {"user": user, "firms": db.list_firms(user), "can_post": user["role"] in ("owner", "accountant"),
-            "is_owner": user["role"] == "owner", "roles": db.ROLE_LABELS,
+    return {"user": user, "firms": [firm_public(f, user) for f in db.list_firms(user)], "can_post": user["role"] in ("owner", "accountant"),
+            "is_owner": user["role"] == "owner", "can_manage_firm": user["role"] in ("owner", "accountant"), "is_business_owner": user["role"] == "business_owner", "roles": db.ROLE_LABELS,
             "telegram_bot": bool(config.TELEGRAM_BOT_TOKEN)}
 
 
@@ -225,7 +237,7 @@ async def telegram_unlink(user: dict = Depends(current_user)):
 # ---------------------------------------------------------------- firmalar (Egasi)
 @app.get("/api/firms")
 async def firms_list(user: dict = Depends(current_user)):
-    return db.list_firms(user, include_inactive=user["role"] == "owner")
+    return [firm_public(f, user) for f in db.list_firms(user, include_inactive=user["role"] == "owner")]
 
 
 @app.post("/api/firms")
@@ -236,7 +248,9 @@ async def firms_create(body: dict, user: dict = Depends(require_owner)):
 
 
 @app.put("/api/firms/{firm_id}")
-async def firms_update(firm_id: int, body: dict, user: dict = Depends(require_owner)):
+async def firms_update(firm_id: int, body: dict, user: dict = Depends(require_firm_manager)):
+    if user['role'] != 'owner' and 'didox_drafts_enabled' in body and bool(db._clean_firm_value('didox_drafts_enabled',body['didox_drafts_enabled'])) != db.get_firm(firm_id)['didox_drafts_enabled']:
+        raise HTTPException(403,'Didox qoralama yaratish ruxsatini administrator boshqaradi')
     firm = db.update_firm(firm_id, body)
     db.audit(user["id"], firm_id, "firm_updated",
              fields=sorted(k for k in body if k in db.FIRM_FIELDS and body[k] != config.MASK))
@@ -251,7 +265,7 @@ async def firms_deactivate(firm_id: int, user: dict = Depends(require_owner)):
 
 
 @app.post("/api/firms/{firm_id}/test")
-async def firms_test(firm_id: int, _user: dict = Depends(require_owner)):
+async def firms_test(firm_id: int, _user: dict = Depends(require_firm_manager)):
     """1C ulanishini tekshirish — bitta urinish (xato login takrorlanmaydi)."""
     onec = core.get_onec(firm_id)
     onec.drop_metadata()  # sozlama o'zgargan bo'lishi mumkin — $metadata qayta o'qiladi
@@ -282,7 +296,7 @@ async def firms_write_access(firm_id: int, body: WriteAccessIn, user: dict = Dep
 
 
 @app.post("/api/firms/{firm_id}/edocs/check")
-async def edocs_check(firm_id: int, _user: dict = Depends(require_owner)):
+async def edocs_check(firm_id: int, _user: dict = Depends(require_firm_manager)):
     from services_edocs import EdocsError
     from services_edocs_api import check_connection
     settings = db.firm_settings(firm_id)

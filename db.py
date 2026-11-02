@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import secrets
@@ -27,8 +28,9 @@ import config
 DB_FILE = config.DATA_DIR / "app.db"
 KEY_FILE = config.DATA_DIR / "secret.key"
 
-ROLES = ("owner", "accountant", "viewer")
-ROLE_LABELS = {"owner": "Egasi", "accountant": "Buxgalter", "viewer": "Kuzatuvchi"}
+ROLES = ("owner", "accountant", "viewer", "business_owner")
+ROLE_LABELS = {"owner": "Administrator", "accountant": "Buxgalter", "viewer": "Kuzatuvchi", "business_owner": "Firma egasi"}
+DEBT_LIMITS = {"debt_age_days": 30, "debt_large_amount": 100_000_000}
 SESSION_IDLE = timedelta(hours=8)
 SESSION_MAX = timedelta(days=7)
 LOGIN_MAX_FAILS = 5
@@ -40,7 +42,7 @@ MIN_PASSWORD = 8
 FIRM_FIELDS = ("name", "inn", "onec_demo_mode", "onec_base_url", "onec_user", "onec_password", "didox_demo_mode",
                "didox_base_url", "didox_user_key", "didox_partner_token", "bank_accounts",
                "notion_token", "notion_stock_db", "edocs_enabled", "edocs_login", "edocs_password",
-               "didox_password", "didox_drafts_enabled")
+               "didox_password", "didox_drafts_enabled", "debt_age_days", "debt_large_amount")
 FIRM_SECRETS = ("onec_password", "didox_user_key", "didox_partner_token", "notion_token", "edocs_password",
                 "didox_password")
 # didox_drafts_enabled — Didox'da faqat QORALAMA yaratishga ruxsat (imzo/yuborish hech qachon); 1C qulfiga aloqasi yo'q
@@ -64,7 +66,7 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
     full_name TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('owner', 'accountant', 'viewer')),
+    role TEXT NOT NULL CHECK (role IN ('owner', 'accountant', 'viewer', 'business_owner')),
     active INTEGER NOT NULL DEFAULT 1,
     telegram_id INTEGER UNIQUE,
     tg_firm_id INTEGER,
@@ -274,13 +276,33 @@ def init() -> None:
     config.DATA_DIR.mkdir(exist_ok=True)
     with tx() as c:
         c.executescript(SCHEMA)
+        # Eski CHECK cheklovini atomar almashtirish; ID, parol, sessiya va FKlar saqlanadi.
+        if 'business_owner' not in c.execute("SELECT sql FROM sqlite_master WHERE name='users'").fetchone()[0]:
+            c.execute('PRAGMA foreign_keys = OFF')
+            try:
+                c.execute('BEGIN IMMEDIATE')
+                sql = SCHEMA.split(';', 1)[0].replace('IF NOT EXISTS users', 'users_new')
+                c.execute(sql)
+                cols = ','.join(r[1] for r in c.execute('PRAGMA table_info(users)'))
+                c.execute(f'INSERT INTO users_new ({cols}) SELECT {cols} FROM users')
+                c.execute('DROP TABLE users')
+                c.execute('ALTER TABLE users_new RENAME TO users')
+                if c.execute('PRAGMA foreign_key_check').fetchone():
+                    raise DBError('Foydalanuvchi migratsiyasida bog‘lanish xatosi')
+                c.commit()
+            except Exception:
+                c.rollback()
+                raise
+            finally:
+                c.execute('PRAGMA foreign_keys = ON')
         # eski bazalar uchun ustun qo'shish (migratsiya)
         if "advance_account" not in [r[1] for r in c.execute("PRAGMA table_info(account_rules)")]:
             c.execute("ALTER TABLE account_rules ADD COLUMN advance_account TEXT NOT NULL DEFAULT ''")
         firm_cols = [r[1] for r in c.execute("PRAGMA table_info(firms)")]
         for col, ddl in {**WRITE_ACCESS_COLUMNS, **NOTION_COLUMNS, "edocs_enabled": "INTEGER NOT NULL DEFAULT 0",
                          "edocs_login": "TEXT NOT NULL DEFAULT ''", "edocs_password": "TEXT NOT NULL DEFAULT ''",
-                         "didox_password": "TEXT NOT NULL DEFAULT ''", "didox_drafts_enabled": "INTEGER NOT NULL DEFAULT 0"}.items():  # 1C yozish ruxsati, Notion
+                         "didox_password": "TEXT NOT NULL DEFAULT ''", "didox_drafts_enabled": "INTEGER NOT NULL DEFAULT 0",
+                         **{k: f'REAL NOT NULL DEFAULT {v}' for k, v in DEBT_LIMITS.items()}}.items():  # 1C yozish ruxsati, Notion
             if col not in firm_cols:
                 c.execute(f"ALTER TABLE firms ADD COLUMN {col} {ddl}")
     _chmod600(DB_FILE)
@@ -556,6 +578,15 @@ def _norm(v) -> str:
 
 
 def _clean_firm_value(key: str, value):
+    if key in DEBT_LIMITS:
+        try:
+            n = float(value)
+            if isinstance(value, bool) or not math.isfinite(n) or n <= 0 or n > (3650 if key == 'debt_age_days' else 1e15):
+                raise ValueError()
+            if key == 'debt_age_days' and n != int(n): raise ValueError()
+            return n
+        except (TypeError, ValueError):
+            raise DBError('Qarz nazorati chegarasi musbat va to‘g‘ri son bo‘lsin') from None
     if key in FIRM_BOOLS:
         return int(bool(value) and str(value).lower() not in ("0", "false", "no", "off"))
     value = str(value if value is not None else "").strip()
@@ -643,6 +674,7 @@ def _firm_public(row: sqlite3.Row) -> dict:
     f["notion_stock_db"] = row["notion_stock_db"] if "notion_stock_db" in row.keys() else ""
     f["active"] = bool(row["active"])
     f.update(_write_access(row))
+    f.update({k: row[k] for k in DEBT_LIMITS})
     return f
 
 

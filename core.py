@@ -34,6 +34,7 @@ class Session:
     ehf_summary: dict = field(default_factory=dict)
     ehf_history: list[dict] = field(default_factory=list)
     ehf_chats: dict = field(default_factory=dict)
+    business_chat: dict = field(default_factory=dict)
     ehf_ai_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     # Didox qoralamasi: ko'rsatilgan (tasdiqlanadigan) tana faqat xotirada; yuborishda aynan shu ishlatiladi
     didox_prepared: dict = field(default_factory=dict)
@@ -71,6 +72,7 @@ def save_session(session: Session) -> None:
         "vipiska": session.vipiska, "didox": session.didox, "didox_source": session.didox_source,
         "analyzed_with": session.analyzed_with, "ehf_summary": session.ehf_summary, "ehf_history": session.ehf_history,
         "ehf_chats": session.ehf_chats,
+        "business_chat": session.business_chat,
         "chat": session.chat[-20:],
     }
     try:
@@ -118,6 +120,7 @@ def _load_session(sid: str, firm_id: int) -> Session:
         session.ehf_summary = data.get("ehf_summary", {})
         session.ehf_history = data.get("ehf_history", [])
         session.ehf_chats = data.get("ehf_chats", {})
+        session.business_chat = data.get("business_chat", {})
         session.analyzed_with = data.get("analyzed_with", {})
         session.chat = [m for m in data.get("chat", []) if isinstance(m, dict)
                         and m.get("role") in ("user", "model") and isinstance(m.get("text"), str)][-20:]

@@ -1,7 +1,8 @@
 # Firma egasi dashboardi — kelishilgan texnik topshiriq
 
-Sana: 2026-11-02, Asia/Tashkent. Holat: 22 ta savol-javob asosida talablar yig'ildi.
-Bu hujjat keyingi ishlab chiqish uchun: yangi rol, dashboard va internet sinovi hali amalga oshirilmagan.
+Sana: 2026-11-02, Asia/Tashkent. 22 ta savol-javob asosida kelishilgan talablar.
+Holat: mahalliy dashboard, business_owner roli, API, Gemini vositalari va PDF amalga oshirildi.
+[Sozlash va tekshirish](business-dashboard-run.md). Jonli 1C/Gemini natijasi va bepul internetga joylashtirish alohida tekshirish bosqichida.
 
 ## Maqsad
 

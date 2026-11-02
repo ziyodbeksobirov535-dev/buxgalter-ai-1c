@@ -7,7 +7,7 @@ schyotlarni **buxgalterning oldingi 1C yozuvlaridan o'rganadigan** va yangi hujj
 - 🖥️ Ko'p sahifali Web App (chap menyu / telefonda pastki menyu), yorug'/to'q rejim, 100% o'zbek tilida:
   🏠 Bosh sahifa · 🏦 Bank vipiskalari · 📑 Didox · 📦 Sklad · 📚 Hisob qoidalari · ⚙️ Sozlamalar;
   🤖 AI Copilot — istalgan sahifadan ochiladigan suzuvchi panel
-- 🔐 Login va parol bilan kirish, rollar: **Egasi / Buxgalter / Kuzatuvchi**
+- 🔐 Login va parol bilan kirish, rollar: **Administrator / Buxgalter / Firma egasi / Kuzatuvchi**
 - 🏢 **Bir akkauntdan bir nechta firma** — har birining o'z 1C bazasi (yoki bitta bazadagi alohida tashkiloti)
 - 📜 Audit jurnali: kim, qachon, qaysi firmada nima qilgani
 - 📱 Telegram bot + Telegram Mini App (WebApp)
@@ -28,7 +28,7 @@ cp .env.example .env          # ixtiyoriy — standart holatda Demo rejim
 
 Yoki shunchaki **`start.command`** ni ikki marta bosing (macOS).
 
-Birinchi ochilishda **"Egasi" akkauntini yarating** (login + parol, kamida 8 belgi). Bu faqat dastur o'rnatilgan
+Birinchi ochilishda **"Administrator" akkauntini yarating** (login + parol, kamida 8 belgi). Bu faqat dastur o'rnatilgan
 kompyuterning o'zidan mumkin. Keyin brauzerda **🧪 Test Vipiska Namunasini Yuklash** tugmasini bosing. Namuna fayl
 (`sample_bank_vipiska.xlsx`) server ishga tushganda avtomatik yaratiladi va **📥 Test Vipiska faylini yuklab olish**
 tugmasi orqali ham olish mumkin.
@@ -94,6 +94,17 @@ Buxgalter va kuzatuvchi hisob qoidalariga avvalgi huquqlari bilan kira oladi.
 
 Bosh sahifa va Sklad 1C dan **faqat o'qiydi**. Demo firmada namuna qoldiqlar bilan darhol ko'rinadi.
 
+## Firma egasining biznes paneli
+
+Administrator foydalanuvchiga **Firma egasi** rolini tanlab, firmalarini biriktiradi. U login qilganda
+`/business` paneli ochiladi: umumiy biznes holati, qarz/avanslar, ombor, hujjat tafsilotlari, Gemini va PDF.
+Har bir firma alohida; joriy oy va ochiq sahifada 5 daqiqalik yangilanish. Qarz mezonlari dastlab 30 kun yoki
+kontragentning 100 million so‘mdan katta ochiq qarzi; firma sozlamalarida o‘zgaradi.
+
+[Sozlash va tekshirish yo‘riqnomasi](docs/business-dashboard-run.md) · [Kelishilgan talablar](docs/company-owner-dashboard.md).
+Jonli qoldiq/foyda ma’lumoti olinmasa sabab ko‘rsatiladi; real firma demo ma’lumotiga o‘tmaydi.
+Telegram qarz xabarlari va bepul internet xizmati keyingi joylashtirish bosqichida.
+
 ## 🧠 Gemini API kaliti (bepul, 30 soniya)
 
 1. <https://aistudio.google.com/app/apikey> → **Create API key**
@@ -112,11 +123,12 @@ Gemini quyidagi vositalarni (tools) chaqiradi: `analyze_and_deduplicate_vipiska(
 
 | Rol | Nima qila oladi |
 |---|---|
-| **Egasi** | Hamma narsa: barcha firmalar, firmalarning 1C/Didox sozlamalari, foydalanuvchilar, AI sozlamalari, jurnal |
-| **Buxgalter** | Biriktirilgan firmalarda: vipiska yuklash, tekshirish, schyot tanlash, 1C ga qoralama yozish |
+| **Administrator** | Hamma narsa: barcha firmalar, firmalarning 1C/Didox sozlamalari, foydalanuvchilar, AI sozlamalari, jurnal |
+| **Buxgalter** | Biriktirilgan firmalarda ish paneli, 1C/EHF ulanishlari, firma va qarz sozlamalari, hisob qoidalari; umumiy AI va foydalanuvchilar boshqaruvi administratorda |
+| **Firma egasi** | Biriktirilgan firmalarda biznes natijalari, daromad/foyda, qarz, ombor va hujjatlar; Gemini va PDF, faqat o‘qish |
 | **Kuzatuvchi** | Biriktirilgan firmalarda: faqat ko'rish va tahlil — 1C ga yoza olmaydi |
 
-- Foydalanuvchi qo'shish: 👤 menyu → **👥 Foydalanuvchilar** (faqat Egasi). Har biriga qaysi firmalar ko'rinishini belgilang.
+- Foydalanuvchi qo'shish: 👤 menyu → **👥 Foydalanuvchilar** (faqat Administrator). Har biriga qaysi firmalar ko'rinishini belgilang.
 - Parollar faqat **scrypt xeshi** ko'rinishida saqlanadi. 5 ta xato urinishdan keyin login 15 daqiqaga to'xtatiladi.
 - Sessiya 8 soat harakatsizlikdan keyin tugaydi; parol o'zgarganda boshqa barcha qurilmalardan chiqariladi.
 - Oxirgi faol "Egasi"ni o'chirib yoki rolini tushirib bo'lmaydi.

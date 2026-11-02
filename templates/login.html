@@ -31,14 +31,14 @@
       <template x-if="state === 'setup-blocked'">
         <div class="text-sm space-y-2">
           <h1 class="font-semibold text-base">Tizim hali sozlanmagan</h1>
-          <p class="text-slate-600 dark:text-slate-300">Birinchi "Egasi" akkauntini faqat dastur o'rnatilgan kompyuterning o'zidan yaratish mumkin: <b>http://127.0.0.1:8000/login</b></p>
+          <p class="text-slate-600 dark:text-slate-300">Birinchi "Administrator" akkauntini faqat dastur o'rnatilgan kompyuterning o'zidan yaratish mumkin: <b>http://127.0.0.1:8000/login</b></p>
         </div>
       </template>
 
       <template x-if="state === 'setup' || state === 'login'">
         <form @submit.prevent="submit()" class="space-y-4">
           <div>
-            <h1 class="font-semibold text-base" x-text="state === 'setup' ? 'Egasi akkauntini yarating' : 'Tizimga kirish'"></h1>
+            <h1 class="font-semibold text-base" x-text="state === 'setup' ? 'Administrator akkauntini yarating' : 'Tizimga kirish'"></h1>
             <p x-show="state === 'setup'" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Birinchi ishga tushirish. Bu akkaunt barcha firmalar, foydalanuvchilar va sozlamalarni boshqaradi.</p>
           </div>
           <div x-show="state === 'setup'">

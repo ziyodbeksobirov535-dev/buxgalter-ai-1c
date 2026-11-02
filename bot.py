@@ -78,6 +78,8 @@ def context_of(tg_id: int | None) -> tuple[dict, dict, core.Session] | None:
     user = user_of(tg_id)
     if not user:
         return None
+    if user['role'] == 'business_owner':
+        return None  # Firma egasining Telegram funksiyalari keyingi bosqichda.
     firm = firm_of(user)
     if not firm:
         return None
@@ -85,6 +87,10 @@ def context_of(tg_id: int | None) -> tuple[dict, dict, core.Session] | None:
 
 
 async def need_context(m: Message) -> tuple[dict, dict, core.Session] | None:
+    u=user_of(m.from_user.id if m.from_user else None)
+    if u and u['role']=='business_owner':
+        await m.answer('Firma egasi uchun brauzerdagi biznes panelidan foydalaning. Telegram keyingi bosqichda qo‘shiladi.')
+        return None
     ctx = context_of(m.from_user.id if m.from_user else None)
     if ctx is None:
         if user_of(m.from_user.id if m.from_user else None):

@@ -85,6 +85,10 @@ def test_rules_live_inside_settings(role, tmp_path):
                     await page.screenshot(path='/tmp/buxgalter-settings-overview.png', full_page=True)
                 else:
                     assert await nav.get_by_role('button', name='Foydalanuvchilar').count() == 0
+                    assert await nav.get_by_role('button', name='AI yordamchi', exact=False).count() == 0
+                    if role == 'accountant':
+                        assert await nav.get_by_role('button', name='Joriy firma', exact=False).count() == 1
+                        assert await nav.get_by_role('button', name='Ulanishlar', exact=False).count() == 1
                     await page.goto(origin + '/#/settings/users', wait_until='networkidle')
                     await page.wait_for_url('**/#/settings/overview')
                 await nav.get_by_role('button', name='Hisob qoidalari').click()

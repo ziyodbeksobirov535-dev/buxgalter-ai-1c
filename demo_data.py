@@ -345,3 +345,10 @@ def build_sample_xlsx(path) -> None:
         ws.column_dimensions[col].width = width
     ws.freeze_panes = ws.cell(row=hdr_row + 1, column=1)
     wb.save(path)
+
+# Firma egasi paneli uchun faqat demo provodkalari; haqiqiy firmada ishlatilmaydi.
+BUSINESS_POSTINGS = [
+    {'date': date.today().replace(day=1).isoformat(), 'dt': '4010', 'kt': '9010', 'amount': 1000.0},
+    {'date': date.today().replace(day=1).isoformat(), 'dt': '9110', 'kt': '2910', 'amount': 600.0},
+    {'date': date.today().replace(day=1).isoformat(), 'dt': '9420', 'kt': '6010', 'amount': 100.0},
+]

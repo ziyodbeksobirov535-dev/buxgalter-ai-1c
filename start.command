@@ -33,6 +33,11 @@ if ! .venv/bin/python -c "import fastapi, uvicorn, aiogram, openpyxl, multipart"
     && .venv/bin/python -m pip install -q -r requirements.txt || { echo "❌ O'rnatishda xato"; pause_exit 1; }
 fi
 
+# Yangi versiyaning PDF kutubxonasi: mavjud virtual muhitni saqlab yangilaymiz.
+if ! .venv/bin/python -c "import reportlab" >/dev/null 2>&1; then
+  .venv/bin/python -m pip install -q -r requirements.txt || { echo "❌ PDF kutubxonasini o'rnatishda xato"; pause_exit 1; }
+fi
+
 # 2) Port band bo'lsa: eski BUXGALTER AI serverini to'xtatamiz, boshqa dastur bo'lsa — tegmaymiz
 for pid in $(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null); do
   cmd="$(ps -o command= -p "$pid")"

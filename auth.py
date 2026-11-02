@@ -1,8 +1,9 @@
 """Kirish nazorati: login cookie, Telegram Mini App imzosi, rollar va firmaga kirish huquqi.
 
 Rollar:
-  owner      (Egasi)      — hamma narsa: firmalar, foydalanuvchilar, AI sozlamalari, barcha firmalar
+  owner      (Administrator)      — hamma narsa: firmalar, foydalanuvchilar, AI sozlamalari, barcha firmalar
   accountant (Buxgalter)  — biriktirilgan firmalarda vipiska yuklash, tekshirish va 1C ga qoralama yozish
+  business_owner (Firma egasi) — biriktirilgan firmalarning biznes natijalari, faqat o‘qish
   viewer     (Kuzatuvchi) — biriktirilgan firmalarda faqat ko'rish va tahlil (1C ga yozolmaydi)
 """
 from __future__ import annotations
@@ -21,6 +22,12 @@ _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 _PROXY_HEADERS = ("x-forwarded-for", "x-real-ip", "forwarded", "cf-connecting-ip")
 
 CAN_POST = {"owner", "accountant"}
+
+
+def firm_public(firm, user):
+    if user['role'] == 'business_owner':
+        return {k: firm[k] for k in ('id', 'name', 'inn', 'onec_demo_mode')}
+    return firm
 
 
 def is_local(request: Request) -> bool:
@@ -78,7 +85,16 @@ async def current_user(request: Request) -> dict:
 
 def require_owner(user: dict = Depends(current_user)) -> dict:
     if user["role"] != "owner":
-        raise HTTPException(403, "Bu amal faqat \"Egasi\" uchun")
+        raise HTTPException(403, "Bu amal faqat administrator uchun")
+    return user
+
+
+async def require_firm_manager(firm_id: int, user: dict = Depends(current_user)):
+    if user['role']=='owner':
+        if not db.get_firm(firm_id):raise HTTPException(404,'Firma topilmadi')
+        return user
+    if user['role'] not in CAN_POST or not db.user_can_access(user, firm_id):
+        raise HTTPException(403, 'Bu firma sozlamalarini boshqarish huquqingiz yo‘q')
     return user
 
 
@@ -98,6 +114,8 @@ class FirmCtx:
 
 
 async def firm_ctx(request: Request, user: dict = Depends(current_user)) -> FirmCtx:
+    if user['role'] == 'business_owner' and not request.url.path.startswith('/api/business/'):
+        raise HTTPException(403, 'Bu bo‘lim firma egasi paneliga kirmaydi')
     raw = request.headers.get("x-firm-id") or request.query_params.get("firm_id") or ""
     if not raw and getattr(request.state, "via", "") == "telegram":
         raw = str(user.get("tg_firm_id") or "")

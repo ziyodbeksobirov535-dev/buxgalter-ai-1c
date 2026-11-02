@@ -631,7 +631,7 @@
             </template>
           </div>
           <p class="text-xs text-slate-500">Holat joriy tanlangan firma uchun ko‘rsatiladi.</p>
-          <button x-show="me?.is_owner && firmId" @click="openTab('connections')" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">🔌 Ulanishlarni sozlash</button>
+          <button x-show="me?.can_manage_firm && firmId" @click="openTab('connections')" class="rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2">🔌 Ulanishlarni sozlash</button>
         </section>
       <div x-show="settingsTab==='rules'" class="space-y-4">
         <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
@@ -770,6 +770,11 @@
 
         <!-- ---- Joriy firma ---- -->
         <section x-show="settingsTab==='firm'" class="space-y-4">
+          <div class="rounded-xl border p-4 space-y-2"><div class="font-semibold">Qarz ogohlantirishlari</div>
+            <label class="block text-xs">Qarz yoshi (kun)<input type="number" min="1" max="3650" x-model.number="firmForm.debt_age_days" class="ml-2 rounded border p-2"></label>
+            <label class="block text-xs">Yirik qarz chegarasi (so‘m)<input type="number" min="1" x-model.number="firmForm.debt_large_amount" class="ml-2 rounded border p-2"></label>
+            <p class="text-xs text-slate-500">Qarz yoshi yoki summa chegarasidan biri yetarli. Firma egasi sozlamani o‘zgartirmaydi.</p>
+          </div>
           <div class="grid sm:grid-cols-2 gap-3">
             <label class="block"><span class="text-xs text-slate-500">Firma nomi</span>
               <input x-model="firmForm.name" class="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2"></label>
@@ -816,7 +821,7 @@
               <p class="text-xs text-slate-500">Didox API har bir so‘rovda Didox beradigan hamkor kalitini talab qiladi. Kalitsiz parol bilan kirishga urinilmaydi (hisob bloklanmasligi uchun). Kalitni Didox’dan API-integratsiya so‘rab olasiz.</p>
             </div>
             <div class="rounded-lg border border-amber-200 dark:border-amber-800 p-3 space-y-2">
-              <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_drafts_enabled" class="rounded"> Didox'da chiqim faktura <b>qoralamasini</b> yaratishga ruxsat</label>
+              <label class="flex items-center gap-2"><input type="checkbox" x-model="firmForm.didox_drafts_enabled" :disabled="!me?.is_owner" class="rounded"> Didox'da chiqim faktura <b>qoralamasini</b> yaratishga ruxsat</label>
               <input type="password" x-model="firmForm.didox_password" placeholder="Didox paroli (firma STIRi bilan kiriladi)" autocomplete="new-password" class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
               <p class="text-xs text-slate-500">Faqat qoralama: dastur imzolamaydi, yubormaydi, o'chirmaydi — Didox'da o'zingiz tekshirib imzolaysiz. Noto'g'ri parol bo'lsa qayta urinilmaydi. 1C ga yozish qulfi bunga bog'liq emas va yopiq qoladi.</p>
             </div>
@@ -894,7 +899,7 @@
                   <div class="text-xs text-slate-500" x-text="u.username + (u.telegram_id ? ' · 📱 Telegram bog\'langan' : '') + (u.last_login_at ? ' · oxirgi kirish ' + fmtTs(u.last_login_at) : '')"></div>
                 </div>
                 <select x-model="u.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 text-xs">
-                  <option value="owner">Egasi</option><option value="accountant">Buxgalter</option><option value="viewer">Kuzatuvchi</option>
+                  <option value="owner">Administrator</option><option value="business_owner">Firma egasi</option><option value="accountant">Buxgalter</option><option value="viewer">Kuzatuvchi</option>
                 </select>
                 <label class="flex items-center gap-1 text-xs"><input type="checkbox" x-model="u.active" class="rounded"> Faol</label>
               </div>
@@ -920,7 +925,7 @@
               <select x-model="newUser.role" class="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
                 <option value="accountant">Buxgalter — yuklaydi va 1C ga yozadi</option>
                 <option value="viewer">Kuzatuvchi — faqat ko'radi</option>
-                <option value="owner">Egasi — hamma narsa</option>
+                <option value="business_owner">Firma egasi — faqat biznes natijalari</option><option value="owner">Administrator — hamma narsa</option>
               </select>
             </div>
             <div x-show="newUser.role !== 'owner'" class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
@@ -1811,6 +1816,7 @@ function app() {
       this.chat = [{ role: 'model', html: this.md(WELCOME) }];
       if (window.lucide) lucide.createIcons();
       this.me = await this.api('/api/auth/me', { anyFirm: true });
+      if (this.me?.is_business_owner) { location.replace('/business'); return; }
       if (!this.me) return;
       this.firms = this.me.firms;
       const acc = await this.api('/api/accounts', { anyFirm: true });
@@ -2754,13 +2760,13 @@ function app() {
         { id: 'firm', group: 'Firma va ulanishlar', label: '🏢 Joriy firma', description: 'Firma nomi, STIR va bank hisob raqamlari.' },
         { id: 'connections', group: 'Firma va ulanishlar', label: '🔌 Ulanishlar', description: '1C, E-DOCS, Didox va Notion ulanishlarini sozlang.' },
         { id: 'rules', group: 'Firma va ulanishlar', label: '📚 Hisob qoidalari', description: 'Schyotlarni tanlash, tarixdan o‘rganish va qat’iy qoidalar.' },
-        { id: 'ai', group: 'Firma va ulanishlar', label: '🤖 AI yordamchi', description: 'AI provayderi, modeli va API kaliti.' },
+        { id: 'ai', group: 'Boshqaruv', label: '🤖 AI yordamchi', description: 'AI provayderi, modeli va API kaliti.' },
         { id: 'firms', group: 'Boshqaruv', label: '🗂 Firmalar', description: 'Firmalar ro‘yxati va yangi firma qo‘shish.' },
         { id: 'users', group: 'Boshqaruv', label: '👥 Foydalanuvchilar', description: 'Foydalanuvchilar, rollar va firmaga kirish huquqlari.' },
         { id: 'audit', group: 'Boshqaruv', label: '📜 Faoliyat jurnali', description: 'Kim, qachon va qanday amal bajarganini ko‘ring.' },
         { id: 'account', group: 'Shaxsiy', label: '👤 Akkaunt', description: 'Parol va Telegram akkauntini boshqaring.' },
       ];
-      return all.filter(t => (this.me?.is_owner || ['overview', 'rules', 'account'].includes(t.id))
+      return all.filter(t => (this.me?.is_owner || (this.me?.can_manage_firm ? ['overview','firm','connections','rules','account'] : ['overview','rules','account']).includes(t.id))
         && (this.firmId || !['firm', 'connections', 'rules'].includes(t.id)));
     },
     settingsGroups() { return [...new Set(this.settingsTabs().map(t => t.group))]; },
@@ -2790,7 +2796,7 @@ function app() {
     },
     async refreshFirms() {
       const me = await this.api('/api/auth/me', { anyFirm: true });
-      if (me) { this.me = me; this.firms = me.firms; this.noFirms = !me.firms.length; }
+      if (me) { this.me = me; if (me.is_business_owner) { location.replace('/business'); return; } this.firms = me.firms; this.noFirms = !me.firms.length; }
     },
     async handleLostFirm() {
       // Firma o'chirilgan yoki unga ruxsat olib tashlangan — ruxsat etilgan firmaga o'tamiz
