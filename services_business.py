@@ -21,6 +21,10 @@ TZ = ZoneInfo('Asia/Tashkent')
 LOCKS = {}
 CACHE = {}
 SUCCESS = {}
+REFS = {}
+REF_TTL = 1800
+# Kam o'zgaradigan kataloglar: har 5 daqiqalik yangilanishda yuzlab GET qayta yuborilmasin.
+STATIC = {E_ACCOUNTS, E_COUNTERPARTY, E_NOMENCLATURE, 'Catalog_КлассификаторЕдиницИзмерения'}
 PAGE = 500
 LIMIT = 20000
 
@@ -56,10 +60,19 @@ def onec_for(firm_id):
     return service
 
 
+def shared_refs(firm_id):
+    key = (firm_id, core.onec_fingerprint(firm_id))
+    hit = REFS.get(key)
+    if not hit or clock.monotonic() - hit[0] > REF_TTL:
+        if len(REFS) > 20: REFS.clear()
+        hit = REFS[key] = (clock.monotonic(), {})
+    return hit[1]
+
+
 class Reader:
-    def __init__(self, onec, expected):
+    def __init__(self, onec, expected, shared=None):
         self.onec, self.expected, self.org, self.meta = onec, str(expected), None, None
-        self.refs = {}
+        self.refs, self.shared = {}, {} if shared is None else shared
 
     async def ready(self):
         if self.onec.mode == 'demo': return
@@ -79,8 +92,10 @@ class Reader:
         if not key: return {}
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}',str(key)): raise ValueError('1C identifikatori noto‘g‘ri')
         pair = (entity, key)
+        if pair in self.shared: return self.shared[pair]
         if pair not in self.refs:
             self.refs[pair] = await self.onec.t.get(entity, key) or {}
+            if entity in STATIC and self.refs[pair]: self.shared[pair] = self.refs[pair]
         return self.refs[pair]
 
     async def code(self, key):
@@ -275,7 +290,7 @@ async def build(session, start='', end='', refresh=False):
         hit = CACHE.get(key)
         if not refresh and hit and clock.monotonic()-hit[0] < 60: return deepcopy(hit[1])
         onec = onec_for(session.firm_id)
-        reader = Reader(onec, settings['inn'])
+        reader = Reader(onec, settings['inn'], shared_refs(session.firm_id))
         out = {'firm': {'id':session.firm_id,'name':settings['name'],'inn':settings['inn']},
                'period':{'from':a.isoformat(),'to':b.isoformat()}, 'as_of':b.isoformat(), 'source':onec.mode,
                'limits':{k:settings[k] for k in db.DEBT_LIMITS}, 'warnings':[], 'balances':None, 'income':None,
@@ -310,7 +325,7 @@ async def documents(session, kind, start='', end='', page=1, search=''):
     if kind not in DOC_TYPES: raise ValueError('Hujjat turi noto‘g‘ri')
     a,b = period(start,end)
     async with LOCKS.setdefault(session.firm_id, asyncio.Lock()):
-        reader = Reader(onec_for(session.firm_id), db.firm_settings(session.firm_id)['inn'])
+        reader = Reader(onec_for(session.firm_id), db.firm_settings(session.firm_id)['inn'], shared_refs(session.firm_id))
         await reader.ready()
         rows = await reader.rows(DOC_TYPES[kind], [Cond('Date','ge',DT(datetime.combine(a,time.min))),
                  Cond('Date','le',DT(datetime.combine(b,time(23,59,59))))])
@@ -327,6 +342,6 @@ async def documents(session, kind, start='', end='', page=1, search=''):
 
 async def document(session, kind, key):
     async with LOCKS.setdefault(session.firm_id, asyncio.Lock()):
-        r = Reader(onec_for(session.firm_id), db.firm_settings(session.firm_id)['inn'])
+        r = Reader(onec_for(session.firm_id), db.firm_settings(session.firm_id)['inn'], shared_refs(session.firm_id))
         await r.ready()
         return await r.document(kind,key)

@@ -54,15 +54,20 @@ async def generate(session, message, snapshot, history, settings, access_check=l
     contents.append(types.Content(role='user',parts=[types.Part.from_text(text=message)]))
     models=list(dict.fromkeys([settings.get('gemini_model') or GEMINI_FALLBACK_MODEL,GEMINI_FALLBACK_MODEL,GEMINI_LITE_MODEL]))
     model=models.pop(0)
+    async def call():
+        # Band (429/5xx) yoki yopilgan (404) model — navbatdagi zaxira modelga o'tiladi.
+        nonlocal model
+        while True:
+            try: return await client.models.generate_content(model=model,contents=contents,config=cfg)
+            except errors.APIError as e:
+                if not (e.code in (404,429) or (e.code or 0)>=500) or not models: raise
+                logging.getLogger('buxgalter.business').warning('Gemini %s: %s, zaxira modelga o‘tildi',model,e.code)
+                model=models.pop(0)
     async with asyncio.timeout(90):
         async with genai.Client(api_key=settings['gemini_api_key'],http_options=types.HttpOptions(timeout=30000)).aio as client:
             for _ in range(5):
                 access_check()
-                try: response=await client.models.generate_content(model=model,contents=contents,config=cfg)
-                except errors.APIError as e:
-                    if e.code not in (404,429,503) or not models: raise
-                    model=models.pop(0)
-                    response=await client.models.generate_content(model=model,contents=contents,config=cfg)
+                response=await call()
                 if not response.function_calls:
                     if not (response.text or '').strip(): raise ValueError('Bo‘sh AI javobi')
                     return response.text[:16000], 'Gemini · '+model
@@ -96,7 +101,7 @@ async def chat(session, message, start='', end='', access_check=lambda:None):
             try: reply,label=await generate(session,text,snapshot,history,settings,access_check=access_check)
             except Exception as e:
                 access_check()
-                logging.getLogger('buxgalter.business').warning('Gemini javobi olinmadi: %s',type(e).__name__)
+                logging.getLogger('buxgalter.business').warning('Gemini javobi olinmadi: %s %s',type(e).__name__,getattr(e,'code',''))
                 notice='Gemini javob bermadi; quyida mahalliy holat. Keyinroq qayta so‘rang.'
         else: notice='Gemini ulanmagan. API kalitini administrator sozlaydi.'
         if notice:

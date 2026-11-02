@@ -20,7 +20,7 @@ TODAY=datetime.now(b.TZ).date()
 
 @pytest.fixture(autouse=True)
 def clean_business():
-    b.CACHE.clear();b.LOCKS.clear();b.SUCCESS.clear()
+    b.CACHE.clear();b.LOCKS.clear();b.SUCCESS.clear();b.REFS.clear()
 
 
 def balance(code,value,cp=None,doc=None,product=None):
@@ -329,3 +329,36 @@ def test_admin_can_create_business_owner_through_existing_user_form_api():
     c=login('new-business-owner')
     assert {f['id'] for f in c.get('/api/auth/me').json()['firms']}=={1,second['id']}
     assert c.get('/api/business/dashboard',headers={'X-Firm-Id':str(private['id'])}).status_code==403
+
+
+def test_gemini_busy_models_fall_through_to_lite(live,monkeypatch):
+    import google.genai
+    from google.genai import errors
+    from types import SimpleNamespace
+    from services_ai import GEMINI_LITE_MODEL
+    users();c=login('owner1')
+    config.save_settings({'gemini_api_key':'synthetic-key','gemini_model':'synthetic-main'})
+    tried=[]
+    class FakeAio:
+        def __init__(self):self.models=self
+        async def __aenter__(self):return self
+        async def __aexit__(self,*args):pass
+        async def generate_content(self,*,model,contents,config):
+            tried.append(model)
+            if model!=GEMINI_LITE_MODEL:
+                code=503 if len(tried)==1 else 504
+                raise errors.ServerError(code,{'error':{'code':code,'message':'busy'}})
+            return SimpleNamespace(function_calls=None,text='Synthetic lite answer')
+    class FakeClient:
+        def __init__(self,**kwargs):self.aio=FakeAio()
+    monkeypatch.setattr(google.genai,'Client',FakeClient)
+    r=c.post('/api/business/chat',json={'message':'Explain'}).json()
+    assert r['reply']=='Synthetic lite answer' and len(tried)==3 and tried[-1]==GEMINI_LITE_MODEL
+
+
+def test_refresh_reuses_catalog_names_but_rereads_balances(live):
+    asyncio.run(b.build(core.Session('synthetic',1)))
+    first=list(live.t.calls);live.t.calls.clear()
+    asyncio.run(b.build(core.Session('synthetic',1),refresh=True))
+    again=[c for c in live.t.calls if len(c)==3 and c[1] in b.STATIC]
+    assert not again and live.t.calls and any(len(c)==3 and c[1]==E_COUNTERPARTY for c in first)
