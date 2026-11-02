@@ -1,6 +1,6 @@
 function businessApp() {
   return {
-    me:null, firms:[], firmId:null, from:'', to:'', page:'overview', data:null, error:'', epoch:0,
+    me:null, firms:[], firmId:null, from:'', to:'', today:'', page:'overview', data:null, error:'', epoch:0,
     loading:false,pdfBusy:false, aiBusy:false,docBusy:false, detail:null, openIncome:false,profile:false,
     password:{old:'',new:''}, debtSide:'',debtSearch:'',debtOnlyAlerts:false,stockSearch:'',
     docs:{rows:[],count:0},docKind:'sotuv',docSearch:'',docPage:1,messages:[],question:'',aiNotice:'',timer:null,
@@ -10,7 +10,7 @@ function businessApp() {
     async init(){
       const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
       const part=t=>parts.find(x=>x.type===t).value;
-      this.to=part('year')+'-'+part('month')+'-'+part('day');this.from=this.to.slice(0,8)+'01';
+      this.to=part('year')+'-'+part('month')+'-'+part('day');this.today=this.to;this.from=this.to.slice(0,8)+'01';
       try{
         this.me=await this.api('/api/auth/me'); if(!this.me)return;
         this.firms=this.me.firms;

@@ -49,6 +49,13 @@ class Transport:
         if self.fail:raise ODataError('PRIVATE-CONNECTION-URL')
         params=parse_qs(urlsplit(path).query)
         assert ORG in params['$filter'][0] and 'Организация_Key' in params['$filter'][0]
+        if 'DrCrTurnovers' in path:
+            assert '$top' not in params and 'AccountDr_Key' in params['$select'][0]
+            sums={}
+            for r in self.ledger:sums[(r['AccountDr_Key'],r['AccountCr_Key'])]=sums.get((r['AccountDr_Key'],r['AccountCr_Key']),0)+r['Сумма']
+            rows=[{'Организация_Key':ORG,'AccountDr_Key':dt,'AccountCr_Key':kt,'СуммаTurnover':v} for (dt,kt),v in sums.items()]
+            if self.wrong:rows[0]['Организация_Key']='other-org'
+            return {'value':rows}
         if 'RecordsWithExtDimensions' in path:
             start=int(params['$skip'][0])
             rows=[{'Организация_Key':ORG,'Active':True,'Period':(TODAY-timedelta(days=ago)).isoformat()+'T00:00:00',
@@ -392,3 +399,12 @@ def test_fifo_ages_counterparty_debt_without_document_dimension(live):
     data=asyncio.run(b.build(core.Session('synthetic',1),refresh=True))
     cp3=next(r for r in data['balances']['debts'] if r['id']=='cp3')
     assert cp3['age_beyond'] and cp3['oldest_days']==b.AGE_WINDOW and cp3['old_amount']==150_000_000
+
+
+def test_future_period_end_is_clamped_to_today(live):
+    a,z=b.period(TODAY.replace(month=1,day=1).isoformat(),(TODAY+timedelta(days=60)).isoformat())
+    assert z==TODAY and a.month==1
+    with pytest.raises(ValueError):b.period((TODAY+timedelta(days=1)).isoformat(),(TODAY+timedelta(days=5)).isoformat())
+    users();c=login('owner1')
+    r=c.get('/api/business/dashboard',params={'date_from':TODAY.replace(month=1,day=1).isoformat(),'date_to':(TODAY+timedelta(days=60)).isoformat()})
+    assert r.status_code==200 and r.json()['period']['to']==TODAY.isoformat() and r.json()['income']['revenue']==1000

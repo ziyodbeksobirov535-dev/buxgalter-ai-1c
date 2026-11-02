@@ -36,7 +36,9 @@ def period(start='', end=''):
         a, b = date.fromisoformat(start) if start else today.replace(day=1), date.fromisoformat(end) if end else today
     except (ValueError, TypeError):
         raise ValueError('Sana YYYY-MM-DD formatida bo‘lsin') from None
-    if a > b or a.year < 2000 or b > today:
+    # Davr oxiri kelajakda bo'lsa (masalan butun yil tanlansa) — bugungi kungacha olinadi.
+    b = min(b, today)
+    if a > b or a.year < 2000:
         raise ValueError('Davr boshi oxiridan keyin yoki kelajakda bo‘lmasin')
     return a, b
 
@@ -182,17 +184,21 @@ class Reader:
             # Faqat demo transportining maxsus sun'iy provodkalari.
             from demo_data import BUSINESS_POSTINGS
             return deepcopy([r for r in BUSINESS_POSTINGS if start.isoformat() <= r['date'] <= end.isoformat()])
-        records = await self.rows(E_REGISTER_ROWS, [Cond('Period', 'ge', DT(datetime.combine(start, time.min))),
-                  Cond('Period', 'le', DT(datetime.combine(end, time(23, 59, 59))))], 'Period,Recorder,LineNumber')
+        # Dt/Kt juftliklari bo'yicha tayyor aylanma: $select faqat schyotlar — 1C субконто bo'yicha bo'lmaydi,
+        # natija bir necha o'nlab qator va bitta so'rovda to'liq keladi (provodkalarni sahifalab o'qish shart emas).
+        path = quote(f"{E_REGISTER}/DrCrTurnovers(StartPeriod=datetime'{datetime.combine(start, time.min):%Y-%m-%dT%H:%M:%S}',"
+                     f"EndPeriod=datetime'{datetime.combine(end, time(23, 59, 59)):%Y-%m-%dT%H:%M:%S}')", safe="(),='/")
+        params = {'$format': 'json', '$filter': render_filter([Cond('Организация_Key', 'eq', Guid(self.org['Ref_Key']))]),
+                  '$select': 'AccountDr_Key,AccountCr_Key,СуммаTurnover,Организация_Key'}
+        body = await self.onec.t._request('GET', path + '?' + encode_query(params))
+        records = body.get('value')
+        if not isinstance(records, list): raise ValueError('1C aylanma javobi noto‘g‘ri')
+        if len(records) > LIMIT: raise ValueError('1C o‘qish chegarasi oshdi; davrni kichraytiring')
+        self.check_org(records)
         result = []
         for r in records:
-            try:d=date.fromisoformat(str(r.get('Period'))[:10])
-            except ValueError:raise ValueError('Provodka sanasi aniqlanmadi') from None
-            if not start<=d<=end:raise ValueError('1C provodkasi tanlangan davrdan tashqarida')
-            if r.get('Active') is False: continue
-            if r.get('Active') is not True: raise ValueError('Provodkaning faollik holati tasdiqlanmadi')
             result.append({'dt': await self.code(r.get('AccountDr_Key')), 'kt': await self.code(r.get('AccountCr_Key')),
-                           'amount': amount(r.get('Сумма'))})
+                           'amount': amount(r.get('СуммаTurnover'))})
         return result
 
     async def document(self, kind, key):
