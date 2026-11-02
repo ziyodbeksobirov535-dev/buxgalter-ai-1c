@@ -1,7 +1,7 @@
 function businessApp() {
   return {
     me:null, firms:[], firmId:null, from:'', to:'', today:'', page:'overview', data:null, error:'', epoch:0,
-    loading:false,pdfBusy:false, aiBusy:false,docBusy:false, detail:null, openIncome:false,profile:false,
+    loading:false,elapsed:0,ticker:null,pdfBusy:false, aiBusy:false,docBusy:false, detail:null, openIncome:false,profile:false,
     password:{old:'',new:''}, debtSide:'',debtSearch:'',debtOnlyAlerts:false,stockSearch:'',
     docs:{rows:[],count:0},docKind:'sotuv',docSearch:'',docPage:1,messages:[],question:'',aiNotice:'',timer:null,
     tabs:[{id:'overview',name:'Umumiy holat',icon:'◫'},{id:'debts',name:'Qarzlar',icon:'⇄'},
@@ -37,9 +37,12 @@ function businessApp() {
     resetView(){this.epoch++;this.data=null;this.error='';this.detail=null;this.openIncome=false;this.messages=[];this.aiNotice='';this.docs={rows:[],count:0};this.docPage=1;this.loading=false;this.docBusy=false;this.aiBusy=false;this.pdfBusy=false;},
     async changeFirm(){this.resetView();this.debtSearch='';this.stockSearch='';this.docSearch='';try{localStorage.setItem('bx_business_firm',String(this.firmId));}catch(e){}await this.refresh();await this.history();if(this.page==='documents')await this.loadDocs();},
     async periodChanged(){this.resetView();if(!this.validPeriod())return;await this.refresh();await this.history();if(this.page==='documents')await this.loadDocs();},
+    // Uzoq birinchi yuklashda markazdagi kutish oynasi uchun soniya hisoblagichi.
+    startTicker(){clearInterval(this.ticker);this.elapsed=0;const t=Date.now();this.ticker=setInterval(()=>{if(!this.loading){clearInterval(this.ticker);return;}this.elapsed=Math.floor((Date.now()-t)/1000);},1000);},
+    loadingHint(){const steps=['Tashkilot tekshirilmoqda…','Bank va kassa qoldiqlari…','Qarzlar va kontragentlar…','Ombordagi tovarlar…','Daromad va xarajatlar…','Qarz yoshi hisoblanmoqda…'];return steps[Math.floor(this.elapsed/5)%steps.length];},
     async refresh(force=false){
       if(!this.firmId||this.loading||!this.validPeriod())return;
-      const rev=this.epoch;this.loading=true;this.error='';
+      const rev=this.epoch;this.loading=true;this.error='';this.startTicker();
       try{const q=this.params();if(force)q.set('refresh','true');const d=await this.api('/api/business/dashboard?'+q);if(d)this.data=d;}
       catch(e){if(rev===this.epoch)this.error=e.message;}
       finally{if(rev===this.epoch)this.loading=false;}
